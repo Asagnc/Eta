@@ -35,12 +35,14 @@ internal object AgentImageCodec {
         )
     }
 
-    /** 用户附件始终保持原始字节、编码和像素尺寸。 */
+    /** 用户附件统一编码为模型兼容的 JPEG，并保持原始像素尺寸。 */
     fun fromAttachmentBytes(
         bytes: ByteArray,
         source: String,
         mimeHint: String = "image/jpeg",
-    ): AgentModelClient.ModelImage = fromBytes(bytes, source, mimeHint)
+    ): AgentModelClient.ModelImage =
+        AgentModelImageEncoder.screen(bytes, source, mimeHint)
+            ?: error("无法解码图片")
 
     /** Root screencap 只允许无损换编码，不改变截图尺寸。 */
     fun fromScreenBytes(
