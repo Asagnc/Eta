@@ -98,12 +98,9 @@ internal object AgentImageCodec {
             if (encoded.isBlank() || encoded.length > MAX_AGENT_IMAGE_BYTES * 2) return null
             val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT).size }.getOrDefault(0)
             if (bytes <= 0 || bytes > MAX_AGENT_IMAGE_BYTES) return null
-            return AgentModelClient.ModelImage(
-                reference = trimmed,
-                mimeType = trimmed.substring("data:".length).substringBefore(";"),
-                bytes = bytes,
-                source = source
-            )
+            val raw = runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull() ?: return null
+            return AgentModelImageEncoder.screen(raw, source, trimmed.substring("data:".length).substringBefore(";"))
+                ?: return null
         }
 
         if (context != null) {
