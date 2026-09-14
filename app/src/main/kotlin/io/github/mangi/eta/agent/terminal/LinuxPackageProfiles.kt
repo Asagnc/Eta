@@ -129,7 +129,29 @@ internal object LinuxPackageProfiles {
             ),
         ),
     )
-    val ALL = listOf(PYTHON, NODE, SSH, GIT, CLI_TOOLS, BUILD_TOOLS, SECURITY_TOOLS)
+    /**
+     * CTF 与二进制分析常用的 Python 工具。装进独立 venv，避免与 Python profile 的
+     * 默认环境互相污染；只把命令行入口链接到 /usr/local/bin，不整目录链接，
+     * 否则会覆盖同名的 python 等命令。
+     */
+    val CTF_TOOLS = LinuxPackageProfile(
+        id = "ctf-tools",
+        markerName = LinuxEnvironmentPaths.CTF_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.CTF_TOOLS_REVISION,
+        dependsOn = PYTHON,
+        specs = mapOf(
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                setupScript = """
+                    UV_PYTHON_INSTALL_DIR=/opt/eta/python UV_PYTHON_BIN_DIR=/usr/local/bin uv venv --allow-existing /opt/eta/ctf
+                    UV_PYTHON_INSTALL_DIR=/opt/eta/python uv pip install --python /opt/eta/ctf/bin/python --upgrade pwntools z3-solver capstone ROPgadget pycryptodome
+                    for tool in pwn checksec cyclic asm disasm ROPgadget; do
+                        if [ -x "/opt/eta/ctf/bin/${'$'}tool" ]; then ln -sf "/opt/eta/ctf/bin/${'$'}tool" "/usr/local/bin/${'$'}tool"; fi
+                    done
+                """.trimIndent(),
+            ),
+        ),
+    )
+    val ALL = listOf(PYTHON, NODE, SSH, GIT, CLI_TOOLS, BUILD_TOOLS, SECURITY_TOOLS, CTF_TOOLS)
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {

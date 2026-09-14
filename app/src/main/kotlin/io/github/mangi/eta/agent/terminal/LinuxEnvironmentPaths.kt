@@ -16,6 +16,7 @@ internal object LinuxEnvironmentPaths {
     const val CLI_TOOLS_MARKER = ".eta-cli-tools-ready"
     const val BUILD_TOOLS_MARKER = ".eta-build-tools-ready"
     const val SECURITY_TOOLS_MARKER = ".eta-security-tools-ready"
+    const val CTF_TOOLS_MARKER = ".eta-ctf-tools-ready"
     const val TOOLSET_REVISION = 1
     const val APK_ANALYSIS_REVISION = 1
     const val PYTHON_TOOLS_REVISION = 1
@@ -26,6 +27,7 @@ internal object LinuxEnvironmentPaths {
     const val CLI_TOOLS_REVISION = 1
     const val BUILD_TOOLS_REVISION = 1
     const val SECURITY_TOOLS_REVISION = 1
+    const val CTF_TOOLS_REVISION = 1
 
     fun environmentDir(context: Context, distribution: LinuxDistribution): File =
         environmentDir(context, distribution, LinuxEnvironmentSettingsRepository.backend(context, distribution))

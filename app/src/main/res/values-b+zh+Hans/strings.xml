@@ -961,6 +961,9 @@
   <string name="linux_security_tools">网络与安全工具</string>
   <string name="linux_security_tools_summary">安装 nmap、sqlmap、tcpdump、netcat、yara 与 binwalk</string>
   <string name="linux_security_tools_ready">网络与安全工具已就绪</string>
+  <string name="linux_ctf_tools">CTF 工具链</string>
+  <string name="linux_ctf_tools_summary">在独立环境中安装 pwntools、z3、capstone、ROPgadget 与 pycryptodome；需要先安装 Python</string>
+  <string name="linux_ctf_tools_ready">CTF 工具链已就绪，可用 pwn、checksec 与 ROPgadget</string>
   <string name="linux_profile_dependency_missing">需要先安装 %1$s</string>
   <string name="linux_profile_stage_checking">检查 Linux 基础环境</string>
   <string name="linux_profile_stage_downloading">下载%1$s</string>

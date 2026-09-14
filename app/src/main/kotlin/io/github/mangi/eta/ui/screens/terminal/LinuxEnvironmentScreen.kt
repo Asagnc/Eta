@@ -64,6 +64,7 @@ private enum class InstallTarget {
     CLI_TOOLS,
     BUILD_TOOLS,
     SECURITY_TOOLS,
+    CTF_TOOLS,
 }
 
 private data class PackageProfileUi(
@@ -127,6 +128,13 @@ private val packageProfileUis = listOf(
         titleRes = R.string.linux_security_tools,
         summaryRes = R.string.linux_security_tools_summary,
         readyRes = R.string.linux_security_tools_ready,
+    ),
+    PackageProfileUi(
+        target = InstallTarget.CTF_TOOLS,
+        profile = LinuxPackageProfiles.CTF_TOOLS,
+        titleRes = R.string.linux_ctf_tools,
+        summaryRes = R.string.linux_ctf_tools_summary,
+        readyRes = R.string.linux_ctf_tools_ready,
     ),
 )
 
