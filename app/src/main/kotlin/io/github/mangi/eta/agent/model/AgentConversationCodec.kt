@@ -49,6 +49,9 @@ internal object AgentConversationCodec {
                 if (message.reasoningContent.isNotBlank()) {
                     target.put("reasoning_content", message.reasoningContent)
                 }
+                if (message.reasoningSignature.isNotBlank()) {
+                    target.put("reasoning_signature", message.reasoningSignature)
+                }
                 if (message.toolCallsJson.isNotBlank()) {
                     target.put("tool_calls", JSONTokener(message.toolCallsJson).nextValue())
                 }
@@ -74,6 +77,7 @@ internal object AgentConversationCodec {
             },
             toolCallId = message.optString("tool_call_id"),
             reasoningContent = message.optString("reasoning_content"),
+            reasoningSignature = message.optString("reasoning_signature"),
             toolCallsJson = message.optJSONArray("tool_calls")?.toString().orEmpty(),
         )
     }
@@ -132,6 +136,9 @@ internal object AgentConversationCodec {
                 }
                 if (source.has("reasoning_content") && !source.isNull("reasoning_content")) {
                     message.put("reasoning_content", source.optString("reasoning_content"))
+                }
+                if (source.has("reasoning_signature") && !source.isNull("reasoning_signature")) {
+                    message.put("reasoning_signature", source.optString("reasoning_signature"))
                 }
                 ResponsesEphemeralState.copyOutputItems(source, message)
             }
@@ -246,6 +253,7 @@ internal object AgentConversationCodec {
             contentJson = sanitizeContentJson(message.contentJson),
             toolCallId = message.toolCallId,
             reasoningContent = message.reasoningContent,
+            reasoningSignature = message.reasoningSignature,
             toolCallsJson = message.toolCallsJson,
         )
 

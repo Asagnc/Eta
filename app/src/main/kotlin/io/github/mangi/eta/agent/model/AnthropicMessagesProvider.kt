@@ -150,6 +150,21 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
 
     private fun convertAssistantContent(message: JSONObject): JSONArray {
         val content = JSONArray()
+        // 思考模式的上游要求历史里带工具调用的 assistant 消息把 thinking 块原样回传，
+        // 缺失会直接返回 400。signature 用响应阶段保存的真值；为空说明该轮没有签名
+        // （例如渠道不回传签名），此时退回占位串，占位只对不校验签名的中转有效。
+        providerMessageText(message.opt("reasoning_content"))
+            .takeIf { it.isNotBlank() && it != "null" }
+            ?.let { reasoning ->
+                val signature = message.optString("reasoning_signature")
+                    .ifBlank { THINKING_SIGNATURE_PLACEHOLDER }
+                content.put(
+                    JSONObject()
+                        .put("type", "thinking")
+                        .put("thinking", reasoning)
+                        .put("signature", signature)
+                )
+            }
         providerMessageText(message.opt("content"))
             .takeIf { it.isNotBlank() && it != "null" }
             ?.let { content.put(JSONObject().put("type", "text").put("text", it)) }
@@ -248,6 +263,10 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .put("role", "assistant")
             .put("content", content.toString())
             .put("reasoning_content", reasoning.toString())
+            .put(
+                "reasoning_signature",
+                blocks.values.firstOrNull { it.signature.isNotEmpty() }?.signature?.toString().orEmpty(),
+            )
             .put("finish_reason", finishReason.orEmpty())
             .also { message ->
                 usage?.let { message.put("usage", it.toJson()) }
@@ -332,6 +351,8 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     }
                     "thinking" -> {
                         onEvent(ProviderEvent.BlockStart(AssistantBlockKind.THINKING, index))
+                        block.optString("signature").takeIf { it.isNotEmpty() }
+                            ?.let { item.signature.append(it) }
                         appendVisibleDelta(item, (block.opt("thinking") as? String).orEmpty())
                     }
                     "tool_use" -> onEvent(
@@ -356,6 +377,10 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     "thinking_delta" -> {
                         val block = blocks.getOrPut(index) { AnthropicBlock(index = index, type = "thinking") }
                         appendVisibleDelta(block, (delta.opt("thinking") as? String).orEmpty())
+                    }
+                    "signature_delta" -> {
+                        val block = blocks.getOrPut(index) { AnthropicBlock(index = index, type = "thinking") }
+                        block.signature.append(delta.optString("signature"))
                     }
                     "input_json_delta" -> {
                         val partial = delta.optString("partial_json")
@@ -405,6 +430,12 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         }
     }
 
+    private companion object {
+        // 部分中转不校验 thinking 块的签名内容，缺失真签名时用它兜底；
+        // 官方 Anthropic 渠道会校验签名，必须依赖解析阶段保存的真值。
+        const val THINKING_SIGNATURE_PLACEHOLDER = "eta-thinking-placeholder"
+    }
+
     private data class AnthropicBlock(
         val index: Int,
         var type: String = "",
@@ -413,6 +444,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         var stopped: Boolean = false,
         val text: StringBuilder = StringBuilder(),
         val thinking: StringBuilder = StringBuilder(),
+        val signature: StringBuilder = StringBuilder(),
         val arguments: StringBuilder = StringBuilder()
     ) {
         fun content(): String =

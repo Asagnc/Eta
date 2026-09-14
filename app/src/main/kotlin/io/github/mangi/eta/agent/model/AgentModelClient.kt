@@ -287,6 +287,7 @@ internal object AgentModelClient {
         val contentJson: String = "",
         val toolCallId: String = "",
         val reasoningContent: String = "",
+        val reasoningSignature: String = "",
         val toolCallsJson: String = "",
         val contextSummary: Boolean = false,
         val compactedUserTurns: Int = 0,

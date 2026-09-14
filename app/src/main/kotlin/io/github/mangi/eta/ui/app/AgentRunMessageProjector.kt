@@ -145,7 +145,7 @@ internal class AgentRunMessageProjector(
                     content = message.content + delta,
                     isStreaming = true,
                     elapsedSeconds = elapsedSeconds,
-                    collapsed = false,
+                    collapsed = true,
                 )
             } else {
                 message
@@ -158,7 +158,7 @@ internal class AgentRunMessageProjector(
             content = delta,
             isStreaming = true,
             elapsedSeconds = elapsedSeconds,
-            collapsed = false,
+            collapsed = true,
         )
     }
 

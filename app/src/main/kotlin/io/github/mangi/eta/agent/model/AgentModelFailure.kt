@@ -24,6 +24,12 @@ internal class AgentModelFailure(
             "api_error", "internal_error", "provider_unavailable", "service_unavailable",
         )
 
+        private fun serverDetail(error: JSONObject?): String {
+            val detail = error?.optString("message").orEmpty().trim()
+            if (detail.isBlank()) return ""
+            return "｜服务端返回：" + detail.take(400)
+        }
+
         fun http(status: Int, body: String): AgentModelFailure {
             val error = try {
                 JSONObject(body).optJSONObject("error")
@@ -34,18 +40,20 @@ internal class AgentModelFailure(
                 "CONTEXT_OVERFLOW", false, "模型上下文超过容量限制。",
             )
             val permanent = isPermanent(error, body)
+            val summary = if (permanent) "模型接口额度或计费受限（HTTP $status），请检查服务商账户。"
+            else when (status) {
+                400 -> "模型请求参数无效（HTTP 400），请检查模型配置。"
+                401 -> "模型接口认证失败（HTTP 401），请检查 API Key。"
+                403 -> "模型接口拒绝访问（HTTP 403），请检查账户与模型权限。"
+                404 -> "模型接口或模型不存在（HTTP 404），请检查接口地址与模型名称。"
+                429 -> "模型接口暂时限流（HTTP 429）。"
+                else -> "模型接口返回 HTTP $status"
+            }
             return AgentModelFailure(
                 code = "HTTP_$status",
                 retryable = status in transientStatus && !permanent,
-                message = if (permanent) "模型接口额度或计费受限（HTTP $status），请检查服务商账户。"
-                else when (status) {
-                    400 -> "模型请求参数无效（HTTP 400），请检查模型配置。"
-                    401 -> "模型接口认证失败（HTTP 401），请检查 API Key。"
-                    403 -> "模型接口拒绝访问（HTTP 403），请检查账户与模型权限。"
-                    404 -> "模型接口或模型不存在（HTTP 404），请检查接口地址与模型名称。"
-                    429 -> "模型接口暂时限流（HTTP 429）。"
-                    else -> "模型接口返回 HTTP $status"
-                },
+                // 服务端原文常常直接点明请求哪里不合法，只保留概括文案会让排查没有线索。
+                message = summary + serverDetail(error),
             )
         }
 

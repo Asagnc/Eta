@@ -108,10 +108,15 @@ internal object RootAccess {
         }.also { probeJob = it }
     }
 
+    /**
+     * 只判断 su 文件是否存在：部分 root 方案（例如基于 KernelPatch 的实现）会给 su 设置
+     * 自定义 SELinux 类型，access(X_OK) 失败，用 canExecute() 会把可用环境误判成没有 root。
+     * su 是否真的可用，交给后面实际执行 `id -u` 的结果决定。
+     */
     private fun suExists(): Boolean = System.getenv("PATH").orEmpty()
         .split(File.pathSeparatorChar)
         .filter(String::isNotBlank)
-        .any { path -> File(path, "su").let { it.isFile && it.canExecute() } }
+        .any { path -> File(path, "su").isFile }
 }
 
 internal fun shouldRequestRoot(explicit: Boolean, attempted: Boolean, wasGranted: Boolean): Boolean =

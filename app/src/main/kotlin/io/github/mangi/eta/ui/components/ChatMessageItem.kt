@@ -2141,7 +2141,8 @@ private fun ThinkingRow(
     val completedMarkdownState = (streamingState ?: retainedStreamingState)
         ?.snapshot?.completedStateFor(message.content)
     LaunchedEffect(message.isStreaming) {
-        if (message.isStreaming && !manuallyExpanded) expanded = true
+        // 流式期间不主动展开；是否展开完全由用户点击决定
+        if (message.isStreaming && manuallyExpanded) expanded = true
     }
 
     // Markdown 状态在行级提前创建：行进入组合（工作过程展开或滚动到可视区）时就开始
