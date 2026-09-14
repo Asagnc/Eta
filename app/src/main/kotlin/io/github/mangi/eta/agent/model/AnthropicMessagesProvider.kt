@@ -430,11 +430,9 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         }
     }
 
-    private companion object {
-        // 部分中转不校验 thinking 块的签名内容，缺失真签名时用它兜底；
-        // 官方 Anthropic 渠道会校验签名，必须依赖解析阶段保存的真值。
-        const val THINKING_SIGNATURE_PLACEHOLDER = "eta-thinking-placeholder"
-    }
+    // 部分中转不校验 thinking 块的签名内容，缺失真签名时用它兜底；
+    // 官方 Anthropic 渠道会校验签名，必须依赖解析阶段保存的真值。
+    private const val THINKING_SIGNATURE_PLACEHOLDER = "eta-thinking-placeholder"
 
     private data class AnthropicBlock(
         val index: Int,
