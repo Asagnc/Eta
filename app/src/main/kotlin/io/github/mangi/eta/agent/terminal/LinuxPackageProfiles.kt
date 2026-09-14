@@ -211,7 +211,7 @@ internal class LinuxPackageProfileInstaller(
         val activateCommand = buildString {
             append("set -e\n")
             spec.setupScript?.let { script -> append(script).append('\n') }
-            if (profile == LinuxPackageProfiles.KIMI) append("kimi --version >/dev/null\nkimi web --help >/dev/null\n")
+            if (profile == LinuxPackageProfiles.KIMI) append("kimi --version >/dev/null\n")
             append("cat > /").append(profile.markerName).append(" <<'ETA_PROFILE_EOF'\n")
             append("profile=").append(profile.revision).append('\n')
             append("ETA_PROFILE_EOF\n")
