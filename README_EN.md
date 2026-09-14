@@ -69,9 +69,9 @@ You can use Eta's terminal yourself or let the agent use it. Each session retain
 - **Development tools:** install Python, Node.js, SSH, APK analysis tools, and Kimi Code as needed.
 - **File management:** import and export files through the private workspace, share accessible Android directories under `/workspace/mounts/` in Linux, and browse Linux files from the app.
 
-Eta itself can read projects, edit code, run commands, and verify results. For longer coding sessions on a phone, [Kimi Code](https://github.com/MoonshotAI/kimi-code)'s **Kimi Web** offers a web UI well suited to mobile. Continue a conversation, inspect code changes, and review execution results in your browser, with a full coding-agent workflow for vibe coding wherever you are.
+Eta itself can read projects, edit code, run commands, and verify results.
 
-After installing Linux, Node.js, and Kimi Code in Eta, launch Kimi Web from the home screen or run `kimi` in the terminal. Kimi has its own model configuration and sessions, so it requires a separate sign-in or setup. You can return to a running instance after leaving the page, or stop it from Eta.
+After installing Linux, Node.js, and Kimi Code in Eta, run `kimi` in the terminal. Kimi has its own model configuration and sessions, so it requires a separate sign-in or setup.
 
 ## Models and BYOK
 

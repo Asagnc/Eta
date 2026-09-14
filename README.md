@@ -73,9 +73,9 @@ Eta 的终端可以由 Agent 调用，也可以由你直接操作。多个会话
 - **开发工具**：Python、Node.js、SSH、APK 分析与 Kimi Code 按需安装。
 - **文件管理**：私有工作区支持导入、导出；已授权的 Android 目录可共享到 Linux 的 `/workspace/mounts/`，也可在 App 内浏览 Linux 文件。
 
-Eta 本体可以读取项目、修改代码、运行命令并验证结果。如果想在手机上持续进行编程工作，[Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 **Kimi Web** 提供了更适合移动端的 Web UI，可以在浏览器中持续对话、查看代码修改与执行结果，享受完整的 Coding Agent 工作体验，随时随地 Vibe Coding。
+Eta 本体可以读取项目、修改代码、运行命令并验证结果。
 
-在 Eta 中安装 Linux、Node.js 与 Kimi Code 后，即可从首页一键启动 Kimi Web，也可以在终端运行 `kimi`。Kimi 使用独立的模型配置与会话，需单独完成登录或配置；离开页面后可返回继续使用，也可从 Eta 主动停止。
+在 Eta 中安装 Linux、Node.js 与 Kimi Code 后，可以在终端运行 `kimi`。Kimi 使用独立的模型配置与会话，需单独完成登录或配置。
 
 ## 模型与 BYOK
 
