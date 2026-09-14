@@ -119,7 +119,6 @@ fun AgentAppRoot(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 RootAccess.refresh(context)
-                appViewModel.refreshKimiWeb()
                 agentState.refreshPermissionHealth()
                 agentState.refreshRuntimeResults()
             }
@@ -222,26 +221,6 @@ fun AgentAppRoot(
             onSearchConversations = { query -> agentState.updateSearchQuery(query) },
             onNewConversation = { createConversation() },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
-            onLaunchKimiWeb = {
-                requestExecutionNotifications()
-                if (appViewModel.kimiWebState.phase != KimiWebPhase.NOT_INSTALLED) {
-                    appViewModel.launchKimiWeb { result ->
-                        if (result is KimiWebLaunchResult.Failed) {
-                            Toast.makeText(
-                                context,
-                                result.message(context),
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    }
-                } else {
-                    pushRoute(AppRoute.LinuxEnvironment)
-                }
-            },
-            kimiWebLabel = appViewModel.kimiWebState.actionLabel(context),
-            canStopKimiWeb = appViewModel.kimiWebState.canStop,
-            onStopKimiWeb = appViewModel::stopKimiWeb,
-            onRefreshKimiWeb = appViewModel::refreshKimiWeb,
             onOpenBrowser = { pushRoute(AppRoute.Browser) },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationRename = { conversation ->
