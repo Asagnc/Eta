@@ -44,7 +44,7 @@ More screenshots: chat, system tools, and settings
 - **Direct system API calls:** use Android APIs and system intents to set alarms, control media, adjust volume, and read device status without navigating through app screens.
 - **GUI Agent:** combine the accessibility UI tree, element targeting, and screenshots taken as needed to tap, scroll, and type. An overlay shows execution status, and you can stop or take over.
 - **Built-in browser:** load JavaScript pages in a WebView, extract readable content, interact with the DOM, and capture screenshots. You can open the same browser session to take control.
-- **Terminal and files:** use Android `user`/`root` shells, Alpine or Debian Linux, file operations, and scripts, with support for persistent sessions, asynchronous commands, and daemon tasks.
+- **Terminal and files:** use Android `user`/`root` shells, Debian Linux, file operations, and scripts, with support for persistent sessions, asynchronous commands, and daemon tasks.
 
 A task can combine these tools: read web sources and then organize files with a script, or find order details in notifications and open the relevant app to check their status.
 
@@ -65,7 +65,7 @@ The runtime also manages streaming events, steering, cancellation, and increment
 
 You can use Eta's terminal yourself or let the agent use it. Each session retains its working directory and environment. The compact view groups input and output by command; the PTY console supports TUIs, keyboard shortcuts, and ANSI rendering. Asynchronous commands and daemon tasks have logs and explicit stop controls.
 
-- **Linux environments:** choose Alpine or Debian. PRoot works without root; rooted devices can also use chroot. The backends have separate installations, with no automatic data migration. PRoot's simulated root identity does not grant Android system privileges.
+- **Linux environment:** Debian. PRoot works without root; rooted devices can also use chroot. The backends have separate installations, with no automatic data migration. PRoot's simulated root identity does not grant Android system privileges.
 - **Development tools:** install Python, Node.js, SSH, and APK analysis tools as needed.
 - **File management:** import and export files through the private workspace, share accessible Android directories under `/workspace/mounts/` in Linux, and browse Linux files from the app.
 

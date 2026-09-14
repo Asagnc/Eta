@@ -107,7 +107,7 @@ OpenAI、Anthropic、Claude、阿里云百炼、Qwen、DeepSeek、Kimi、Xiaomi 
 
 ## 可选语言运行时
 
-Eta 不把 uv 或 Node.js 打包进 APK。用户主动安装对应 profile 时，Eta 下载当前固定的最新正式版制品；Debian 使用 Node.js 官方 Linux glibc 发行包，Alpine 使用其稳定仓库中的 `nodejs-current`，uv 按所选发行版下载官方 glibc 或 musl 制品。
+Eta 不把 uv 或 Node.js 打包进 APK。用户主动安装对应 profile 时，Eta 下载当前固定的最新正式版制品；使用 Node.js 官方 Linux glibc 发行包，uv 下载官方 glibc 制品。
 
 | 工具 | 来源 | 许可证 |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ Eta 不把 uv 或 Node.js 打包进 APK。用户主动安装对应 profile 时�
 
 ## 可选 APK 分析工具
 
-Eta 不把下列工具打包进 APK。用户在 Linux 工具环境页面主动安装“APK 分析”时，Eta 从固定官方 Release 下载并校验制品；工具保存在用户当前选择的 Alpine 或 Debian 环境中，适用各自许可证：
+Eta 不把下列工具打包进 APK。用户在 Linux 工具环境页面主动安装“APK 分析”时，Eta 从固定官方 Release 下载并校验制品；工具保存在用户当前的 Linux 环境中，适用各自许可证：
 
 | 工具 | 来源 | 许可证 |
 | --- | --- | --- |

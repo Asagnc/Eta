@@ -99,7 +99,6 @@ internal fun LinuxEnvironmentConfiguration(
                     text = it.displayName(),
                     summary = stringResource(
                         when (it) {
-                            LinuxDistribution.ALPINE -> R.string.linux_distribution_alpine_summary
                             LinuxDistribution.DEBIAN -> R.string.linux_distribution_debian_summary
                         },
                     ),
@@ -146,7 +145,6 @@ internal fun LinuxEnvironmentConfiguration(
 @Composable
 internal fun LinuxDistribution.displayName(): String = stringResource(
     when (this) {
-        LinuxDistribution.ALPINE -> R.string.linux_distribution_alpine
         LinuxDistribution.DEBIAN -> R.string.linux_distribution_debian
     },
 )

@@ -583,6 +583,5 @@ internal class UserTerminalStore(
 internal val TerminalEnvironment.displayName: String
     get() = when (this) {
         TerminalEnvironment.ANDROID -> "Android"
-        TerminalEnvironment.ALPINE -> "Alpine"
         TerminalEnvironment.DEBIAN -> "Debian"
     }

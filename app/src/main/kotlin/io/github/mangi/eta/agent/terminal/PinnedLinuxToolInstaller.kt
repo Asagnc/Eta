@@ -178,41 +178,28 @@ internal object PinnedLinuxToolArtifacts {
         distribution: LinuxDistribution,
         abis: List<String>,
     ): VerifiedArtifact? = when (tool) {
-        ManagedLinuxTool.UV -> uvArtifact(distribution, abis)
+        ManagedLinuxTool.UV -> uvArtifact(abis)
         ManagedLinuxTool.NODE -> nodeArtifact(distribution, abis)
     }
 
-    private fun uvArtifact(
-        distribution: LinuxDistribution,
-        abis: List<String>,
-    ): VerifiedArtifact? {
-        val libc = if (distribution == LinuxDistribution.ALPINE) "musl" else "gnu"
-        return abis.firstNotNullOfOrNull { abi ->
+    private fun uvArtifact(abis: List<String>): VerifiedArtifact? =
+        abis.firstNotNullOfOrNull { abi ->
             when (abi) {
                 "arm64-v8a" -> uvArtifact(
                     architecture = "aarch64",
-                    libc = libc,
-                    sha256 = if (libc == "musl") {
-                        "6dcf60e3c085de88ace3671b949ca99f0652be561ff5627f0d21394140f041db"
-                    } else {
-                        "66393193038dd7eb108abd7a218d9cec04ac70ab98242b0720fa94de19223b7c"
-                    },
-                    sizeBytes = if (libc == "musl") 20_492_921L else 18_594_128L,
+                    libc = "gnu",
+                    sha256 = "66393193038dd7eb108abd7a218d9cec04ac70ab98242b0720fa94de19223b7c",
+                    sizeBytes = 18_594_128L,
                 )
                 "x86_64" -> uvArtifact(
                     architecture = "x86_64",
-                    libc = libc,
-                    sha256 = if (libc == "musl") {
-                        "3d64d44ed67da7908dc7f5c4d64ebb44bad326fa17f8a0a52fc9a7793017bbe1"
-                    } else {
-                        "788f18abea7c5f55d6216e4f5613fd89d4d59b631efeec117b2b07fe72f1da21"
-                    },
-                    sizeBytes = if (libc == "musl") 22_282_878L else 19_419_908L,
+                    libc = "gnu",
+                    sha256 = "788f18abea7c5f55d6216e4f5613fd89d4d59b631efeec117b2b07fe72f1da21",
+                    sizeBytes = 19_419_908L,
                 )
                 else -> null
             }
         }
-    }
 
     private fun uvArtifact(
         architecture: String,

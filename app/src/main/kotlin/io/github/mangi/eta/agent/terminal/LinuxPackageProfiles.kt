@@ -50,15 +50,9 @@ internal data class LinuxPackageProfile(
 internal object LinuxPackageProfiles {
     val PYTHON = LinuxPackageProfile(
         id = "python",
-        markerName = AlpineEnvironmentPaths.PYTHON_TOOLS_MARKER,
-        revision = AlpineEnvironmentPaths.PYTHON_TOOLS_REVISION,
+        markerName = LinuxEnvironmentPaths.PYTHON_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.PYTHON_TOOLS_REVISION,
         specs = mapOf(
-            LinuxDistribution.ALPINE to LinuxPackageSpec(
-                managedTool = ManagedLinuxTool.UV,
-                setupScript = """
-                    UV_PYTHON_INSTALL_DIR=/opt/eta/python UV_PYTHON_BIN_DIR=/usr/local/bin UV_PYTHON_INSTALL_BIN=1 uv python install --default --force
-                """.trimIndent(),
-            ),
             LinuxDistribution.DEBIAN to LinuxPackageSpec(
                 managedTool = ManagedLinuxTool.UV,
                 setupScript = """
@@ -69,12 +63,9 @@ internal object LinuxPackageProfiles {
     )
     val NODE = LinuxPackageProfile(
         id = "node",
-        markerName = AlpineEnvironmentPaths.NODE_TOOLS_MARKER,
-        revision = AlpineEnvironmentPaths.NODE_TOOLS_REVISION,
+        markerName = LinuxEnvironmentPaths.NODE_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.NODE_TOOLS_REVISION,
         specs = mapOf(
-            LinuxDistribution.ALPINE to LinuxPackageSpec(
-                packages = listOf("nodejs-current", "npm"),
-            ),
             LinuxDistribution.DEBIAN to LinuxPackageSpec(
                 // Node 官方 arm64 二进制链接 libatomic.so.1，归档安装不含系统依赖，需补装。
                 packages = listOf("libatomic1"),
@@ -84,13 +75,9 @@ internal object LinuxPackageProfiles {
     )
     val SSH = LinuxPackageProfile(
         id = "ssh",
-        markerName = AlpineEnvironmentPaths.SSH_TOOLS_MARKER,
-        revision = AlpineEnvironmentPaths.SSH_TOOLS_REVISION,
+        markerName = LinuxEnvironmentPaths.SSH_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.SSH_TOOLS_REVISION,
         specs = mapOf(
-            LinuxDistribution.ALPINE to LinuxPackageSpec(
-                packages = listOf("openssh"),
-                setupScript = "ssh-keygen -A >/dev/null 2>&1 || true",
-            ),
             LinuxDistribution.DEBIAN to LinuxPackageSpec(
                 packages = listOf("openssh-client", "openssh-server"),
                 setupScript = "ssh-keygen -A >/dev/null 2>&1 || true",
@@ -98,7 +85,40 @@ internal object LinuxPackageProfiles {
         ),
     )
 
-    val ALL = listOf(PYTHON, NODE, SSH)
+    /** 版本控制与证书；拉取、提交代码时使用。 */
+    val GIT = LinuxPackageProfile(
+        id = "git",
+        markerName = LinuxEnvironmentPaths.GIT_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.GIT_TOOLS_REVISION,
+        specs = mapOf(
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                packages = listOf("git", "ca-certificates"),
+            ),
+        ),
+    )
+    /** 搜索与文本处理命令：ripgrep、fd、fzf、jq。 */
+    val CLI_TOOLS = LinuxPackageProfile(
+        id = "cli-tools",
+        markerName = LinuxEnvironmentPaths.CLI_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.CLI_TOOLS_REVISION,
+        specs = mapOf(
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                packages = listOf("ripgrep", "fd-find", "fzf", "jq"),
+            ),
+        ),
+    )
+    /** 本地编译源码所需的最小工具链。 */
+    val BUILD_TOOLS = LinuxPackageProfile(
+        id = "build-tools",
+        markerName = LinuxEnvironmentPaths.BUILD_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.BUILD_TOOLS_REVISION,
+        specs = mapOf(
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                packages = listOf("build-essential", "cmake", "pkg-config"),
+            ),
+        ),
+    )
+    val ALL = listOf(PYTHON, NODE, SSH, GIT, CLI_TOOLS, BUILD_TOOLS)
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {
@@ -137,7 +157,7 @@ internal class LinuxPackageProfileInstaller(
         if (isReady()) return@withContext PackageProfileInstallResult.AlreadyReady
         onProgress(PackageProfileInstallProgress(PackageProfileInstallStage.CHECKING))
         if (!LinuxEnvironmentPaths.rootfsReady(rootfs.absolutePath) ||
-            !File(rootfs, AlpineEnvironmentPaths.COMMON_TOOLS_MARKER).isFile
+            !File(rootfs, LinuxEnvironmentPaths.COMMON_TOOLS_MARKER).isFile
         ) {
             return@withContext PackageProfileInstallResult.EnvironmentNotReady
         }
@@ -170,7 +190,6 @@ internal class LinuxPackageProfileInstaller(
         }
 
         val packageHelper = when (distribution) {
-            LinuxDistribution.ALPINE -> "/usr/local/bin/eta-apk"
             LinuxDistribution.DEBIAN -> "/usr/local/bin/eta-apt"
         }
         onProgress(PackageProfileInstallProgress(PackageProfileInstallStage.INSTALLING))

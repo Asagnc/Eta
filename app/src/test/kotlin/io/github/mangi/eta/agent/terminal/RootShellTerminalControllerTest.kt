@@ -185,7 +185,7 @@ class RootShellTerminalControllerTest {
         val rootfs = temporaryFolder.newFolder("ready-rootfs")
         File(rootfs, "bin").mkdirs()
         File(rootfs, "bin/busybox").writeText("busybox")
-        File(rootfs, AlpineEnvironmentPaths.READY_MARKER).writeText("version=3.24.1\n")
+        File(rootfs, LinuxEnvironmentPaths.READY_MARKER).writeText("version=3.24.1\n")
         val readyController = RootShellTerminalController(
             logger = NoopLogger,
             linuxRootfsPath = rootfs.absolutePath,

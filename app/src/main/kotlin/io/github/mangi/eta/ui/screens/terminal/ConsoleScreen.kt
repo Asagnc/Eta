@@ -217,7 +217,7 @@ private fun ConsoleStatusBar(
             onClick = { onSwitchEnvironment(TerminalEnvironment.ANDROID) },
         )
         EnvironmentTab(
-            label = if (linuxEnvironment == TerminalEnvironment.ALPINE) "Alpine" else "Debian",
+            label = "Debian",
             selected = environment == linuxEnvironment,
             onClick = { onSwitchEnvironment(linuxEnvironment) },
         )

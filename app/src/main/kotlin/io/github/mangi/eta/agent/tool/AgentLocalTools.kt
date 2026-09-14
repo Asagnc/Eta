@@ -31,8 +31,8 @@ import io.github.mangi.eta.agent.skill.GitHubSkillInspection
 import io.github.mangi.eta.agent.skill.GitHubSkillRepository
 import io.github.mangi.eta.agent.skill.GitHubSkillSourceException
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
-import io.github.mangi.eta.agent.terminal.AlpineEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
+import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
 import io.github.mangi.eta.agent.terminal.RootShellTerminalController
@@ -106,7 +106,7 @@ internal class AgentLocalTools(
     private val terminalController = RootShellTerminalController(
         logger = logger,
         rootAvailable = rootAvailable,
-        linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
+        linuxRootfsPath = LinuxEnvironmentPaths.rootfsDir(context, LinuxDistribution.DEBIAN).absolutePath,
         linuxRootfsPathProvider = { environment ->
             environment.linuxDistribution?.let { distribution ->
                 LinuxEnvironmentPaths.rootfsDir(context, distribution).absolutePath
@@ -115,7 +115,7 @@ internal class AgentLocalTools(
         detachedSupervisor = DetachedTaskSupervisor(
             logger = logger,
             recordsFile = DetachedTaskSupervisor.defaultRecordsFile(context),
-            linuxRootfsPath = AlpineEnvironmentPaths.rootfsDir(context).absolutePath,
+            linuxRootfsPath = LinuxEnvironmentPaths.rootfsDir(context, LinuxDistribution.DEBIAN).absolutePath,
             linuxRootfsPathProvider = { environment ->
                 environment.linuxDistribution?.let { distribution ->
                     LinuxEnvironmentPaths.rootfsDir(context, distribution).absolutePath

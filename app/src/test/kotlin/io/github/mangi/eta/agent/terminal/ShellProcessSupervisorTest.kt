@@ -41,7 +41,7 @@ class ShellProcessSupervisorTest {
         val supervisor = ShellProcessSupervisor()
 
         val payload = supervisor.buildLinuxPayload(
-            rootfsPath = "/data/user/0/io.github.mangi.eta/files/terminal/alpine/rootfs",
+            rootfsPath = "/data/user/0/io.github.mangi.eta/files/terminal/debian/rootfs",
             command = "printf '%s' \"hello\"",
         )
 
@@ -52,9 +52,9 @@ class ShellProcessSupervisorTest {
         assertTrue(payload.contains("eta_mount_required /data/local/tmp/eta"))
         assertTrue(payload.contains("eta_rootfs/workspace"))
         assertTrue(payload.contains("chroot"))
-        assertTrue(payload.contains(AlpineEnvironmentPaths.READY_MARKER))
+        assertTrue(payload.contains(LinuxEnvironmentPaths.READY_MARKER))
         assertTrue(payload.contains("/bin/busybox env -i"))
-        // Alpine 的 /bin/sh 是绝对符号链接，Android 侧就绪检查必须放行符号链接。
+        // rootfs 里的 /bin/sh 是绝对符号链接，Android 侧就绪检查必须放行符号链接。
         assertTrue(payload.contains("[ -h \"\$eta_rootfs/bin/sh\" ]"))
 
         val debianPayload = supervisor.buildLinuxPayload(

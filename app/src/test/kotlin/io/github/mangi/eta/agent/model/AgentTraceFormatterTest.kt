@@ -125,7 +125,7 @@ class AgentTraceFormatterTest {
 
     @Test
     fun terminalSummaryPreservesExplicitEnvironmentNames() {
-        listOf("android" to "Android", "alpine" to "Alpine", "debian" to "Debian")
+        listOf("android" to "Android", "debian" to "Debian")
             .forEach { (environment, label) ->
                 val summary = formatter.summarizeArguments(
                     AgentModelClient.ToolCall(

@@ -18,7 +18,7 @@ internal class RootShellTerminalController(
     private val detachedSupervisor: DetachedTaskSupervisor? = null,
     private val linuxSharedMountsProvider: () -> List<SharedFolderMount> = { emptyList() },
     private val selectedLinuxEnvironmentProvider: () -> TerminalEnvironment = {
-        TerminalEnvironment.ALPINE
+        TerminalEnvironment.DEBIAN
     },
     private val rootAvailable: () -> Boolean = { TerminalRuntime.rootAvailable },
 ) : AutoCloseable {
@@ -871,9 +871,8 @@ internal class RootShellTerminalController(
         when (environment.ifBlank { TerminalEnvironment.ANDROID.wireName }.lowercase()) {
             TerminalEnvironment.ANDROID.wireName -> TerminalEnvironment.ANDROID
             SELECTED_LINUX_WIRE_NAME -> selectedLinuxEnvironmentProvider()
-                .takeIf { it == TerminalEnvironment.ALPINE || it == TerminalEnvironment.DEBIAN }
-                ?: TerminalEnvironment.ALPINE
-            TerminalEnvironment.ALPINE.wireName -> TerminalEnvironment.ALPINE
+                .takeIf { it == TerminalEnvironment.DEBIAN }
+                ?: TerminalEnvironment.DEBIAN
             TerminalEnvironment.DEBIAN.wireName -> TerminalEnvironment.DEBIAN
             else -> throw IllegalArgumentException("environment 仅支持 android/linux")
         }

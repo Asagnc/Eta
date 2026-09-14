@@ -38,16 +38,15 @@ internal sealed interface ApkAnalysisInstallResult {
 }
 
 internal fun linuxApkAnalysisReady(rootfs: File): Boolean {
-    val marker = File(rootfs, AlpineEnvironmentPaths.APK_ANALYSIS_MARKER)
+    val marker = File(rootfs, LinuxEnvironmentPaths.APK_ANALYSIS_MARKER)
     if (!marker.isFile) return false
     return marker.useLines { lines ->
-        lines.any { line -> line.trim() == "profile=${AlpineEnvironmentPaths.APK_ANALYSIS_REVISION}" }
+        lines.any { line -> line.trim() == "profile=${LinuxEnvironmentPaths.APK_ANALYSIS_REVISION}" }
     }
 }
 
 internal fun linuxApkJavaInstallCommand(distribution: LinuxDistribution): String =
     when (distribution) {
-        LinuxDistribution.ALPINE -> "/usr/local/bin/eta-apk install openjdk25-jdk"
         LinuxDistribution.DEBIAN -> "/usr/local/bin/eta-apt install openjdk-25-jdk-headless"
     }
 
@@ -78,7 +77,7 @@ internal class LinuxApkAnalysisInstaller(
         if (isReady()) return@withContext ApkAnalysisInstallResult.AlreadyReady
         onProgress(ApkAnalysisInstallProgress(ApkAnalysisInstallStage.CHECKING))
         if (!LinuxEnvironmentPaths.rootfsReady(rootfs.absolutePath) ||
-            !File(rootfs, AlpineEnvironmentPaths.COMMON_TOOLS_MARKER).isFile
+            !File(rootfs, LinuxEnvironmentPaths.COMMON_TOOLS_MARKER).isFile
         ) {
             return@withContext ApkAnalysisInstallResult.EnvironmentNotReady
         }
@@ -93,7 +92,7 @@ internal class LinuxApkAnalysisInstaller(
         val downloadedArtifacts = linkedMapOf<VerifiedArtifact, File>()
         for (artifact in ARTIFACTS) {
             coroutineContext.ensureActive()
-            val target = File(AlpineEnvironmentPaths.artifactDir(context), artifact.fileName)
+            val target = File(LinuxEnvironmentPaths.artifactDir(context), artifact.fileName)
             onProgress(
                 ApkAnalysisInstallProgress(
                     stage = ApkAnalysisInstallStage.DOWNLOADING,
@@ -119,7 +118,7 @@ internal class LinuxApkAnalysisInstaller(
 
         coroutineContext.ensureActive()
         onProgress(ApkAnalysisInstallProgress(ApkAnalysisInstallStage.PREPARING))
-        val staging = AlpineEnvironmentPaths.profileStagingDir(context, PROFILE_ID)
+        val staging = LinuxEnvironmentPaths.profileStagingDir(context, PROFILE_ID)
         if (!prepareStaging(staging, downloadedArtifacts)) {
             return@withContext ApkAnalysisInstallResult.Failed(ApkAnalysisInstallStage.PREPARING)
         }
@@ -275,7 +274,7 @@ internal class LinuxApkAnalysisInstaller(
               eta_restore_previous
               exit 76
             }
-            "${'$'}eta_busybox" rm -f ${shellQuote(File(rootfs, AlpineEnvironmentPaths.APK_ANALYSIS_MARKER).absolutePath)}
+            "${'$'}eta_busybox" rm -f ${shellQuote(File(rootfs, LinuxEnvironmentPaths.APK_ANALYSIS_MARKER).absolutePath)}
         """.trimIndent()
         val result = InstallerShellRunner.run(
             command = command,
@@ -291,19 +290,19 @@ internal class LinuxApkAnalysisInstaller(
 
     private suspend fun verifyAndMark(rootfs: File): Boolean {
         val command = """
-            rm -f /${AlpineEnvironmentPaths.APK_ANALYSIS_MARKER}
+            rm -f /${LinuxEnvironmentPaths.APK_ANALYSIS_MARKER}
             java -version >/dev/null 2>&1 || exit 81
             jadx --version >/dev/null 2>&1 || exit 82
             apktool --version >/dev/null 2>&1 || exit 83
             smali --version >/dev/null 2>&1 || exit 84
             baksmali --version >/dev/null 2>&1 || exit 85
-            cat > /${AlpineEnvironmentPaths.APK_ANALYSIS_MARKER} <<'ETA_APK_ANALYSIS_EOF'
-            profile=${AlpineEnvironmentPaths.APK_ANALYSIS_REVISION}
+            cat > /${LinuxEnvironmentPaths.APK_ANALYSIS_MARKER} <<'ETA_APK_ANALYSIS_EOF'
+            profile=${LinuxEnvironmentPaths.APK_ANALYSIS_REVISION}
             jadx=$JADX_VERSION
             apktool=$APKTOOL_VERSION
             smali=$SMALI_VERSION
             ETA_APK_ANALYSIS_EOF
-            chmod 0644 /${AlpineEnvironmentPaths.APK_ANALYSIS_MARKER} || exit 86
+            chmod 0644 /${LinuxEnvironmentPaths.APK_ANALYSIS_MARKER} || exit 86
         """.trimIndent()
         val result = InstallerShellRunner.run(
             command = command,
@@ -325,7 +324,7 @@ internal class LinuxApkAnalysisInstaller(
         val previous = File(profileRoot, "previous")
         if (LinuxEnvironmentPaths.backendOf(rootfs.absolutePath) == LinuxExecutionBackend.PROOT) {
             current.deleteRecursively()
-            File(rootfs, AlpineEnvironmentPaths.APK_ANALYSIS_MARKER).delete()
+            File(rootfs, LinuxEnvironmentPaths.APK_ANALYSIS_MARKER).delete()
             if (previous.exists()) previous.renameTo(current)
             return
         }
@@ -333,7 +332,7 @@ internal class LinuxApkAnalysisInstaller(
             ${AndroidBusyBox.discoveryScript()}
             [ -n "${'$'}eta_busybox" ] || exit 127
             "${'$'}eta_busybox" rm -rf ${shellQuote(current.absolutePath)}
-            "${'$'}eta_busybox" rm -f ${shellQuote(File(rootfs, AlpineEnvironmentPaths.APK_ANALYSIS_MARKER).absolutePath)}
+            "${'$'}eta_busybox" rm -f ${shellQuote(File(rootfs, LinuxEnvironmentPaths.APK_ANALYSIS_MARKER).absolutePath)}
             if [ -d ${shellQuote(previous.absolutePath)} ]; then
               "${'$'}eta_busybox" mv ${shellQuote(previous.absolutePath)} ${shellQuote(current.absolutePath)}
             fi
@@ -374,7 +373,7 @@ internal class LinuxApkAnalysisInstaller(
                 val relative = if (name == "jadx") "jadx/bin/jadx" else "bin/$name"
                 java.nio.file.Files.createSymbolicLink(path, java.nio.file.Path.of("../../../opt/eta/apk-analysis/current/$relative"))
             }
-            File(rootfs, AlpineEnvironmentPaths.APK_ANALYSIS_MARKER).delete()
+            File(rootfs, LinuxEnvironmentPaths.APK_ANALYSIS_MARKER).delete()
             return true
         } catch (_: java.io.IOException) {
             current.deleteRecursively()

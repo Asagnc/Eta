@@ -503,7 +503,6 @@
   <string name="page_ready_7cca0c">} 已就緒</string>
   <string name="page_context_unknown_b6ae7b">內容長度未知</string>
   <string name="page_the_context_length_must_be_a_positive_integer_06ca7a">內容長度上限必須是正整數</string>
-  <string name="page_download_the_alpine_base_environment_8433ea">下載 Alpine 基礎環境</string>
   <string name="page_download_and_install_f4df99">下載並安裝</string>
   <string name="page_not_supported_ef8274">不支援</string>
   <string name="page_import_from_zip_41cc5e">從 ZIP 導入</string>
@@ -912,8 +911,6 @@
   <string name="linux_installing">安裝中</string>
   <string name="linux_ready">已就緒</string>
   <string name="linux_distribution_title">Linux 發行版</string>
-  <string name="linux_distribution_alpine">Alpine</string>
-  <string name="linux_distribution_alpine_summary">輕量的 musl 環境</string>
   <string name="linux_distribution_debian">Debian</string>
   <string name="linux_distribution_debian_summary">軟體相容性更好的 glibc 環境</string>
   <string name="linux_install_base">安裝基礎環境</string>
@@ -940,6 +937,15 @@
   <string name="linux_ssh_tools">SSH 遠端連線</string>
   <string name="linux_ssh_tools_summary">安裝完整 OpenSSH（sshd、ssh-keygen、ssh-agent 與 sftp-server）；基礎環境已含 ssh/scp/sftp 用戶端</string>
   <string name="linux_ssh_tools_ready">sshd、ssh-keygen 與 ssh-agent 已就緒</string>
+  <string name="linux_git_tools">Git</string>
+  <string name="linux_git_tools_summary">安裝 Git 與根憑證；複製、提交程式碼時使用</string>
+  <string name="linux_git_tools_ready">Git 已就緒</string>
+  <string name="linux_cli_tools">命令列工具</string>
+  <string name="linux_cli_tools_summary">安裝 ripgrep、fd、fzf 與 jq；用於快速搜尋與 JSON 處理</string>
+  <string name="linux_cli_tools_ready">命令列工具已就緒</string>
+  <string name="linux_build_tools">編譯工具</string>
+  <string name="linux_build_tools_summary">安裝 build-essential、cmake 與 pkg-config；本機編譯原始碼時使用</string>
+  <string name="linux_build_tools_ready">編譯工具已就緒</string>
   <string name="linux_profile_dependency_missing">請先安裝 %1$s</string>
   <string name="linux_profile_stage_checking">檢查 Linux 基礎環境</string>
   <string name="linux_profile_stage_downloading">下載%1$s</string>
@@ -954,15 +960,12 @@
   <string name="linux_install">安裝</string>
   <string name="linux_not_installed">尚未安裝</string>
   <string name="linux_base_ready">基礎環境已就緒</string>
-  <string name="linux_alpine_ready">Alpine %1$s 已就緒</string>
   <string name="linux_debian_not_installed">Debian glibc 環境尚未安裝</string>
   <string name="linux_debian_base_ready">Debian 基礎環境已就緒</string>
   <string name="linux_debian_ready">Debian %1$s 已就緒</string>
   <string name="linux_debian_requirements">需要 Root 與 Magisk、KernelSU 或 APatch BusyBox</string>
   <string name="linux_debian_tools_incomplete">Debian 基礎環境已就緒，下一步安裝常用工具</string>
   <string name="linux_debian_agent_ready_summary">Debian Trixie 基礎工具已就緒，Python、Node.js 與 SSH 可繼續按需單獨安裝</string>
-  <string name="linux_requirements">需要 Root 與 Magisk、KernelSU 或 APatch BusyBox</string>
-  <string name="linux_tools_incomplete">Alpine 基礎環境已就緒，下一步安裝常用工具</string>
   <string name="linux_tools_upgrade_summary">基礎環境可用，升級後補齊新版 Agent 工具集</string>
   <string name="linux_agent_ready_summary">已安裝 rg、fd、Git、SSH、curl、jq、SQLite 等基礎工具，Agent 使用目前選取的 Linux 環境在 /workspace 工作</string>
   <string name="linux_health_ok">環境正常</string>
@@ -981,8 +984,6 @@
   <string name="linux_tool_progress_percent">%1$s · %2$s %3$d%%</string>
   <string name="linux_tool">工具</string>
   <string name="linux_already_ready">Linux 工具環境已就緒</string>
-  <string name="linux_base_install_complete">Alpine %1$s 基礎環境安裝完成</string>
-  <string name="linux_install_complete">Alpine %1$s 與常用工具安裝完成</string>
   <string name="linux_debian_already_ready">Debian glibc 環境已經就緒</string>
   <string name="linux_debian_base_install_complete">Debian %1$s 基礎環境安裝完成</string>
   <string name="linux_debian_install_complete">Debian %1$s 與常用工具安裝完成</string>

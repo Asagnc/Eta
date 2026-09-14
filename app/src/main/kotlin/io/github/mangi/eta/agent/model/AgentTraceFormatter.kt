@@ -502,7 +502,6 @@ internal class AgentTraceFormatter {
 
     private fun String.terminalEnvironmentLabel(): String = when (this) {
         "linux" -> "Linux"
-        "alpine" -> "Alpine"
         "debian" -> "Debian"
         else -> "Android"
     }

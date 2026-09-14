@@ -114,26 +114,18 @@ internal object RootlessLinuxInstaller {
             val available = staging.parentFile!!.usableSpace
             if (available in 1 until 512L * 1024 * 1024) throw RootlessInstallFailure("INSUFFICIENT_STORAGE", "安装 Linux 至少需要 512 MB 可用内部存储，请清理后重试")
             if (staging.exists() && !staging.deleteRecursively()) throw RootlessInstallFailure("STAGING_CLEANUP_FAILED", "无法清理未完成安装，请重启 Eta 后重试")
-            extract(archive, staging, xz = distribution == LinuxDistribution.DEBIAN, stripComponents = if (distribution == LinuxDistribution.DEBIAN) 1 else 0)
+            extract(archive, staging, xz = true, stripComponents = 1)
             listOf("proc", "sys", "dev", "dev/shm", "workspace", "storage/emulated/0", "tmp", "usr/local/bin", "root").forEach { File(staging, it).mkdirs() }
             File(staging, "etc/resolv.conf").apply {
                 Files.deleteIfExists(toPath())
                 writeText("nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 1.1.1.1\n")
             }
-            val helper = when (distribution) {
-                LinuxDistribution.ALPINE -> {
-                    File(staging, "etc/apk/repositories").writeText(AlpineEnvironmentInstaller.APK_MIRROR_BASE_URLS.first().let { "$it/v3.24/main\n$it/v3.24/community\n" })
-                    "eta-apk" to AlpineEnvironmentInstaller.apkMirrorScript()
-                }
-                LinuxDistribution.DEBIAN -> {
-                    val mirror = DebianEnvironmentInstaller.APT_MIRRORS.first()
-                    File(staging, "etc/apt/sources.list").writeText("deb ${mirror.archiveBaseUrl} trixie main\ndeb ${mirror.archiveBaseUrl} trixie-updates main\ndeb ${mirror.securityBaseUrl} trixie-security main\n")
-                    File(staging, "etc/apt/apt.conf.d").mkdirs()
-                    File(staging, "etc/apt/apt.conf.d/99eta-rootless").writeText("APT::Sandbox::User \"root\";\nAcquire::Retries \"2\";\n")
-                    File(staging, "usr/sbin/policy-rc.d").apply { writeText("#!/bin/sh\nexit 101\n"); setExecutable(true, false) }
-                    "eta-apt" to DebianEnvironmentInstaller.aptMirrorScript()
-                }
-            }
+            val mirror = DebianEnvironmentInstaller.APT_MIRRORS.first()
+            File(staging, "etc/apt/sources.list").writeText("deb ${mirror.archiveBaseUrl} trixie main\ndeb ${mirror.archiveBaseUrl} trixie-updates main\ndeb ${mirror.securityBaseUrl} trixie-security main\n")
+            File(staging, "etc/apt/apt.conf.d").mkdirs()
+            File(staging, "etc/apt/apt.conf.d/99eta-rootless").writeText("APT::Sandbox::User \"root\";\nAcquire::Retries \"2\";\n")
+            File(staging, "usr/sbin/policy-rc.d").apply { writeText("#!/bin/sh\nexit 101\n"); setExecutable(true, false) }
+            val helper = "eta-apt" to DebianEnvironmentInstaller.aptMirrorScript()
             File(staging, "usr/local/bin/${helper.first}").apply { writeText(helper.second + "\n"); setExecutable(true, false) }
             val result = InstallerShellRunner.run("/bin/sh -c ':'", 20, distribution.terminalEnvironment, staging.absolutePath)
             if (result.exitCode != 0) throw RootlessInstallFailure("PROOT_START_FAILED", "免 Root Linux 无法启动（退出码 ${result.exitCode}），请确认使用受支持的 64 位设备并重试")

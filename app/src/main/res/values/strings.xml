@@ -537,7 +537,6 @@
   <string name="page_ready_7cca0c">} Ready</string>
   <string name="page_context_unknown_b6ae7b">context unknown</string>
   <string name="page_the_context_length_must_be_a_positive_integer_06ca7a">The context window must be a positive integer</string>
-  <string name="page_download_the_alpine_base_environment_8433ea">Download the Alpine base environment</string>
   <string name="page_download_and_install_f4df99">Download and install</string>
   <string name="page_not_supported_ef8274">Not supported</string>
   <string name="page_import_from_zip_41cc5e">Import from ZIP</string>
@@ -937,8 +936,6 @@
   <string name="linux_installing">Installing</string>
   <string name="linux_ready">Ready</string>
   <string name="linux_distribution_title">Linux distribution</string>
-  <string name="linux_distribution_alpine">Alpine</string>
-  <string name="linux_distribution_alpine_summary">Lightweight musl environment</string>
   <string name="linux_distribution_debian">Debian</string>
   <string name="linux_distribution_debian_summary">glibc environment with broader software compatibility</string>
   <string name="linux_install_base">Install base</string>
@@ -965,6 +962,15 @@
   <string name="linux_ssh_tools">SSH remote access</string>
   <string name="linux_ssh_tools_summary">Install the full OpenSSH suite (sshd, ssh-keygen, ssh-agent, and sftp-server); the base environment already includes the ssh/scp/sftp client</string>
   <string name="linux_ssh_tools_ready">sshd, ssh-keygen, and ssh-agent are ready</string>
+  <string name="linux_git_tools">Git</string>
+  <string name="linux_git_tools_summary">Install Git and CA certificates for cloning and committing code</string>
+  <string name="linux_git_tools_ready">Git is ready</string>
+  <string name="linux_cli_tools">Command-line tools</string>
+  <string name="linux_cli_tools_summary">Install ripgrep, fd, fzf, and jq for fast search and JSON handling</string>
+  <string name="linux_cli_tools_ready">Command-line tools are ready</string>
+  <string name="linux_build_tools">Build tools</string>
+  <string name="linux_build_tools_summary">Install build-essential, cmake, and pkg-config for compiling sources locally</string>
+  <string name="linux_build_tools_ready">Build tools are ready</string>
   <string name="linux_profile_dependency_missing">Install %1$s first</string>
   <string name="linux_profile_stage_checking">Checking the Linux base environment</string>
   <string name="linux_profile_stage_downloading">Downloading %1$s</string>
@@ -979,15 +985,12 @@
   <string name="linux_install">Install</string>
   <string name="linux_not_installed">Not installed</string>
   <string name="linux_base_ready">Base environment ready</string>
-  <string name="linux_alpine_ready">Alpine %1$s ready</string>
   <string name="linux_debian_not_installed">Debian glibc environment is not installed</string>
   <string name="linux_debian_base_ready">Debian base environment ready</string>
   <string name="linux_debian_ready">Debian %1$s ready</string>
   <string name="linux_debian_requirements">Requires Root and BusyBox from Magisk, KernelSU, or APatch</string>
   <string name="linux_debian_tools_incomplete">The Debian base is ready. Install common tools next</string>
   <string name="linux_debian_agent_ready_summary">Debian Trixie base tools are ready; Python, Node.js, and SSH can be installed separately as needed</string>
-  <string name="linux_requirements">Requires Root and BusyBox from Magisk, KernelSU, or APatch</string>
-  <string name="linux_tools_incomplete">The Alpine base is ready. Install common tools next</string>
   <string name="linux_tools_upgrade_summary">The base environment is available. Upgrade to add the latest Agent toolset</string>
   <string name="linux_agent_ready_summary">Basic tools such as rg, fd, Git, SSH, curl, jq and SQLite are installed; the Agent uses the selected Linux environment in /workspace</string>
   <string name="linux_health_ok">Environment healthy</string>
@@ -1007,8 +1010,6 @@
   <string name="linux_tool_progress_percent">%1$s · %2$s %3$d%%</string>
   <string name="linux_tool">Tool</string>
   <string name="linux_already_ready">The Linux tool environment is ready</string>
-  <string name="linux_base_install_complete">Alpine %1$s base installed</string>
-  <string name="linux_install_complete">Alpine %1$s and common tools installed</string>
   <string name="linux_debian_already_ready">The Debian glibc environment is already ready</string>
   <string name="linux_debian_base_install_complete">Debian %1$s base installed</string>
   <string name="linux_debian_install_complete">Debian %1$s and common tools installed</string>

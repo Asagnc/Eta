@@ -31,7 +31,7 @@ class AppRouteSerializationTest {
             AppRoute.LinuxEnvironment,
             AppRoute.SharedFolders,
             AppRoute.Workspace,
-            AppRoute.LinuxFiles("alpine"),
+            AppRoute.LinuxFiles("debian"),
             AppRoute.ModelProviders,
             AppRoute.McpServers,
             AppRoute.McpServerDetail("mcp-server"),

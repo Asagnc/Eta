@@ -83,7 +83,7 @@ internal object LinuxFileExplorer {
             identity = if (LinuxEnvironmentPaths.backendOf(rootfsDir.absolutePath) == LinuxExecutionBackend.PROOT) "user" else "root",
             command = script,
             timeoutSeconds = 15,
-            environment = if (rootless) TerminalEnvironment.ALPINE else TerminalEnvironment.ANDROID,
+            environment = if (rootless) TerminalEnvironment.DEBIAN else TerminalEnvironment.ANDROID,
             linuxRootfsPath = rootfsDir.absolutePath,
         )
         return when (result.exitCode) {
@@ -116,7 +116,7 @@ internal object LinuxFileExplorer {
             identity = if (LinuxEnvironmentPaths.backendOf(rootfsDir.absolutePath) == LinuxExecutionBackend.PROOT) "user" else "root",
             command = script,
             timeoutSeconds = 15,
-            environment = if (rootless) TerminalEnvironment.ALPINE else TerminalEnvironment.ANDROID,
+            environment = if (rootless) TerminalEnvironment.DEBIAN else TerminalEnvironment.ANDROID,
             linuxRootfsPath = rootfsDir.absolutePath,
         )
         if (result.exitCode != 0) {

@@ -143,7 +143,6 @@ private fun DaemonTaskRow(
 private fun daemonMeta(task: DaemonTaskUi): String {
     val environmentLabel = when (task.environment) {
         TerminalEnvironment.ANDROID -> "Android"
-        TerminalEnvironment.ALPINE -> "Alpine"
         TerminalEnvironment.DEBIAN -> "Debian"
     }
     val stateLabel = stringResource(

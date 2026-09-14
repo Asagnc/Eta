@@ -53,12 +53,12 @@ class TerminalPrivateStorageTest {
     fun newDirectoryRemainsSelectedWhenBothLayoutsExist() {
         val files = temporary.newFolder("both")
         val workspace = TerminalPrivateStorage.workspace(files).apply { mkdirs() }
-        val environment = TerminalPrivateStorage.prootEnvironment(files, LinuxDistribution.ALPINE).apply { mkdirs() }
+        val environment = TerminalPrivateStorage.prootEnvironment(files, LinuxDistribution.DEBIAN).apply { mkdirs() }
         File(files, "terminal/workspace").mkdirs()
-        File(files, "terminal/proot/alpine").mkdirs()
+        File(files, "terminal/proot/debian").mkdirs()
 
         assertEquals(workspace, TerminalPrivateStorage.workspace(files))
-        assertEquals(environment, TerminalPrivateStorage.prootEnvironment(files, LinuxDistribution.ALPINE))
+        assertEquals(environment, TerminalPrivateStorage.prootEnvironment(files, LinuxDistribution.DEBIAN))
     }
 
     @Test

@@ -72,13 +72,8 @@ internal object LinuxEnvironmentSettingsRepository {
     private fun decode(value: String?): LinuxDistribution? =
         LinuxDistribution.entries.firstOrNull { distribution -> distribution.wireName == value }
 
-    private fun defaultSelection(context: Context): LinuxDistribution {
-        val alpineReady = LinuxEnvironmentPaths.rootfsReady(
-            LinuxEnvironmentPaths.rootfsDir(context, LinuxDistribution.ALPINE).absolutePath,
-        )
-        val debianReady = LinuxEnvironmentPaths.rootfsReady(
-            LinuxEnvironmentPaths.rootfsDir(context, LinuxDistribution.DEBIAN).absolutePath,
-        )
-        return if (alpineReady && !debianReady) LinuxDistribution.ALPINE else LinuxDistribution.DEBIAN
+    private fun defaultSelection(@Suppress("UNUSED_PARAMETER") context: Context): LinuxDistribution {
+        // 环境选择持久化的是 wireName，只剩一种用户态时直接返回它即可。
+        return LinuxDistribution.DEBIAN
     }
 }

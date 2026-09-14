@@ -38,9 +38,9 @@ class SharedFolderMountsTest {
         assertEquals(
             SharedFolderMounts.SourceError.FORBIDDEN_ROOT,
             SharedFolderMounts.validateSource(
-                "/data/user/0/app/files/terminal/alpine/rootfs",
+                "/data/user/0/app/files/terminal/debian/rootfs",
                 existing,
-                extraForbiddenRoots = listOf("/data/user/0/app/files/terminal/alpine/rootfs"),
+                extraForbiddenRoots = listOf("/data/user/0/app/files/terminal/debian/rootfs"),
             ),
         )
         assertNull(SharedFolderMounts.validateSource("/sdcard/Download", existing))
@@ -118,7 +118,7 @@ class SharedFolderMountsTest {
     fun linuxPayloadMountsSharedFoldersIntoWorkspace() {
         val supervisor = ShellProcessSupervisor()
         val payload = supervisor.buildLinuxPayload(
-            rootfsPath = "/data/user/0/app/files/terminal/alpine/rootfs",
+            rootfsPath = "/data/user/0/app/files/terminal/debian/rootfs",
             command = "ls",
             sharedMounts = listOf(
                 SharedFolderMount(name = "dl", sourcePath = "/sdcard/Download"),
@@ -141,7 +141,7 @@ class SharedFolderMountsTest {
     fun linuxPayloadWithoutSharedMountsHasNoMountsBlock() {
         val supervisor = ShellProcessSupervisor()
         val payload = supervisor.buildLinuxPayload(
-            rootfsPath = "/data/user/0/app/files/terminal/alpine/rootfs",
+            rootfsPath = "/data/user/0/app/files/terminal/debian/rootfs",
             command = "ls",
         )
         assertFalse(payload.contains("workspace/mounts"))

@@ -513,7 +513,6 @@ internal class DetachedTaskSupervisor(
         cwd = getString("cwd"),
         identity = getString("identity"),
         environment = when (optString("environment")) {
-            TerminalEnvironment.ALPINE.wireName -> TerminalEnvironment.ALPINE
             TerminalEnvironment.DEBIAN.wireName -> TerminalEnvironment.DEBIAN
             else -> TerminalEnvironment.ANDROID
         },

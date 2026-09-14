@@ -58,7 +58,7 @@ internal object FakeAgentUiStates {
             ),
             ConversationSummaryUi(
                 id = "c-005",
-                title = "检查 Alpine 终端环境",
+                title = "检查 Linux 终端环境",
                 preview = "列出可用命令、Python/Node 版本和后台 job",
                 timeLabel = "周五",
                 mode = ConversationModeUi.Terminal,
@@ -222,7 +222,7 @@ internal object FakeAgentUiStates {
                 id = "terminal",
                 title = "终端与文件",
                 tools = listOf(
-                    ToolItemUi("terminal", "终端命令", "Android/Alpine/Debian 环境执行 shell"),
+                    ToolItemUi("terminal", "终端命令", "Android/Debian 环境执行 shell"),
                 ),
             ),
         ),

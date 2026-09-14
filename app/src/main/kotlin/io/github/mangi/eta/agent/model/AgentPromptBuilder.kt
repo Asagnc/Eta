@@ -103,7 +103,7 @@ internal object AgentPromptBuilder {
                     "任务需要在手机上执行命令、查看 Linux/Android 系统信息、读取/写入文件、查询包名或使用 shell 时，" +
                         "必须调用 terminal 或 run_command/read_file/write_file/list_directory 工具。" +
                         "Android 应用与当前身份可访问的设备文件使用 terminal 的 environment=android；" +
-                        "用户选择的 Alpine 或 Debian 工具环境统一使用 environment=linux；不要自行改用另一发行版。" +
+                        "当前 Linux 工具环境统一使用 environment=linux；不要自行改用其它环境。" +
                         "如果返回 LINUX_ENVIRONMENT_NOT_READY，" +
                         "准确告知用户先到设置安装对应的 Linux 工具环境，不要把 Android 缺少命令误报成设备不支持。" +
                         "若 Linux 基础命令不存在，准确告知用户先在 Linux 工具环境页面完成“安装基础工具”；Python/uv、Node.js、SSH 与 APK 分析都在当前选中的发行版中分别按需安装。不要在 Android 环境冒充或自行下载工具。" +

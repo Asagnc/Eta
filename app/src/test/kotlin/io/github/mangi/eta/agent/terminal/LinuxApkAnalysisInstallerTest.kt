@@ -83,10 +83,6 @@ class LinuxApkAnalysisInstallerTest {
     @Test
     fun javaRuntimeUsesSelectedDistributionStablePackage() {
         assertEquals(
-            "/usr/local/bin/eta-apk install openjdk25-jdk",
-            linuxApkJavaInstallCommand(LinuxDistribution.ALPINE),
-        )
-        assertEquals(
             "/usr/local/bin/eta-apt install openjdk-25-jdk-headless",
             linuxApkJavaInstallCommand(LinuxDistribution.DEBIAN),
         )

@@ -54,9 +54,6 @@ class LinuxEnvironmentSettingsRepositoryTest {
         val context = RuntimeEnvironment.getApplication().applicationContext as Context
         val before = SettingsDataStore.linuxDistributionFlow().first()
         try {
-            LinuxEnvironmentSettingsRepository.select(LinuxDistribution.ALPINE)
-            assertEquals(LinuxDistribution.ALPINE, LinuxEnvironmentSettingsRepository.selectedFlow(context).first())
-
             LinuxEnvironmentSettingsRepository.select(LinuxDistribution.DEBIAN)
             assertEquals(LinuxDistribution.DEBIAN, LinuxEnvironmentSettingsRepository.selectedFlow(context).first())
             assertEquals(LinuxDistribution.DEBIAN, LinuxEnvironmentSettingsRepository.current(context))

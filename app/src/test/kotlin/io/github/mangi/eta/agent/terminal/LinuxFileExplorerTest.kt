@@ -9,7 +9,7 @@ import org.junit.Test
 
 class LinuxFileExplorerTest {
 
-    private val rootfsDir = File("/data/user/0/io.github.mangi.eta/files/terminal/alpine/rootfs")
+    private val rootfsDir = File("/data/user/0/io.github.mangi.eta/files/terminal/debian/rootfs")
 
     @Test
     fun resolveHostPathNormalizesRootAndBlank() {
