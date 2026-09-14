@@ -946,6 +946,9 @@
   <string name="linux_build_tools">編譯工具</string>
   <string name="linux_build_tools_summary">安裝 build-essential、cmake 與 pkg-config；本機編譯原始碼時使用</string>
   <string name="linux_build_tools_ready">編譯工具已就緒</string>
+  <string name="linux_security_tools">網路與安全工具</string>
+  <string name="linux_security_tools_summary">安裝 nmap、sqlmap、tcpdump、netcat、yara 與 binwalk</string>
+  <string name="linux_security_tools_ready">網路與安全工具已就緒</string>
   <string name="linux_profile_dependency_missing">請先安裝 %1$s</string>
   <string name="linux_profile_stage_checking">檢查 Linux 基礎環境</string>
   <string name="linux_profile_stage_downloading">下載%1$s</string>

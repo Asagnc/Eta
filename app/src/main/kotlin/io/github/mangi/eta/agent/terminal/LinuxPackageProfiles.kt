@@ -118,7 +118,18 @@ internal object LinuxPackageProfiles {
             ),
         ),
     )
-    val ALL = listOf(PYTHON, NODE, SSH, GIT, CLI_TOOLS, BUILD_TOOLS)
+    /** 网络排查与制品分析常用命令：抓包、连接测试、规则扫描、固件提取。 */
+    val SECURITY_TOOLS = LinuxPackageProfile(
+        id = "security-tools",
+        markerName = LinuxEnvironmentPaths.SECURITY_TOOLS_MARKER,
+        revision = LinuxEnvironmentPaths.SECURITY_TOOLS_REVISION,
+        specs = mapOf(
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                packages = listOf("nmap", "sqlmap", "tcpdump", "netcat-openbsd", "yara", "binwalk"),
+            ),
+        ),
+    )
+    val ALL = listOf(PYTHON, NODE, SSH, GIT, CLI_TOOLS, BUILD_TOOLS, SECURITY_TOOLS)
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {

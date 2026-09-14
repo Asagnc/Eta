@@ -971,6 +971,9 @@
   <string name="linux_build_tools">Build tools</string>
   <string name="linux_build_tools_summary">Install build-essential, cmake, and pkg-config for compiling sources locally</string>
   <string name="linux_build_tools_ready">Build tools are ready</string>
+  <string name="linux_security_tools">Network and security tools</string>
+  <string name="linux_security_tools_summary">Install nmap, sqlmap, tcpdump, netcat, yara, and binwalk</string>
+  <string name="linux_security_tools_ready">Network and security tools are ready</string>
   <string name="linux_profile_dependency_missing">Install %1$s first</string>
   <string name="linux_profile_stage_checking">Checking the Linux base environment</string>
   <string name="linux_profile_stage_downloading">Downloading %1$s</string>

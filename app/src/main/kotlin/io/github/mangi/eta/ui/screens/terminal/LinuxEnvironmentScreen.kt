@@ -63,6 +63,7 @@ private enum class InstallTarget {
     GIT,
     CLI_TOOLS,
     BUILD_TOOLS,
+    SECURITY_TOOLS,
 }
 
 private data class PackageProfileUi(
@@ -119,6 +120,13 @@ private val packageProfileUis = listOf(
         titleRes = R.string.linux_build_tools,
         summaryRes = R.string.linux_build_tools_summary,
         readyRes = R.string.linux_build_tools_ready,
+    ),
+    PackageProfileUi(
+        target = InstallTarget.SECURITY_TOOLS,
+        profile = LinuxPackageProfiles.SECURITY_TOOLS,
+        titleRes = R.string.linux_security_tools,
+        summaryRes = R.string.linux_security_tools_summary,
+        readyRes = R.string.linux_security_tools_ready,
     ),
 )
 
