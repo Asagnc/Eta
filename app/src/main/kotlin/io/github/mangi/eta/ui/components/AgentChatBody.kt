@@ -427,6 +427,14 @@ internal fun AgentConversationMessages(
         scrollHeldByUser = true
         onBottomAnchorChanged(false)
     }
+    // 进入会话时直接显示最新内容；历史消息异步载入，等首次拿到消息后再定位一次。
+    var initialBottomSettled by remember { mutableStateOf(false) }
+    LaunchedEffect(visibleMessages.isNotEmpty()) {
+        if (visibleMessages.isNotEmpty() && !initialBottomSettled) {
+            initialBottomSettled = true
+            scrollState.scrollToItem(bottomItemIndex)
+        }
+    }
 
     LaunchedEffect(
         isUserDragging,
