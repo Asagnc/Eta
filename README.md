@@ -70,12 +70,10 @@ Runtime 同时管理流式事件、steering、取消和增量 transcript。追�
 Eta 的终端可以由 Agent 调用，也可以由你直接操作。多个会话各自保留工作目录与环境；简洁模式按命令展示输入输出，PTY 控制台支持 TUI、快捷键与 ANSI 渲染。异步命令和守护任务都可以查看日志、主动停止。
 
 - **Linux 环境**：可选 Alpine 或 Debian，普通设备使用 PRoot，Root 设备还可选择 chroot。两种后端独立安装，不自动迁移数据；PRoot 中的模拟 root 不提供 Android 系统权限。
-- **开发工具**：Python、Node.js、SSH、APK 分析与 Kimi Code 按需安装。
+- **开发工具**：Python、Node.js、SSH 与 APK 分析按需安装。
 - **文件管理**：私有工作区支持导入、导出；已授权的 Android 目录可共享到 Linux 的 `/workspace/mounts/`，也可在 App 内浏览 Linux 文件。
 
 Eta 本体可以读取项目、修改代码、运行命令并验证结果。
-
-在 Eta 中安装 Linux、Node.js 与 Kimi Code 后，可以在终端运行 `kimi`。Kimi 使用独立的模型配置与会话，需单独完成登录或配置。
 
 ## 模型与 BYOK
 

@@ -28,7 +28,7 @@ Eta 使用同一个 APK，根据实际授权提供能力。基础功能不会等
 
 PRoot 与 chroot 使用独立 rootfs。旧 chroot、`/data/local/tmp/eta` 与特权共享挂载不迁移；运行会话和任务固定创建时的后端与路径。Root 状态变化不会删除环境、更改属主或自动切换已有会话。PRoot 内的模拟 root 没有 Android Root 权限。
 
-免 Root 安装器复用固定 rootfs 的下载校验，在临时目录流式解包，处理归档路径、链接、取消与失败清理，运行检查成功后才写完成标记。基础工具、Python/uv、Node.js、SSH、APK 分析和 Kimi 通过所选后端执行安装与检查。
+免 Root 安装器复用固定 rootfs 的下载校验，在临时目录流式解包，处理归档路径、链接、取消与失败清理，运行检查成功后才写完成标记。基础工具、Python/uv、Node.js、SSH 和 APK 分析通过所选后端执行安装与检查。
 
 ## 运行与停止
 

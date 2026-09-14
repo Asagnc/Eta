@@ -965,9 +965,6 @@
   <string name="linux_ssh_tools">SSH remote access</string>
   <string name="linux_ssh_tools_summary">Install the full OpenSSH suite (sshd, ssh-keygen, ssh-agent, and sftp-server); the base environment already includes the ssh/scp/sftp client</string>
   <string name="linux_ssh_tools_ready">sshd, ssh-keygen, and ssh-agent are ready</string>
-  <string name="linux_kimi_tools">Kimi Code</string>
-  <string name="linux_kimi_tools_summary">Install the latest Kimi Code release via npm; requires the Node.js environment first</string>
-  <string name="linux_kimi_tools_ready">Kimi Code is ready; run kimi in the terminal</string>
   <string name="linux_profile_dependency_missing">Install %1$s first</string>
   <string name="linux_profile_stage_checking">Checking the Linux base environment</string>
   <string name="linux_profile_stage_downloading">Downloading %1$s</string>

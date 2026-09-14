@@ -65,7 +65,6 @@ private enum class InstallTarget {
     PYTHON,
     NODE,
     SSH,
-    KIMI,
 }
 
 private data class PackageProfileUi(
@@ -101,13 +100,6 @@ private val packageProfileUis = listOf(
         titleRes = R.string.linux_ssh_tools,
         summaryRes = R.string.linux_ssh_tools_summary,
         readyRes = R.string.linux_ssh_tools_ready,
-    ),
-    PackageProfileUi(
-        target = InstallTarget.KIMI,
-        profile = LinuxPackageProfiles.KIMI,
-        titleRes = R.string.linux_kimi_tools,
-        summaryRes = R.string.linux_kimi_tools_summary,
-        readyRes = R.string.linux_kimi_tools_ready,
     ),
 )
 
