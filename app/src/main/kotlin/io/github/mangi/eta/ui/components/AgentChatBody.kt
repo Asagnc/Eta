@@ -421,17 +421,31 @@ internal fun AgentConversationMessages(
     }
     val densityScale = LocalDensity.current.density
     val coroutineScope = rememberCoroutineScope()
+    // 手动展开或折叠思考过程后由用户接管滚动：暂停自动跟底，等用户重新拖动列表再交还。
+    var scrollHeldByUser by remember { mutableStateOf(false) }
+    val onThinkingToggle: () -> Unit = {
+        scrollHeldByUser = true
+        onBottomAnchorChanged(false)
+    }
 
     LaunchedEffect(
         isUserDragging,
         isAtBottom,
         keepBottomAnchored,
+        scrollHeldByUser,
     ) {
-        val next = resolveKeepBottomAnchored(
-            current = keepBottomAnchored,
-            isUserDragging = isUserDragging,
-            isAtBottom = isAtBottom,
-        )
+        if (scrollHeldByUser && isUserDragging) {
+            scrollHeldByUser = false
+        }
+        val next = if (scrollHeldByUser && !isUserDragging) {
+            keepBottomAnchored
+        } else {
+            resolveKeepBottomAnchored(
+                current = keepBottomAnchored,
+                isUserDragging = isUserDragging,
+                isAtBottom = isAtBottom,
+            )
+        }
         if (next != keepBottomAnchored) {
             onBottomAnchorChanged(next)
         }
@@ -647,6 +661,7 @@ internal fun AgentConversationMessages(
                             onDeleteMessage = onDeleteMessage,
                             onRegenerateMessage = onRegenerateMessage,
                             onSelectReplyCandidate = onSelectReplyCandidate,
+                            onThinkingToggle = onThinkingToggle,
                             modifier = itemModifier,
                         )
                     }
@@ -665,6 +680,7 @@ internal fun AgentConversationMessages(
                             onOpenBrowser = onOpenBrowser,
                             currentBrowserMessageId = currentBrowserMessageId,
                             retainedStreamingStates = streamingMarkdownStates,
+                            onThinkingToggle = onThinkingToggle,
                             modifier = itemModifier,
                         )
                     }

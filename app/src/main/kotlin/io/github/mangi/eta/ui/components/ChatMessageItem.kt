@@ -268,6 +268,8 @@ internal fun ChatMessageItem(
     onDeleteMessage: (String) -> Unit = {},
     onRegenerateMessage: (String) -> Unit = {},
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
+    /** 思考过程被手动展开或折叠时回调，供聊天列表暂停自动跟底。 */
+    onThinkingToggle: () -> Unit = {},
 ) {
     when (message) {
         is UserMessageUi -> UserMessageBubble(
@@ -330,6 +332,7 @@ internal fun ChatMessageItem(
             retainedStreamingState = retainedStreamingState,
             modifier = modifier,
             compact = compact,
+            onThinkingToggle = onThinkingToggle,
         )
         is RunTraceMessageUi -> RunTraceRow(message = message, onClick = onRunTraceClick, modifier = modifier)
         is ToolActivityMessageUi -> ToolActivityInline(
@@ -354,6 +357,7 @@ internal fun AgentWorkProcess(
     onOpenBrowser: () -> Unit,
     currentBrowserMessageId: String?,
     retainedStreamingStates: Map<String, StreamingMarkdownState>,
+    onThinkingToggle: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val running = messages.any { message ->
@@ -487,6 +491,7 @@ internal fun AgentWorkProcess(
                             showBrowserShortcut = message.id == currentBrowserMessageId,
                             retainedStreamingState = retainedStreamingStates[message.id],
                             compact = true,
+                            onThinkingToggle = onThinkingToggle,
                         )
                     }
                 }
@@ -2129,6 +2134,7 @@ private fun ThinkingRow(
     retainedStreamingState: StreamingMarkdownState?,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    onThinkingToggle: () -> Unit = {},
 ) {
     var expanded by rememberSaveable(message.id) { mutableStateOf(!message.collapsed) }
     var manuallyExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -2191,6 +2197,8 @@ private fun ThinkingRow(
                 .clickable {
                     manuallyExpanded = true
                     expanded = !expanded
+                    // 手动切换会改变列表高度，交由调用方暂停自动跟底，避免视口被拉回最新内容。
+                    onThinkingToggle()
                 }
                 .padding(horizontal = if (compact) 4.dp else 13.dp, vertical = if (compact) 6.dp else 10.dp),
             verticalAlignment = Alignment.CenterVertically,
