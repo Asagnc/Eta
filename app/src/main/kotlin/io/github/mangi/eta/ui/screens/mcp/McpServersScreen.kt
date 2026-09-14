@@ -1,7 +1,9 @@
 package io.github.mangi.eta.ui.screens.mcp
 
 import android.widget.Toast
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -69,6 +71,7 @@ internal fun McpServersScreen(
     var token by remember { mutableStateOf("") }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<McpServerSetting?>(null) }
 
     MiuixScaffoldPage(
         title = stringResource(R.string.route_mcp_servers),
@@ -98,15 +101,23 @@ internal fun McpServersScreen(
                     )
                 } else {
                     servers.forEach { server ->
-                        ArrowPreference(
-                            title = server.name,
-                            summary = stringResource(
-                                R.string.mcp_server_row_summary,
-                                server.activeTools.size,
-                                server.tools.size,
+                        // 长按删除：单击仍由 ArrowPreference 处理，长按落到外层。
+                        Box(
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { deleteTarget = server },
                             ),
-                            onClick = { onNavigate(AppRoute.McpServerDetail(server.id)) },
-                        )
+                        ) {
+                            ArrowPreference(
+                                title = server.name,
+                                summary = stringResource(
+                                    R.string.mcp_server_row_summary,
+                                    server.activeTools.size,
+                                    server.tools.size,
+                                ),
+                                onClick = { onNavigate(AppRoute.McpServerDetail(server.id)) },
+                            )
+                        }
                     }
                 }
             }
@@ -213,6 +224,28 @@ internal fun McpServersScreen(
                 },
             )
         }
+    }
+
+    WindowDialog(
+        show = deleteTarget != null,
+        title = stringResource(R.string.mcp_delete_server),
+        summary = stringResource(R.string.mcp_delete_confirm, deleteTarget?.name.orEmpty()),
+        onDismissRequest = { deleteTarget = null },
+    ) {
+        MiuixDialogActions(
+            confirmText = stringResource(R.string.ui_delete_3755f5),
+            destructive = true,
+            onCancel = { deleteTarget = null },
+            onConfirm = {
+                val target = deleteTarget
+                deleteTarget = null
+                if (target != null) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { McpServerRepository.delete(target.id) }
+                    }
+                }
+            },
+        )
     }
 }
 
