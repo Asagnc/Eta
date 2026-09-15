@@ -44,7 +44,9 @@ internal data class LinuxPackageProfile(
     /** 安装前必须就绪的前置 profile。 */
     val dependsOn: LinuxPackageProfile? = null,
 ) {
-    fun spec(distribution: LinuxDistribution): LinuxPackageSpec = requireNotNull(specs[distribution])
+    /** apt 系发行版的包名一致，未单独列出的发行版复用 Debian 规格。 */
+    fun spec(distribution: LinuxDistribution): LinuxPackageSpec =
+        specs[distribution] ?: requireNotNull(specs[LinuxDistribution.DEBIAN])
 }
 
 internal object LinuxPackageProfiles {
@@ -222,9 +224,7 @@ internal class LinuxPackageProfileInstaller(
             }
         }
 
-        val packageHelper = when (distribution) {
-            LinuxDistribution.DEBIAN -> "/usr/local/bin/eta-apt"
-        }
+        val packageHelper = "/usr/local/bin/eta-apt"
         onProgress(PackageProfileInstallProgress(PackageProfileInstallStage.INSTALLING))
         if (spec.packages.isNotEmpty()) {
             val installResult = InstallerShellRunner.run(

@@ -224,7 +224,6 @@ internal object PinnedLinuxToolArtifacts {
         distribution: LinuxDistribution,
         abis: List<String>,
     ): VerifiedArtifact? {
-        if (distribution != LinuxDistribution.DEBIAN) return null
         return abis.firstNotNullOfOrNull { abi ->
             when (abi) {
                 "arm64-v8a" -> nodeArtifact(

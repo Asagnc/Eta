@@ -100,6 +100,8 @@ internal fun LinuxEnvironmentConfiguration(
                     summary = stringResource(
                         when (it) {
                             LinuxDistribution.DEBIAN -> R.string.linux_distribution_debian_summary
+                            LinuxDistribution.UBUNTU -> R.string.linux_distribution_ubuntu_summary
+                            LinuxDistribution.KALI -> R.string.linux_distribution_kali_summary
                         },
                     ),
                 )
@@ -146,6 +148,8 @@ internal fun LinuxEnvironmentConfiguration(
 internal fun LinuxDistribution.displayName(): String = stringResource(
     when (this) {
         LinuxDistribution.DEBIAN -> R.string.linux_distribution_debian
+        LinuxDistribution.UBUNTU -> R.string.linux_distribution_ubuntu
+        LinuxDistribution.KALI -> R.string.linux_distribution_kali
     },
 )
 

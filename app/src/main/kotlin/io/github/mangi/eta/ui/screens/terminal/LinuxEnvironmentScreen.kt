@@ -22,11 +22,11 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallProgress
 import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallResult
 import io.github.mangi.eta.agent.terminal.ApkAnalysisInstallStage
-import io.github.mangi.eta.agent.terminal.DebianEnvironmentInstaller
-import io.github.mangi.eta.agent.terminal.DebianEnvironmentState
-import io.github.mangi.eta.agent.terminal.DebianInstallProgress
-import io.github.mangi.eta.agent.terminal.DebianInstallResult
-import io.github.mangi.eta.agent.terminal.DebianInstallStage
+import io.github.mangi.eta.agent.terminal.AptEnvironmentInstaller
+import io.github.mangi.eta.agent.terminal.AptEnvironmentState
+import io.github.mangi.eta.agent.terminal.AptInstallProgress
+import io.github.mangi.eta.agent.terminal.AptInstallResult
+import io.github.mangi.eta.agent.terminal.AptInstallStage
 import io.github.mangi.eta.agent.terminal.LinuxApkAnalysisInstaller
 import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
@@ -73,8 +73,8 @@ private data class PackageProfileUi(
     @param:StringRes val titleRes: Int,
     @param:StringRes val summaryRes: Int,
     @param:StringRes val readyRes: Int,
-    @param:StringRes val debianSummaryRes: Int = summaryRes,
-    @param:StringRes val debianReadyRes: Int = readyRes,
+    @param:StringRes val aptSummaryRes: Int = summaryRes,
+    @param:StringRes val aptReadyRes: Int = readyRes,
 )
 
 private val packageProfileUis = listOf(
@@ -84,8 +84,8 @@ private val packageProfileUis = listOf(
         titleRes = R.string.linux_python_tools,
         summaryRes = R.string.linux_python_tools_summary,
         readyRes = R.string.linux_python_tools_ready,
-        debianSummaryRes = R.string.linux_python_tools_summary_debian,
-        debianReadyRes = R.string.linux_python_tools_ready_debian,
+        aptSummaryRes = R.string.linux_python_tools_summary_debian,
+        aptReadyRes = R.string.linux_python_tools_ready_debian,
     ),
     PackageProfileUi(
         target = InstallTarget.NODE,
@@ -161,7 +161,9 @@ internal fun LinuxEnvironmentScreen(
         initial = LinuxEnvironmentSettingsRepository.backend(appContext, selectedDistribution),
     )
     val requiresRoot = backend == LinuxExecutionBackend.CHROOT && !capabilities.root.isGranted
-    val debianInstaller = remember(appContext, backend) { DebianEnvironmentInstaller(appContext) }
+    val envInstaller = remember(appContext, selectedDistribution, backend) {
+        AptEnvironmentInstaller(appContext, selectedDistribution)
+    }
     val apkAnalysisInstaller = remember(appContext, selectedDistribution, backend) {
         LinuxApkAnalysisInstaller(appContext, selectedDistribution)
     }
@@ -174,9 +176,9 @@ internal fun LinuxEnvironmentScreen(
             )
         }
     }
-    var debianStatus by remember(debianInstaller) { mutableStateOf(debianInstaller.status()) }
+    var envStatus by remember(envInstaller) { mutableStateOf(envInstaller.status()) }
     var busyTarget by remember { mutableStateOf<InstallTarget?>(null) }
-    var debianProgress by remember { mutableStateOf<DebianInstallProgress?>(null) }
+    var envProgress by remember { mutableStateOf<AptInstallProgress?>(null) }
     var profileProgressSummary by remember { mutableStateOf<String?>(null) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
     var profileReady by remember(selectedDistribution, backend) {
@@ -186,19 +188,15 @@ internal fun LinuxEnvironmentScreen(
         mutableStateOf(apkAnalysisInstaller.isReady())
     }
     var apkAnalysisProgress by remember { mutableStateOf<ApkAnalysisInstallProgress?>(null) }
-    val selectedBaseReady = when (selectedDistribution) {
-        LinuxDistribution.DEBIAN -> debianStatus.state != DebianEnvironmentState.NOT_INSTALLED
-    }
-    val selectedToolsReady = when (selectedDistribution) {
-        LinuxDistribution.DEBIAN -> debianStatus.state == DebianEnvironmentState.READY
-    }
+    val selectedBaseReady = envStatus.state != AptEnvironmentState.NOT_INSTALLED
+    val selectedToolsReady = envStatus.state == AptEnvironmentState.READY
 
     fun launchInstallation(block: suspend () -> Unit) {
         val operation: suspend () -> Unit = {
             try {
                 block()
             } finally {
-                debianProgress = null
+                envProgress = null
                 profileProgressSummary = null
                 apkAnalysisProgress = null
                 busyTarget = null
@@ -224,13 +222,11 @@ internal fun LinuxEnvironmentScreen(
         busyTarget = InstallTarget.BASE
         resultMessage = null
         launchInstallation {
-            resultMessage = when (selectedDistribution) {
-                LinuxDistribution.DEBIAN -> debianInstaller.installBase { update ->
-                    withContext(Dispatchers.Main.immediate) { debianProgress = update }
-                }.toMessage(context)
-            }
-            debianStatus = debianInstaller.status()
-            debianProgress = null
+            resultMessage = envInstaller.installBase { update ->
+                withContext(Dispatchers.Main.immediate) { envProgress = update }
+            }.toMessage(context)
+            envStatus = envInstaller.status()
+            envProgress = null
             busyTarget = null
         }
     }
@@ -240,17 +236,15 @@ internal fun LinuxEnvironmentScreen(
         busyTarget = InstallTarget.TOOLS
         resultMessage = null
         launchInstallation {
-            resultMessage = when (selectedDistribution) {
-                LinuxDistribution.DEBIAN -> debianInstaller.installTools { update ->
-                    withContext(Dispatchers.Main.immediate) { debianProgress = update }
-                }.toMessage(context)
-            }
-            debianStatus = debianInstaller.status()
+            resultMessage = envInstaller.installTools { update ->
+                withContext(Dispatchers.Main.immediate) { envProgress = update }
+            }.toMessage(context)
+            envStatus = envInstaller.status()
             profileReady = packageProfileUis.associate {
                 it.target to profileInstallers.getValue(it.target).isReady()
             }
             apkAnalysisReady = apkAnalysisInstaller.isReady()
-            debianProgress = null
+            envProgress = null
             busyTarget = null
         }
     }
@@ -260,13 +254,9 @@ internal fun LinuxEnvironmentScreen(
         onBack = onBack,
     ) {
         item(key = "status-card") {
-            val version = when (selectedDistribution) {
-                LinuxDistribution.DEBIAN -> debianStatus.version
-            }
+            val version = envStatus.version
             val activeProgress = when (busyTarget) {
-                InstallTarget.BASE, InstallTarget.TOOLS -> when (selectedDistribution) {
-                    LinuxDistribution.DEBIAN -> debianProgress?.summary(context)
-                }
+                InstallTarget.BASE, InstallTarget.TOOLS -> envProgress?.summary(context)
                 InstallTarget.APK_ANALYSIS -> apkAnalysisProgress?.summary(context)
                 else -> profileProgressSummary
             }
@@ -363,16 +353,8 @@ internal fun LinuxEnvironmentScreen(
                 ) {
                     packageProfileUis.forEachIndexed { index, profileUi ->
                         val ready = profileReady[profileUi.target] == true
-                        val summaryRes = if (selectedDistribution == LinuxDistribution.DEBIAN) {
-                            profileUi.debianSummaryRes
-                        } else {
-                            profileUi.summaryRes
-                        }
-                        val readyRes = if (selectedDistribution == LinuxDistribution.DEBIAN) {
-                            profileUi.debianReadyRes
-                        } else {
-                            profileUi.readyRes
-                        }
+                        val summaryRes = profileUi.aptSummaryRes
+                        val readyRes = profileUi.aptReadyRes
                         if (index > 0) HorizontalDivider()
                         BasicComponent(
                             title = stringResource(profileUi.titleRes),
@@ -457,9 +439,9 @@ internal fun LinuxEnvironmentScreen(
 
 private fun Long.toReadableSize(context: Context): String = Formatter.formatShortFileSize(context, this)
 
-private fun DebianInstallProgress.summary(context: Context): String {
+private fun AptInstallProgress.summary(context: Context): String {
     val stageName = stage.displayName(context)
-    if (stage != DebianInstallStage.DOWNLOADING || totalBytes <= 0L) return stageName
+    if (stage != AptInstallStage.DOWNLOADING || totalBytes <= 0L) return stageName
     val percent = (downloadedBytes * 100L / totalBytes).coerceIn(0L, 100L)
     return context.getString(R.string.linux_progress_percent, stageName, percent)
 }
@@ -497,16 +479,16 @@ private fun ApkAnalysisInstallProgress.summary(context: Context): String {
     return context.getString(R.string.linux_tool_progress_percent, stageName, name, percent)
 }
 
-private fun DebianInstallResult.toMessage(context: Context): String = when (this) {
-    DebianInstallResult.AlreadyReady -> context.getString(R.string.linux_debian_already_ready)
-    is DebianInstallResult.BaseInstalled -> context.getString(R.string.linux_debian_base_install_complete, version)
-    is DebianInstallResult.ToolsInstalled -> context.getString(R.string.linux_debian_install_complete, version)
-    DebianInstallResult.BaseNotInstalled -> context.getString(R.string.linux_base_required)
-    is DebianInstallResult.UnsupportedAbi -> context.getString(R.string.linux_unsupported_abi, abi)
-    DebianInstallResult.RootUnavailable -> context.getString(R.string.linux_root_unavailable)
-    DebianInstallResult.BusyBoxUnavailable -> context.getString(R.string.linux_busybox_unavailable)
-    DebianInstallResult.EnvironmentUnavailable -> context.getString(R.string.linux_environment_unavailable)
-    is DebianInstallResult.Failed -> message ?: context.getString(R.string.linux_stage_failed, stage.displayName(context))
+private fun AptInstallResult.toMessage(context: Context): String = when (this) {
+    AptInstallResult.AlreadyReady -> context.getString(R.string.linux_debian_already_ready)
+    is AptInstallResult.BaseInstalled -> context.getString(R.string.linux_debian_base_install_complete, version)
+    is AptInstallResult.ToolsInstalled -> context.getString(R.string.linux_debian_install_complete, version)
+    AptInstallResult.BaseNotInstalled -> context.getString(R.string.linux_base_required)
+    is AptInstallResult.UnsupportedAbi -> context.getString(R.string.linux_unsupported_abi, abi)
+    AptInstallResult.RootUnavailable -> context.getString(R.string.linux_root_unavailable)
+    AptInstallResult.BusyBoxUnavailable -> context.getString(R.string.linux_busybox_unavailable)
+    AptInstallResult.EnvironmentUnavailable -> context.getString(R.string.linux_environment_unavailable)
+    is AptInstallResult.Failed -> message ?: context.getString(R.string.linux_stage_failed, stage.displayName(context))
 }
 
 private fun PackageProfileInstallResult.toMessage(
@@ -544,13 +526,13 @@ private fun ApkAnalysisInstallResult.toMessage(context: Context): String = when 
     is ApkAnalysisInstallResult.Failed -> context.getString(R.string.linux_apk_stage_failed, stage.displayName(context))
 }
 
-private fun DebianInstallStage.displayName(context: Context): String = context.getString(
+private fun AptInstallStage.displayName(context: Context): String = context.getString(
     when (this) {
-        DebianInstallStage.CHECKING -> R.string.linux_stage_checking
-        DebianInstallStage.DOWNLOADING -> R.string.linux_stage_downloading
-        DebianInstallStage.EXTRACTING -> R.string.linux_stage_extracting
-        DebianInstallStage.INSTALLING_TOOLS -> R.string.linux_stage_installing_tools
-        DebianInstallStage.COMPLETE -> R.string.linux_stage_complete
+        AptInstallStage.CHECKING -> R.string.linux_stage_checking
+        AptInstallStage.DOWNLOADING -> R.string.linux_stage_downloading
+        AptInstallStage.EXTRACTING -> R.string.linux_stage_extracting
+        AptInstallStage.INSTALLING_TOOLS -> R.string.linux_stage_installing_tools
+        AptInstallStage.COMPLETE -> R.string.linux_stage_complete
     },
 )
 

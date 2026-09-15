@@ -584,4 +584,6 @@ internal val TerminalEnvironment.displayName: String
     get() = when (this) {
         TerminalEnvironment.ANDROID -> "Android"
         TerminalEnvironment.DEBIAN -> "Debian"
+        TerminalEnvironment.UBUNTU -> "Ubuntu"
+        TerminalEnvironment.KALI -> "Kali"
     }

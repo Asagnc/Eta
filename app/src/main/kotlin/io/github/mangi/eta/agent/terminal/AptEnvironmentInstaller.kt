@@ -11,24 +11,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
-internal enum class DebianEnvironmentState {
+internal enum class AptEnvironmentState {
     NOT_INSTALLED,
     BASE_READY,
     READY,
 }
 
-internal data class DebianEnvironmentStatus(
-    val state: DebianEnvironmentState,
+internal data class AptEnvironmentStatus(
+    val state: AptEnvironmentState,
     val version: String? = null,
 )
 
-internal data class DebianAptMirror(
-    val id: String,
-    val archiveBaseUrl: String,
-    val securityBaseUrl: String,
-)
-
-internal enum class DebianInstallStage {
+internal enum class AptInstallStage {
     CHECKING,
     DOWNLOADING,
     EXTRACTING,
@@ -36,45 +30,46 @@ internal enum class DebianInstallStage {
     COMPLETE,
 }
 
-internal data class DebianInstallProgress(
-    val stage: DebianInstallStage,
+internal data class AptInstallProgress(
+    val stage: AptInstallStage,
     val downloadedBytes: Long = 0,
     val totalBytes: Long = 0,
 )
 
-internal sealed interface DebianInstallResult {
-    data object AlreadyReady : DebianInstallResult
-    data class BaseInstalled(val version: String) : DebianInstallResult
-    data class ToolsInstalled(val version: String) : DebianInstallResult
-    data object BaseNotInstalled : DebianInstallResult
-    data class UnsupportedAbi(val abi: String) : DebianInstallResult
-    data object RootUnavailable : DebianInstallResult
-    data object BusyBoxUnavailable : DebianInstallResult
-    data object EnvironmentUnavailable : DebianInstallResult
-    data class Failed(val stage: DebianInstallStage, val code: String? = null, val message: String? = null) : DebianInstallResult
+internal sealed interface AptInstallResult {
+    data object AlreadyReady : AptInstallResult
+    data class BaseInstalled(val version: String) : AptInstallResult
+    data class ToolsInstalled(val version: String) : AptInstallResult
+    data object BaseNotInstalled : AptInstallResult
+    data class UnsupportedAbi(val abi: String) : AptInstallResult
+    data object RootUnavailable : AptInstallResult
+    data object BusyBoxUnavailable : AptInstallResult
+    data object EnvironmentUnavailable : AptInstallResult
+    data class Failed(val stage: AptInstallStage, val code: String? = null, val message: String? = null) : AptInstallResult
 }
 
-/** 下载固定版本的 Debian glibc rootfs；Android 内核、挂载和会话仍由 Eta 复用。 */
-internal class DebianEnvironmentInstaller(
+/** 下载固定版本的 apt 系 rootfs（Debian / Ubuntu / Kali）；Android 内核、挂载与会话仍由 Eta 复用。 */
+internal class AptEnvironmentInstaller(
     private val context: Context,
+    private val distribution: LinuxDistribution,
     httpClient: OkHttpClient = VerifiedArtifactDownloader.defaultHttpClient(),
 ) {
     private val artifactDownloader = VerifiedArtifactDownloader(httpClient)
 
-    fun status(): DebianEnvironmentStatus {
+    fun status(): AptEnvironmentStatus {
         val rootfs = rootfsDir()
         val version = readInstalledVersion(rootfs)
         val state = when {
-            commonToolsReady(rootfs) -> DebianEnvironmentState.READY
-            baseRootfsReady(rootfs) -> DebianEnvironmentState.BASE_READY
-            else -> DebianEnvironmentState.NOT_INSTALLED
+            commonToolsReady(rootfs) -> AptEnvironmentState.READY
+            baseRootfsReady(rootfs) -> AptEnvironmentState.BASE_READY
+            else -> AptEnvironmentState.NOT_INSTALLED
         }
-        return DebianEnvironmentStatus(state, version)
+        return AptEnvironmentStatus(state, version)
     }
 
     suspend fun installBase(
-        onProgress: suspend (DebianInstallProgress) -> Unit = {},
-    ): DebianInstallResult {
+        onProgress: suspend (AptInstallProgress) -> Unit = {},
+    ): AptInstallResult {
         installMutex.lock()
         return try {
             installBaseLocked(onProgress)
@@ -84,8 +79,8 @@ internal class DebianEnvironmentInstaller(
     }
 
     suspend fun installTools(
-        onProgress: suspend (DebianInstallProgress) -> Unit = {},
-    ): DebianInstallResult {
+        onProgress: suspend (AptInstallProgress) -> Unit = {},
+    ): AptInstallResult {
         installMutex.lock()
         return try {
             installToolsLocked(onProgress)
@@ -95,72 +90,72 @@ internal class DebianEnvironmentInstaller(
     }
 
     private suspend fun installBaseLocked(
-        onProgress: suspend (DebianInstallProgress) -> Unit,
-    ): DebianInstallResult = withContext(Dispatchers.IO) {
+        onProgress: suspend (AptInstallProgress) -> Unit,
+    ): AptInstallResult = withContext(Dispatchers.IO) {
         val rootfs = rootfsDir()
         if (baseRootfsReady(rootfs)) {
-            return@withContext DebianInstallResult.AlreadyReady
+            return@withContext AptInstallResult.AlreadyReady
         }
         io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository.selectBackend(
-            LinuxDistribution.DEBIAN, LinuxEnvironmentPaths.backendOf(rootfs.absolutePath),
+            distribution, LinuxEnvironmentPaths.backendOf(rootfs.absolutePath),
         )
-        val artifact = artifactForAbis(Build.SUPPORTED_ABIS.toList())
-            ?: return@withContext DebianInstallResult.UnsupportedAbi(
+        val artifact = artifactForAbis(distribution, Build.SUPPORTED_ABIS.toList())
+            ?: return@withContext AptInstallResult.UnsupportedAbi(
                 Build.SUPPORTED_ABIS.firstOrNull().orEmpty().ifBlank { "unknown" },
             )
 
-        onProgress(DebianInstallProgress(DebianInstallStage.CHECKING))
+        onProgress(AptInstallProgress(AptInstallStage.CHECKING))
         preflightFailure()?.let { return@withContext it }
 
         val archive = File(context.cacheDir, artifact.fileName + ".download")
         try {
-            onProgress(DebianInstallProgress(DebianInstallStage.DOWNLOADING))
+            onProgress(AptInstallProgress(AptInstallStage.DOWNLOADING))
             val downloaded = artifactDownloader.download(artifact, archive) { downloadedBytes, totalBytes ->
-                onProgress(DebianInstallProgress(DebianInstallStage.DOWNLOADING, downloadedBytes, totalBytes))
+                onProgress(AptInstallProgress(AptInstallStage.DOWNLOADING, downloadedBytes, totalBytes))
             }
-            if (!downloaded) return@withContext DebianInstallResult.Failed(DebianInstallStage.DOWNLOADING)
+            if (!downloaded) return@withContext AptInstallResult.Failed(AptInstallStage.DOWNLOADING)
             coroutineContext.ensureActive()
-            onProgress(DebianInstallProgress(DebianInstallStage.EXTRACTING))
+            onProgress(AptInstallProgress(AptInstallStage.EXTRACTING))
             if (!installRootfs(artifact, archive, rootfs)) {
-                return@withContext DebianInstallResult.Failed(DebianInstallStage.EXTRACTING)
+                return@withContext AptInstallResult.Failed(AptInstallStage.EXTRACTING)
             }
         } catch (failure: RootlessInstallFailure) {
-            return@withContext DebianInstallResult.Failed(DebianInstallStage.EXTRACTING, failure.code, failure.message)
+            return@withContext AptInstallResult.Failed(AptInstallStage.EXTRACTING, failure.code, failure.message)
         } catch (_: java.io.IOException) {
-            return@withContext DebianInstallResult.Failed(DebianInstallStage.EXTRACTING, "INSTALL_IO_FAILED", "安装文件无法读写，请检查内部存储空间并重试")
+            return@withContext AptInstallResult.Failed(AptInstallStage.EXTRACTING, "INSTALL_IO_FAILED", "安装文件无法读写，请检查内部存储空间并重试")
         } catch (_: IllegalArgumentException) {
-            return@withContext DebianInstallResult.Failed(DebianInstallStage.EXTRACTING, "INVALID_ARCHIVE", "环境归档无效或包含不安全路径，请重新下载后重试")
+            return@withContext AptInstallResult.Failed(AptInstallStage.EXTRACTING, "INVALID_ARCHIVE", "环境归档无效或包含不安全路径，请重新下载后重试")
         } finally {
             archive.delete()
         }
 
-        onProgress(DebianInstallProgress(DebianInstallStage.COMPLETE))
-        DebianInstallResult.BaseInstalled(artifact.version)
+        onProgress(AptInstallProgress(AptInstallStage.COMPLETE))
+        AptInstallResult.BaseInstalled(artifact.version)
     }
 
     private suspend fun installToolsLocked(
-        onProgress: suspend (DebianInstallProgress) -> Unit,
-    ): DebianInstallResult = withContext(Dispatchers.IO) {
+        onProgress: suspend (AptInstallProgress) -> Unit,
+    ): AptInstallResult = withContext(Dispatchers.IO) {
         val rootfs = rootfsDir()
-        if (!baseRootfsReady(rootfs)) return@withContext DebianInstallResult.BaseNotInstalled
-        if (commonToolsReady(rootfs)) return@withContext DebianInstallResult.AlreadyReady
-        onProgress(DebianInstallProgress(DebianInstallStage.CHECKING))
+        if (!baseRootfsReady(rootfs)) return@withContext AptInstallResult.BaseNotInstalled
+        if (commonToolsReady(rootfs)) return@withContext AptInstallResult.AlreadyReady
+        onProgress(AptInstallProgress(AptInstallStage.CHECKING))
         preflightFailure()?.let { return@withContext it }
-        onProgress(DebianInstallProgress(DebianInstallStage.INSTALLING_TOOLS))
+        onProgress(AptInstallProgress(AptInstallStage.INSTALLING_TOOLS))
         if (!installCommonTools(rootfs)) {
-            return@withContext DebianInstallResult.Failed(DebianInstallStage.INSTALLING_TOOLS)
+            return@withContext AptInstallResult.Failed(AptInstallStage.INSTALLING_TOOLS)
         }
-        onProgress(DebianInstallProgress(DebianInstallStage.COMPLETE))
-        DebianInstallResult.ToolsInstalled(readInstalledVersion(rootfs) ?: DEBIAN_VERSION)
+        onProgress(AptInstallProgress(AptInstallStage.COMPLETE))
+        AptInstallResult.ToolsInstalled(readInstalledVersion(rootfs) ?: AptDistributionSpecs.versionOf(distribution))
     }
 
-    private suspend fun preflightFailure(): DebianInstallResult? = when (runPreflight().exitCode) {
+    private suspend fun preflightFailure(): AptInstallResult? = when (runPreflight().exitCode) {
         0 -> null
-        PREFLIGHT_ROOT_UNAVAILABLE -> DebianInstallResult.RootUnavailable
+        PREFLIGHT_ROOT_UNAVAILABLE -> AptInstallResult.RootUnavailable
         PREFLIGHT_BUSYBOX_UNAVAILABLE, PREFLIGHT_BUSYBOX_INCOMPLETE ->
-            DebianInstallResult.BusyBoxUnavailable
-        PREFLIGHT_ENVIRONMENT_UNAVAILABLE -> DebianInstallResult.EnvironmentUnavailable
-        else -> DebianInstallResult.Failed(DebianInstallStage.CHECKING)
+            AptInstallResult.BusyBoxUnavailable
+        PREFLIGHT_ENVIRONMENT_UNAVAILABLE -> AptInstallResult.EnvironmentUnavailable
+        else -> AptInstallResult.Failed(AptInstallStage.CHECKING)
     }
 
     private suspend fun runPreflight(): InstallerCommandResult {
@@ -186,14 +181,17 @@ internal class DebianEnvironmentInstaller(
 
     private suspend fun installRootfs(artifact: VerifiedArtifact, archive: File, rootfs: File): Boolean {
         if (LinuxEnvironmentPaths.backendOf(rootfs.absolutePath) == LinuxExecutionBackend.PROOT) {
-            return RootlessLinuxInstaller.installBase(artifact, archive, rootfs, LinuxDistribution.DEBIAN)
+            return RootlessLinuxInstaller.installBase(artifact, archive, rootfs, distribution)
         }
         val parent = rootfs.parentFile ?: return false
         val temporaryRootfs = File(parent, "rootfs.installing")
-        val markerBody = "version=${artifact.version}\\ndistribution=debian\\nsha256=${artifact.sha256}\\n"
+        val etaSources = AptDistributionSpecs.mirrorsOf(distribution).first().sources
+            .joinToString(" ") { line -> shellQuote(line) }
+        val markerBody = "version=${artifact.version}\\ndistribution=${distribution.wireName}\\nsha256=${artifact.sha256}\\n"
         val command = """
             ${AndroidBusyBox.discoveryScript()}
             [ -n "${'$'}eta_busybox" ] || exit 127
+            eta_sources=${shellQuote(etaSources)}
             eta_archive=${shellQuote(archive.absolutePath)}
             eta_parent=${shellQuote(parent.absolutePath)}
             eta_rootfs=${shellQuote(rootfs.absolutePath)}
@@ -226,12 +224,9 @@ internal class DebianEnvironmentInstaller(
             Acquire::http::Pipeline-Depth "0";
             Acquire::https::Pipeline-Depth "0";
             ETA_APT_CONFIG_EOF
-            printf '%s\n' \
-              ${shellQuote("deb ${APT_MIRRORS.first().archiveBaseUrl} trixie main")} \
-              ${shellQuote("deb ${APT_MIRRORS.first().archiveBaseUrl} trixie-updates main")} \
-              ${shellQuote("deb ${APT_MIRRORS.first().securityBaseUrl} trixie-security main")} > "${'$'}eta_temporary/etc/apt/sources.list"
+            printf '%s\n' ${'$'}eta_sources > "${'$'}eta_temporary/etc/apt/sources.list"
             printf '%s\n' '#!/bin/sh' > "${'$'}eta_temporary/usr/local/bin/eta-apt"
-            printf %s ${shellQuote(aptMirrorScriptBody())} >> "${'$'}eta_temporary/usr/local/bin/eta-apt"
+            printf %s ${shellQuote(aptMirrorScriptBody(distribution))} >> "${'$'}eta_temporary/usr/local/bin/eta-apt"
             "${'$'}eta_busybox" chmod 0755 "${'$'}eta_temporary/usr/local/bin/eta-apt"
             printf ${shellQuote(markerBody)} > "${'$'}eta_temporary/${LinuxEnvironmentPaths.READY_MARKER}"
             "${'$'}eta_busybox" chmod 0644 "${'$'}eta_temporary/${LinuxEnvironmentPaths.READY_MARKER}"
@@ -240,7 +235,7 @@ internal class DebianEnvironmentInstaller(
         """.trimIndent()
         val result = InstallerShellRunner.run(command, 180, TerminalEnvironment.ANDROID)
         AndroidAgentLogger.info(
-            "Debian environment action=extract outcome=${if (result.exitCode == 0) "succeeded" else "failed"} " +
+            "Linux environment action=extract outcome=${if (result.exitCode == 0) "succeeded" else "failed"} " +
                 "exitCode=${result.exitCode} outputChars=${result.output.length}",
         )
         return result.exitCode == 0
@@ -252,12 +247,12 @@ internal class DebianEnvironmentInstaller(
             export DEBIAN_FRONTEND=noninteractive
             mkdir -p /usr/local/bin
             printf '%s\n' '#!/bin/sh' > /usr/local/bin/eta-apt
-            printf %s ${shellQuote(aptMirrorScriptBody())} >> /usr/local/bin/eta-apt
+            printf %s ${shellQuote(aptMirrorScriptBody(distribution))} >> /usr/local/bin/eta-apt
             chmod 0755 /usr/local/bin/eta-apt
             /usr/local/bin/eta-apt install $packages || exit 70
             if command -v fdfind >/dev/null 2>&1; then ln -sf /usr/bin/fdfind /usr/local/bin/fd; fi
             cat > /${COMMON_TOOLS_MARKER} <<'ETA_TOOLSET_EOF'
-            debian=$DEBIAN_VERSION
+            ${distribution.wireName}=${AptDistributionSpecs.versionOf(distribution)}
             toolset=$TOOLSET_REVISION
             profiles=agent
             ETA_TOOLSET_EOF
@@ -266,17 +261,17 @@ internal class DebianEnvironmentInstaller(
         val result = InstallerShellRunner.run(
             command,
             COMMON_TOOLS_TIMEOUT_SECONDS,
-            TerminalEnvironment.DEBIAN,
+            distribution.terminalEnvironment,
             rootfs.absolutePath,
         )
         AndroidAgentLogger.info(
-            "Debian environment action=install_tools outcome=${if (result.exitCode == 0) "succeeded" else "failed"} " +
+            "Linux environment action=install_tools outcome=${if (result.exitCode == 0) "succeeded" else "failed"} " +
                 "exitCode=${result.exitCode} outputChars=${result.output.length}",
         )
         return result.exitCode == 0
     }
 
-    private fun rootfsDir(): File = LinuxEnvironmentPaths.rootfsDir(context, LinuxDistribution.DEBIAN)
+    private fun rootfsDir(): File = LinuxEnvironmentPaths.rootfsDir(context, distribution)
 
     private fun commonToolsReady(rootfs: File): Boolean {
         val marker = File(rootfs, COMMON_TOOLS_MARKER)
@@ -294,7 +289,6 @@ internal class DebianEnvironmentInstaller(
     }.getOrNull()
 
     companion object {
-        private const val DEBIAN_VERSION = "13"
         private const val COMMON_TOOLS_MARKER = ".eta-common-tools-ready"
         private const val TOOLSET_REVISION = 1
         private const val COMMON_TOOLS_TIMEOUT_SECONDS = 900L
@@ -314,78 +308,42 @@ internal class DebianEnvironmentInstaller(
             "xz-utils", "zip", "zstd", "fd-find",
         )
 
-        /** 真机链路只保留一个国内镜像和官方源，避免慢镜像串行拖长安装。 */
-        internal val APT_MIRRORS = listOf(
-            DebianAptMirror(
-                id = "tuna",
-                archiveBaseUrl = "https://mirrors.tuna.tsinghua.edu.cn/debian",
-                securityBaseUrl = "https://security.debian.org/debian-security",
-            ),
-            DebianAptMirror(
-                id = "official",
-                archiveBaseUrl = "https://deb.debian.org/debian",
-                securityBaseUrl = "https://security.debian.org/debian-security",
-            ),
-        )
-
         /** 逐个尝试镜像并把成功者写回 sources.list，后续 apt 操作复用它。 */
-        internal fun aptMirrorScript(): String = "#!/bin/sh\n${aptMirrorScriptBody()}"
+        internal fun aptMirrorScript(distribution: LinuxDistribution): String =
+            "#!/bin/sh\n${aptMirrorScriptBody(distribution)}"
 
-        private fun aptMirrorScriptBody(): String = buildString {
-            append("set -u; ")
-            append("eta_apt_write_sources() { ")
-            append("case \"${'$'}1\" in ")
-            append("tuna) eta_apt_archive=https://mirrors.tuna.tsinghua.edu.cn/debian; eta_apt_security=https://security.debian.org/debian-security;; ")
-            append("official) eta_apt_archive=https://deb.debian.org/debian; eta_apt_security=https://security.debian.org/debian-security;; ")
-            append("*) return 64;; esac; ")
-            append("printf '%s\\n' \"deb ${'$'}eta_apt_archive trixie main\" \"deb ${'$'}eta_apt_archive trixie-updates main\" \"deb ${'$'}eta_apt_security trixie-security main\" > /etc/apt/sources.list; ")
-            append("}; ")
-            append("case \"${'$'}{1:-}\" in ")
-            append("install) shift; [ \"${'$'}#\" -gt 0 ] || exit 64; ")
-            append("for eta_apt_mirror in tuna official; do ")
-            append("eta_apt_write_sources \"${'$'}eta_apt_mirror\" || exit 65; ")
-            append("if apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 update && apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 install -y --no-install-recommends \"${'$'}@\"; then exit 0; fi; ")
-            append("done; exit 1;; ")
-            append("update) for eta_apt_mirror in tuna official; do eta_apt_write_sources \"${'$'}eta_apt_mirror\" || exit 65; apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 update && exit 0; done; exit 1;; ")
-            append("*) echo \"usage: eta-apt install PACKAGE... | update\" >&2; exit 64;; esac")
-        }
-
-        internal fun artifactForAbis(abis: List<String>): VerifiedArtifact? =
-            abis.firstNotNullOfOrNull { abi ->
-                when (abi) {
-                    "arm64-v8a" -> debianArtifact(
-                        id = "debian-trixie-aarch64-pd-v4.29.0",
-                        fileName = "debian-trixie-aarch64-pd-v4.29.0.tar.xz",
-                        sha256 = "3834a11cbc6496935760bdc20cca7e2c25724d0cd8f5e4926da8fd5ca1857918",
-                        sizeBytes = 35_409_704L,
-                    )
-                    "x86_64" -> debianArtifact(
-                        id = "debian-trixie-x86_64-pd-v4.29.0",
-                        fileName = "debian-trixie-x86_64-pd-v4.29.0.tar.xz",
-                        sha256 = "4b8f33b80a10d734ff935e5934588572f860c0c38a68bf91db59af0580370716",
-                        sizeBytes = 36_728_936L,
-                    )
-                    else -> null
+        private fun aptMirrorScriptBody(distribution: LinuxDistribution): String {
+            val mirrors = AptDistributionSpecs.mirrorsOf(distribution)
+            val mirrorIds = mirrors.joinToString(" ") { it.id }
+            return buildString {
+                append("set -u; ")
+                append("eta_apt_write_sources() { ")
+                append("case \"${'$'}1\" in ")
+                mirrors.forEach { mirror ->
+                    append("${mirror.id}) ")
+                    append("printf '%s\\n' ")
+                    mirror.sources.forEach { line -> append(shellQuote(line)).append(' ') }
+                    append("> /etc/apt/sources.list;; ")
                 }
+                append("*) return 64;; esac; ")
+                append("}; ")
+                append("case \"${'$'}{1:-}\" in ")
+                append("install) shift; [ \"${'$'}#\" -gt 0 ] || exit 64; ")
+                append("for eta_apt_mirror in $mirrorIds; do ")
+                append("eta_apt_write_sources \"${'$'}eta_apt_mirror\" || exit 65; ")
+                append("if apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 update && ")
+                append("apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 install -y --no-install-recommends \"${'$'}@\"; ")
+                append("then exit 0; fi; ")
+                append("done; exit 1;; ")
+                append("update) for eta_apt_mirror in $mirrorIds; do ")
+                append("eta_apt_write_sources \"${'$'}eta_apt_mirror\" || exit 65; ")
+                append("apt-get -o Acquire::Retries=2 -o Acquire::http::Pipeline-Depth=0 update && exit 0; done; exit 1;; ")
+                append("*) echo \"usage: eta-apt install PACKAGE... | update\" >&2; exit 64;; esac")
             }
-
-        private fun debianArtifact(
-            id: String,
-            fileName: String,
-            sha256: String,
-            sizeBytes: Long,
-        ): VerifiedArtifact {
-            val officialUrl = "https://github.com/termux/proot-distro/releases/download/v4.29.0/$fileName"
-            return VerifiedArtifact(
-                id = id,
-                version = DEBIAN_VERSION,
-                fileName = fileName,
-                url = officialUrl,
-                sha256 = sha256,
-                sizeBytes = sizeBytes,
-                preferredUrls = GITHUB_PROXY_PREFIXES.map { prefix -> prefix + officialUrl },
-            )
         }
+
+        internal fun artifactForAbis(distribution: LinuxDistribution, abis: List<String>): VerifiedArtifact? =
+            abis.firstNotNullOfOrNull { abi -> AptDistributionSpecs.artifactOf(distribution, abi) }
 
         private val GITHUB_PROXY_PREFIXES = listOf(
             "https://gh-proxy.com/",
