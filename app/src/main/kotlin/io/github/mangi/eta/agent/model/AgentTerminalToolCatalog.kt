@@ -68,7 +68,7 @@ internal object AgentTerminalToolCatalog {
                                     "timeout_ms",
                                     JSONObject()
                                         .put("type", "integer")
-                                        .put("description", "Command timeout in milliseconds. Default 30000, max 180000.")
+                                        .put("description", "Command timeout in milliseconds. Default 30000, max 600000. The command is terminated once it expires; use a daemon task for long-running services.")
                                 )
                                 .put(
                                     "merge_stderr",

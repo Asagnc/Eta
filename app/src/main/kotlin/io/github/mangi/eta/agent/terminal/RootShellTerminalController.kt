@@ -27,7 +27,8 @@ internal class RootShellTerminalController(
         const val LINUX_DEFAULT_CWD = "/workspace"
         const val USER_STORAGE = "/storage/emulated/0"
         const val DEFAULT_TIMEOUT_SECONDS = 30
-        const val MAX_TIMEOUT_SECONDS = 180
+        // 编译、下载这类命令经常超过三分钟；更久的后台服务应交给 daemon 任务，那条路径不受这里约束。
+        const val MAX_TIMEOUT_SECONDS = 600
         const val MAX_COMMAND_CHARS = 4_000
         const val MAX_OUTPUT_CHARS = 16_000
         const val MAX_READ_BYTES = 256 * 1024
