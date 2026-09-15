@@ -135,6 +135,10 @@ internal object LinuxPackageProfiles {
      * CTF 与二进制分析常用的 Python 工具。装进独立 venv，避免与 Python profile 的
      * 默认环境互相污染；只把命令行入口链接到 /usr/local/bin，不整目录链接，
      * 否则会覆盖同名的 python 等命令。
+     *
+     * venv 固定用 CPython 3.13：pwntools 的依赖声明排除 unicorn 2.1.3 与 2.1.4，
+     * 解析只能落到 unicorn 2.1.2，而该版本只发布到 cp313 的预编译 wheel。换用更新的
+     * 解释器时 uv 会转为源码编译 unicorn，在设备上耗时超过安装时限，整个 profile 装不上。
      */
     val CTF_TOOLS = LinuxPackageProfile(
         id = "ctf-tools",
@@ -144,7 +148,10 @@ internal object LinuxPackageProfiles {
         specs = mapOf(
             LinuxDistribution.DEBIAN to LinuxPackageSpec(
                 setupScript = """
-                    UV_PYTHON_INSTALL_DIR=/opt/eta/python UV_PYTHON_BIN_DIR=/usr/local/bin uv venv --allow-existing /opt/eta/ctf
+                    UV_PYTHON_INSTALL_DIR=/opt/eta/python uv python install 3.13
+                    # 重建 venv：旧目录可能仍绑定着别的解释器版本
+                    rm -rf /opt/eta/ctf
+                    UV_PYTHON_INSTALL_DIR=/opt/eta/python uv venv --python 3.13 /opt/eta/ctf
                     UV_PYTHON_INSTALL_DIR=/opt/eta/python uv pip install --python /opt/eta/ctf/bin/python --upgrade pwntools z3-solver capstone ROPgadget pycryptodome
                     for tool in pwn checksec cyclic asm disasm ROPgadget; do
                         if [ -x "/opt/eta/ctf/bin/${'$'}tool" ]; then ln -sf "/opt/eta/ctf/bin/${'$'}tool" "/usr/local/bin/${'$'}tool"; fi
