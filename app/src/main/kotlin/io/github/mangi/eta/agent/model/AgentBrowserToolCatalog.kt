@@ -8,7 +8,7 @@ internal object AgentBrowserToolCatalog {
         tools.put(
             AgentToolSchema.function(
                 name = "browser_use",
-                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。一次调用只执行一个 action；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。需要把 URI 显式交给外部应用时使用 open_uri。",
+                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。一次调用只执行一个 action；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。evaluate_js 可在页面里执行 JS 表达式（支持 await），get_cookies 与 set_cookie 读写该浏览器的 Cookie。需要把 URI 显式交给外部应用时使用 open_uri。",
                 parameters = JSONObject()
                     .put("type", "object")
                     .put(
@@ -35,13 +35,41 @@ internal object AgentBrowserToolCatalog {
                                             .put("go_forward")
                                             .put("reload")
                                             .put("wait_for_selector")
+                                            .put("evaluate_js")
+                                            .put("get_cookies")
+                                            .put("set_cookie")
                                     )
                             )
                             .put(
                                 "url",
                                 JSONObject()
                                     .put("type", "string")
-                                    .put("description", "navigate 要访问的 URL。")
+                                    .put("description", "navigate、get_cookies 或 set_cookie 要访问的 URL；后两者省略时使用当前页面地址。")
+                            )
+                            .put(
+                                "user_agent",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "navigate 时使用的 User-Agent；传空字符串恢复系统默认值，省略则沿用当前设置。")
+                            )
+                            .put(
+                                "headers",
+                                JSONObject()
+                                    .put("type", "object")
+                                    .put("additionalProperties", JSONObject().put("type", "string"))
+                                    .put("description", "navigate 时附加的请求头，只作用于本次导航的主文档请求，页面内的 XHR/fetch 不会带上。")
+                            )
+                            .put(
+                                "cookie",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "set_cookie 要写入的 cookie，格式与 Set-Cookie 响应头一致，例如 session=abc; Domain=.example.com; Path=/。")
+                            )
+                            .put(
+                                "expression",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "evaluate_js 要执行的单个 JS 表达式，可用 await；多语句请自行包成 (async () => { ... })()。")
                             )
                             .put(
                                 "selector",
@@ -96,7 +124,7 @@ internal object AgentBrowserToolCatalog {
                                 "max_chars",
                                 JSONObject()
                                     .put("type", "integer")
-                                    .put("description", "get_readable 或 get_text 最多返回的文本字符数。")
+                                    .put("description", "get_readable、get_text 或 evaluate_js 最多返回的字符数；evaluate_js 默认 2000，上限 2500。")
                             )
                             .put(
                                 "read_image",
@@ -108,7 +136,7 @@ internal object AgentBrowserToolCatalog {
                                 "timeout_ms",
                                 JSONObject()
                                     .put("type", "integer")
-                                    .put("description", "navigate 或 wait_for_selector 的超时毫秒数。")
+                                    .put("description", "navigate、wait_for_selector 或 evaluate_js 的超时毫秒数。")
                             )
                     )
                     .put("required", JSONArray().put("action"))

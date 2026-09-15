@@ -446,6 +446,9 @@ internal class AgentTraceFormatter {
         "go_forward" -> "网页前进"
         "reload" -> "刷新网页"
         "wait_for_selector" -> "等待网页元素"
+        "evaluate_js" -> "执行网页脚本"
+        "get_cookies" -> "读取 Cookie"
+        "set_cookie" -> "写入 Cookie"
         else -> "浏览器操作"
     }
 
@@ -463,6 +466,9 @@ internal class AgentTraceFormatter {
         "go_forward" -> "已前进"
         "reload" -> "已刷新"
         "wait_for_selector" -> "已等到目标元素"
+        "evaluate_js" -> "已执行网页脚本"
+        "get_cookies" -> "已读取 Cookie"
+        "set_cookie" -> "已写入 Cookie"
         else -> "浏览器操作完成"
     }
 
@@ -536,6 +542,9 @@ internal class AgentTraceFormatter {
             "go_forward",
             "reload",
             "wait_for_selector",
+            "evaluate_js",
+            "get_cookies",
+            "set_cookie",
         )
         val BROWSER_TEXT_ACTIONS = setOf("get_readable", "get_text")
 

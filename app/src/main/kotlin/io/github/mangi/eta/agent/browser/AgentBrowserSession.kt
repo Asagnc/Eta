@@ -86,6 +86,11 @@ internal object AgentBrowserSession {
     private const val MAX_TEXT_CHARS = 12_000
     private const val NAVIGATION_TIMEOUT_MS = 25_000L
     private const val JAVASCRIPT_TIMEOUT_MS = 8_000L
+    private const val DEFAULT_SCRIPT_CHARS = 2_000
+    private const val MAX_SCRIPT_CHARS = 2_500
+    private const val SCRIPT_POLL_INTERVAL_MS = 120L
+    private const val MAX_COOKIE_ITEMS = 100
+    private const val MAX_COOKIE_HEADER_CHARS = 4_000
     private const val POST_ACTION_TIMEOUT_MS = 10_000L
     private const val SCREENSHOT_MAX_WIDTH = 1_280
     private const val SCREENSHOT_MAX_HEIGHT = 2_400
@@ -377,6 +382,9 @@ internal object AgentBrowserSession {
                         "go_forward" -> historyNavigation(action, backwards = false)
                         "reload" -> reload()
                         "wait_for_selector" -> waitForSelector(args)
+                        "evaluate_js" -> evaluateScript(args)
+                        "get_cookies" -> getCookies(args)
+                        "set_cookie" -> setCookie(args)
                         else -> throw BrowserFailure("INVALID_ACTION", "浏览器 action 无效")
                     }
                 }.getOrElse { throwable -> failureResult(action, throwable) }
@@ -391,6 +399,12 @@ internal object AgentBrowserSession {
     private fun navigate(args: JSONObject): BrowserToolResult {
         val rawUrl = args.optString("url").trim()
         if (rawUrl.isBlank()) throw BrowserFailure("INVALID_ARGUMENT", "navigate 缺少 url")
+        val headers = customHeaders(args)
+        val userAgent = if (args.has("user_agent") && !args.isNull("user_agent")) {
+            args.optString("user_agent").trim()
+        } else {
+            null
+        }
         val view = ensureWebView()
         val epoch = activeOperationEpoch
         val waiter = LoadWaiter()
@@ -411,7 +425,13 @@ internal object AgentBrowserSession {
             currentPageVisible = false
             currentProgress = 0
             publishSnapshotOnMain()
-            view.loadUrl(rawUrl)
+            // User-Agent 必须走 WebSettings：附加请求头里的 UA 会被 WebView 自身的默认值覆盖。
+            if (userAgent != null) {
+                view.settings.userAgentString = userAgent.ifEmpty {
+                    WebSettings.getDefaultUserAgent(view.context)
+                }
+            }
+            if (headers == null) view.loadUrl(rawUrl) else view.loadUrl(rawUrl, headers)
         }
 
         val outcome = try {
@@ -435,10 +455,11 @@ internal object AgentBrowserSession {
         currentHttpStatus?.takeIf { it >= 400 }?.let { code ->
             throw BrowserFailure("HTTP_$code", "网页返回 HTTP $code")
         }
-        return toolResult(
-            baseEnvelope("navigate", ok = true, status = "ok")
-                .put("redirected", rawUrl != currentUrl)
-        )
+        val envelope = baseEnvelope("navigate", ok = true, status = "ok")
+            .put("redirected", rawUrl != currentUrl)
+        if (headers != null) envelope.put("header_names", JSONArray(headers.keys.toList()))
+        if (userAgent != null) envelope.put("user_agent", callOnMain { view.settings.userAgentString })
+        return toolResult(envelope)
     }
 
     private fun readPage(args: JSONObject, readable: Boolean): BrowserToolResult {
@@ -611,6 +632,132 @@ internal object AgentBrowserSession {
         )
     }
 
+    private fun evaluateScript(args: JSONObject): BrowserToolResult {
+        if (!args.has("expression") || args.isNull("expression")) {
+            throw BrowserFailure("INVALID_ARGUMENT", "evaluate_js 缺少 expression")
+        }
+        val expression = args.optString("expression")
+        if (expression.isBlank()) {
+            throw BrowserFailure("INVALID_ARGUMENT", "evaluate_js 的 expression 不能为空")
+        }
+        val maxChars = args.optInt("max_chars", DEFAULT_SCRIPT_CHARS).coerceIn(128, MAX_SCRIPT_CHARS)
+        val timeout = args.optLong("timeout_ms", JAVASCRIPT_TIMEOUT_MS)
+            .coerceIn(500L, NAVIGATION_TIMEOUT_MS)
+        val view = requirePage()
+        val resultKey = "etaScript" + System.nanoTime().toString(36)
+        val urlAtStart = currentUrl
+        try {
+            evaluateObject(view, BrowserDomScripts.evaluateScript(expression, resultKey, maxChars))
+        } catch (failure: BrowserFailure) {
+            if (failure.code != "SCRIPT_FAILED") throw failure
+            throw BrowserFailure("SCRIPT_FAILED", "expression 无法执行，请检查语法是否完整")
+        }
+        val deadline = System.currentTimeMillis() + timeout
+        while (true) {
+            throwIfInterrupted()
+            val outcome = evaluateObject(view, BrowserDomScripts.scriptOutcome(resultKey))
+            if (outcome.optBoolean("done")) return scriptResult(outcome.optString("payload"))
+            if (currentUrl != urlAtStart) {
+                throw BrowserFailure("SCRIPT_RESULT_LOST", "脚本触发了页面跳转，返回值已丢失")
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                throw BrowserFailure("SCRIPT_RESULT_TIMEOUT", "脚本没有在超时前返回结果", "timeout")
+            }
+            Thread.sleep(SCRIPT_POLL_INTERVAL_MS)
+        }
+    }
+
+    private fun scriptResult(payloadRaw: String): BrowserToolResult {
+        val payload = runCatching { JSONObject(payloadRaw) }.getOrNull()
+            ?: throw BrowserFailure("SCRIPT_FAILED", "脚本返回的结果格式无效")
+        if (!payload.optBoolean("ok")) {
+            val error = if (payload.has("error") && !payload.isNull("error")) {
+                payload.optString("error")
+            } else {
+                ""
+            }
+            throw BrowserFailure(
+                "SCRIPT_ERROR",
+                error.take(400).ifBlank { "脚本执行失败" },
+            )
+        }
+        val kind = payload.optString("kind").ifBlank { "value" }
+        val text = payload.optString("text")
+        val value: Any = when (kind) {
+            "object", "array", "number", "boolean" ->
+                runCatching { JSONTokener(text).nextValue() }.getOrDefault(text)
+            "null", "undefined" -> JSONObject.NULL
+            else -> text
+        }
+        val envelope = baseEnvelope("evaluate_js", ok = true, status = "ok")
+            .put("result", value)
+            .put("result_kind", kind)
+            .put("result_length", payload.optInt("full_length", text.length))
+        if (payload.optBoolean("truncated")) envelope.put("truncated", true)
+        return toolResult(envelope)
+    }
+
+    private fun getCookies(args: JSONObject): BrowserToolResult {
+        val url = cookieUrl(args)
+        val raw = CookieManager.getInstance().getCookie(url).orEmpty()
+        val entries = raw.split(';').map(String::trim).filter(String::isNotEmpty)
+        val cookies = JSONArray()
+        entries.take(MAX_COOKIE_ITEMS).forEach { entry ->
+            val separator = entry.indexOf('=')
+            cookies.put(
+                JSONObject()
+                    .put("name", if (separator > 0) entry.substring(0, separator) else entry)
+                    .put("value", if (separator > 0) entry.substring(separator + 1) else "")
+            )
+        }
+        val envelope = baseEnvelope("get_cookies", ok = true, status = "ok")
+            .put("url", url)
+            .put("cookie_count", entries.size)
+            .put("cookies", cookies)
+            .put("cookie_header", raw.take(MAX_COOKIE_HEADER_CHARS))
+        if (entries.size > MAX_COOKIE_ITEMS || raw.length > MAX_COOKIE_HEADER_CHARS) {
+            envelope.put("truncated", true)
+        }
+        return toolResult(envelope)
+    }
+
+    private fun setCookie(args: JSONObject): BrowserToolResult {
+        val url = cookieUrl(args)
+        val cookie = if (args.has("cookie") && !args.isNull("cookie")) {
+            args.optString("cookie").trim()
+        } else {
+            ""
+        }
+        if (cookie.isEmpty()) throw BrowserFailure("INVALID_ARGUMENT", "set_cookie 缺少 cookie")
+        val separator = cookie.indexOf('=')
+        if (separator <= 0) {
+            throw BrowserFailure("INVALID_ARGUMENT", "cookie 需要是 Set-Cookie 形式的 name=value[; 属性]")
+        }
+        val name = cookie.substring(0, separator).trim()
+        // 写入回调会投递到调用线程的 Looper，工具线程没有 Looper，所以不带回调写入，写完回读确认。
+        CookieManager.getInstance().setCookie(url, cookie, null)
+        val applied = CookieManager.getInstance().getCookie(url).orEmpty()
+            .split(';')
+            .map(String::trim)
+            .any { it.startsWith("$name=") }
+        val envelope = baseEnvelope("set_cookie", ok = true, status = "ok")
+            .put("url", url)
+            .put("cookie_name", name)
+            .put("applied", applied)
+        if (!applied) envelope.put("message", "回读时未发现该 cookie，可能被域名或属性规则忽略")
+        return toolResult(envelope)
+    }
+
+    private fun cookieUrl(args: JSONObject): String {
+        val url = args.optString("url").trim().ifEmpty { currentUrl }
+        if (url.isBlank()) throw BrowserFailure("INVALID_ARGUMENT", "缺少 url，且当前没有已打开的网页")
+        val scheme = runCatching { Uri.parse(url).scheme.orEmpty().lowercase(Locale.ROOT) }.getOrDefault("")
+        if (scheme != "http" && scheme != "https") {
+            throw BrowserFailure("INVALID_ARGUMENT", "url 需要是 http 或 https 地址")
+        }
+        return url
+    }
+
     private fun targetFrom(args: JSONObject): BrowserTarget {
         val selector = validatedSelector(args, required = false)
         val hasX = args.has("coordinate_x") && !args.isNull("coordinate_x")
@@ -637,6 +784,25 @@ internal object AgentBrowserSession {
             return null
         }
         return selector
+    }
+
+    private fun customHeaders(args: JSONObject): Map<String, String>? {
+        val raw = args.optJSONObject("headers") ?: return null
+        if (raw.length() == 0) return null
+        val headers = linkedMapOf<String, String>()
+        raw.keys().forEach { key ->
+            val value = raw.opt(key)
+            if (value == null || value === JSONObject.NULL || value is JSONObject || value is JSONArray) {
+                throw BrowserFailure("INVALID_ARGUMENT", "headers 的值必须是字符串")
+            }
+            val name = key.trim()
+            val text = value.toString()
+            if (name.isEmpty() || text.contains('\n') || text.contains('\r')) {
+                throw BrowserFailure("INVALID_ARGUMENT", "headers 的名称或值不合法")
+            }
+            headers[name] = text
+        }
+        return headers
     }
 
     private fun requirePage(): WebView {
@@ -1129,6 +1295,9 @@ internal object AgentBrowserSession {
         "go_forward",
         "reload",
         "wait_for_selector",
+        "evaluate_js",
+        "get_cookies",
+        "set_cookie",
     )
 
 }
