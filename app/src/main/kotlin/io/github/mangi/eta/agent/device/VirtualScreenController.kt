@@ -47,6 +47,7 @@ internal class VirtualScreenController(
                 "副屏未出现在系统显示列表中，请确认设备允许叠加显示",
             )
         logger.info("Agent virtual screen action=create outcome=succeeded displayId=${display.displayId}")
+        VirtualScreenMirror.onVirtualScreenCreated(context, display.displayId, display.width, display.height)
         return JSONObject()
             .put("ok", true)
             .put("tool", "virtual_screen")
@@ -81,6 +82,7 @@ internal class VirtualScreenController(
         if (!result.ok) return failure("VIRTUAL_SCREEN_DESTROY_FAILED", result)
         val remaining = parseOverlay(result.stdout)
         logger.info("Agent virtual screen action=destroy outcome=succeeded remaining=${remaining != null}")
+        VirtualScreenMirror.onVirtualScreenDestroyed()
         return JSONObject()
             .put("ok", true)
             .put("tool", "virtual_screen")

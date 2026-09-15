@@ -246,6 +246,8 @@
   <string name="overlay_continuation_unavailable">Additional input not supported here</string>
   <string name="overlay_stopped">Stopped</string>
   <string name="tool_virtual_screen">Virtual screen</string>
+  <string name="ui_virtual_screen_mirror">Virtual screen mirror</string>
+  <string name="ui_virtual_screen_mirror_summary">Show the virtual screen live on the main screen while it exists</string>
   <string name="tool_observe_screen">Observe screen</string>
   <string name="tool_tap">Tap</string>
   <string name="tool_tap_element">Tap element</string>

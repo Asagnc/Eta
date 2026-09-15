@@ -32,6 +32,11 @@
 # -dontwarn 仅抑制 KMP 依赖在 Android 侧可能出现的可选平台 warning，不阻止裁剪。
 -dontwarn top.yukonga.miuix.**
 
+# 副屏镜像宿主由 root 侧的 app_process 按类名启动，混淆或裁剪后宿主无法启动。
+-keep class io.github.mangi.eta.agent.device.VirtualScreenMirrorHost {
+    public static void main(java.lang.String[]);
+}
+
 # libxposed service 通过静态调用和 manifest provider 接入，交给 R8/Android 默认规则保留可达代码。
 -dontwarn io.github.libxposed.service.**
 
