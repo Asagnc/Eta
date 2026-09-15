@@ -10,7 +10,7 @@ internal data class AptMirror(
 internal object AptDistributionSpecs {
     fun versionOf(distribution: LinuxDistribution): String = when (distribution) {
         LinuxDistribution.DEBIAN -> "13"
-        LinuxDistribution.UBUNTU -> "25.10"
+        LinuxDistribution.UBUNTU -> "25.04"
         LinuxDistribution.KALI -> "2026.2"
     }
 

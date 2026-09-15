@@ -31,7 +31,7 @@ class AptEnvironmentInstallerTest {
 
         val ubuntu = AptEnvironmentInstaller.artifactForAbis(LinuxDistribution.UBUNTU, listOf("arm64-v8a"))
         requireNotNull(ubuntu)
-        assertEquals("25.10", ubuntu.version)
+        assertEquals("25.04", ubuntu.version)
         assertEquals(56_752_204L, ubuntu.sizeBytes)
 
         val kali = AptEnvironmentInstaller.artifactForAbis(LinuxDistribution.KALI, listOf("arm64-v8a"))
