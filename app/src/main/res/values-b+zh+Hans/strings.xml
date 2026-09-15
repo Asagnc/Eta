@@ -223,6 +223,7 @@
   <string name="overlay_substatus_failed">执行失败</string>
   <string name="overlay_pause">暂停</string>
   <string name="overlay_resume">继续</string>
+  <string name="tool_virtual_screen">副屏</string>
   <string name="tool_observe_screen">观察屏幕</string>
   <string name="tool_tap">点击</string>
   <string name="tool_tap_element">点击元素</string>

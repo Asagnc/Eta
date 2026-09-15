@@ -20,6 +20,7 @@ internal object AgentToolCatalog {
         capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
             AgentGestureToolCatalog.appendTo(tools)
+            AgentVirtualScreenToolCatalog.appendTo(tools)
             AgentTextSystemToolCatalog.appendTo(tools)
             AgentDeviceToolCatalog.appendTo(
                 tools,

@@ -11,9 +11,11 @@ import org.junit.Test
 
 class AgentToolRequirementsTest {
     @Test
-    fun everyRegisteredToolHasExactlyOneRequirement() {
+    fun everyCatalogToolHasARegisteredRequirement() {
         val tools = catalog(root = true)
-        assertEquals(AgentToolRequirements.toolNames, tools.names())
+        // requirements 是 catalog 的超集：角色扮演工具（character_memory_*）在通用目录之外单独暴露，
+        // 因此这里只断言 catalog 暴露的每个工具都已登记能力合同，不要求两个集合相等。
+        assertTrue(AgentToolRequirements.toolNames.containsAll(tools.names()))
         assertEquals(tools.length(), tools.names().size)
         assertFalse(tools.toString().contains("rootRequirement"))
     }
