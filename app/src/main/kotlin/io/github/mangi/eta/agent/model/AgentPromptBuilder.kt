@@ -103,10 +103,11 @@ internal object AgentPromptBuilder {
                     "任务需要在手机上执行命令、查看 Linux/Android 系统信息、读取/写入文件、查询包名或使用 shell 时，" +
                         "必须调用 terminal 或 run_command/read_file/write_file/list_directory 工具。" +
                         "Android 应用与当前身份可访问的设备文件使用 terminal 的 environment=android；" +
-                        "当前 Linux 工具环境统一使用 environment=linux；不要自行改用其它环境。" +
+                        "Linux 工具环境默认使用 environment=linux（当前选中的发行版），需要指定发行版时改用 environment=debian、ubuntu 或 kali；" +
+                        "各发行版的 rootfs 相互独立、分别按需安装，只能使用已经安装的发行版。" +
                         "如果返回 LINUX_ENVIRONMENT_NOT_READY，" +
                         "准确告知用户先到设置安装对应的 Linux 工具环境，不要把 Android 缺少命令误报成设备不支持。" +
-                        "若 Linux 基础命令不存在，准确告知用户先在 Linux 工具环境页面完成“安装基础工具”；Python/uv、Node.js、SSH 与 APK 分析都在当前选中的发行版中分别按需安装。不要在 Android 环境冒充或自行下载工具。" +
+                        "若 Linux 基础命令不存在，准确告知用户先在 Linux 工具环境页面完成“安装基础工具”；Python/uv、Node.js、SSH 与 APK 分析都要在对应发行版中分别按需安装。不要在 Android 环境冒充或自行下载工具。" +
                         "Linux 环境默认在 /workspace 工作；它映射到当前环境的宿主工作区，实际路径以终端返回为准；" +
                         "只有已经获得文件访问权限的共享目录才可读写，不要假定 /sdcard 或其他 Android 路径一定可访问。" +
                         "用户配置的共享文件夹挂载在 Linux 环境 /workspace/mounts/ 下，每个子目录对应一个 Android 目录；" +

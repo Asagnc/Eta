@@ -506,7 +506,7 @@
   <string name="page_workspace_is_not_available_3db427">/workspace 不可用</string>
   <string name="page_workspace_is_available_704a92">/workspace 可用</string>
   <string name="page_apk_analysis_tools_are_ready_d45e3e">APK 分析工具已经就绪</string>
-  <string name="page_agent_can_work_in_workspace_through_terminal_environ_9b7e2d">Agent 通过 terminal 的 environment=linux 使用当前选中的发行版在 /workspace 工作</string>
+  <string name="page_agent_can_work_in_workspace_through_terminal_environ_9b7e2d">Agent 通过 terminal 的 environment=linux 或已安装的发行版（debian/ubuntu/kali）在 /workspace 工作</string>
   <string name="page_agent_browser_a66bd5">Agent 浏览器</string>
   <string name="page_jadx_apktool_smali_and_baksmali_are_installed_d7201c">JADX、Apktool、smali 与 baksmali 安装完成</string>
   <string name="page_jadx_apktool_smali_and_baksmali_are_ready_apktool_do_14eaf8">JADX、Apktool、smali 与 baksmali 已就绪；Apktool 暂不支持回编译</string>

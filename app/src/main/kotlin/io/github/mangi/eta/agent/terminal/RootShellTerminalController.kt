@@ -867,15 +867,17 @@ internal class RootShellTerminalController(
         return normalized
     }
 
-    private fun normalizeEnvironment(environment: String): TerminalEnvironment =
-        when (environment.ifBlank { TerminalEnvironment.ANDROID.wireName }.lowercase()) {
-            TerminalEnvironment.ANDROID.wireName -> TerminalEnvironment.ANDROID
-            SELECTED_LINUX_WIRE_NAME -> selectedLinuxEnvironmentProvider()
-                .takeIf { it == TerminalEnvironment.DEBIAN }
-                ?: TerminalEnvironment.DEBIAN
-            TerminalEnvironment.DEBIAN.wireName -> TerminalEnvironment.DEBIAN
-            else -> throw IllegalArgumentException("environment 仅支持 android/linux")
-        }
+    /** android、linux（当前选中的发行版）与具体发行版名，都归一化为一个执行环境。 */
+    private fun normalizeEnvironment(environment: String): TerminalEnvironment {
+        val wireName = environment.ifBlank { TerminalEnvironment.ANDROID.wireName }.lowercase()
+        if (wireName == TerminalEnvironment.ANDROID.wireName) return TerminalEnvironment.ANDROID
+        if (wireName == SELECTED_LINUX_WIRE_NAME) return selectedLinuxEnvironmentProvider()
+        return TerminalEnvironment.entries.firstOrNull { it.isLinux && it.wireName == wireName }
+            ?: throw IllegalArgumentException(
+                "environment 仅支持 android、linux，或发行版名 " +
+                    LinuxDistribution.entries.joinToString("/") { it.wireName },
+            )
+    }
 
     private fun environmentPreflight(
         identity: String,
@@ -887,7 +889,7 @@ internal class RootShellTerminalController(
         environment.isLinux && !LinuxEnvironmentPaths.rootfsReady(rootfsPath) ->
             errorJson(
                 "LINUX_ENVIRONMENT_NOT_READY",
-                "Linux 工具环境尚未安装，请先在设置中完成环境配置",
+                "${environment.wireName} 工具环境尚未安装，请先在 Linux 工具环境页面安装该发行版",
             )
         identity == "root" && !rootAvailable() -> errorJson("ROOT_REQUIRED", "Root 授权不可用")
         environment.isLinux && LinuxEnvironmentPaths.backendOf(rootfsPath) == LinuxExecutionBackend.PROOT && identity == "root" ->

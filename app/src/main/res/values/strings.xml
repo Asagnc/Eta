@@ -528,7 +528,7 @@
   <string name="page_workspace_is_not_available_3db427">/workspace is not available</string>
   <string name="page_workspace_is_available_704a92">/workspace is available</string>
   <string name="page_apk_analysis_tools_are_ready_d45e3e">APK analysis tools are ready</string>
-  <string name="page_agent_can_work_in_workspace_through_terminal_environ_9b7e2d">Agent can work in /workspace through terminal environment=linux using the selected distribution</string>
+  <string name="page_agent_can_work_in_workspace_through_terminal_environ_9b7e2d">Agent can work in /workspace through terminal environment=linux or an installed distribution (debian/ubuntu/kali)</string>
   <string name="page_agent_browser_a66bd5">Agent browser</string>
   <string name="page_jadx_apktool_smali_and_baksmali_are_installed_d7201c">JADX, Apktool, smali and baksmali are installed</string>
   <string name="page_jadx_apktool_smali_and_baksmali_are_ready_apktool_do_14eaf8">JADX, Apktool, smali and baksmali are ready; Apktool does not support back compilation yet</string>

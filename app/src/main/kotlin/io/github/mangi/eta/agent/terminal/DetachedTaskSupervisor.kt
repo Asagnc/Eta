@@ -512,10 +512,8 @@ internal class DetachedTaskSupervisor(
         command = getString("command"),
         cwd = getString("cwd"),
         identity = getString("identity"),
-        environment = when (optString("environment")) {
-            TerminalEnvironment.DEBIAN.wireName -> TerminalEnvironment.DEBIAN
-            else -> TerminalEnvironment.ANDROID
-        },
+        environment = TerminalEnvironment.entries.firstOrNull { it.wireName == optString("environment") }
+            ?: TerminalEnvironment.ANDROID,
         logPath = getString("log_path"),
         startedAt = getLong("started_at"),
         backend = LinuxExecutionBackend.entries.firstOrNull { it.wireName == optString("backend") } ?: LinuxExecutionBackend.CHROOT,

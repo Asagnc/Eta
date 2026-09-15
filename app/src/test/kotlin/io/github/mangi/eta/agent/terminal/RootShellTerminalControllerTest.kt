@@ -253,6 +253,44 @@ class RootShellTerminalControllerTest {
         }
     }
 
+    @Test
+    fun namedDistributionRunsInsteadOfSelectedDistribution() {
+        var requestedEnvironment: TerminalEnvironment? = null
+        val controller = RootShellTerminalController(
+            logger = NoopLogger,
+            linuxRootfsPathProvider = { environment ->
+                requestedEnvironment = environment
+                File(temporaryFolder.root, "missing-${environment.wireName}-rootfs").absolutePath
+            },
+            selectedLinuxEnvironmentProvider = { TerminalEnvironment.DEBIAN },
+        )
+        try {
+            val result = JSONObject(
+                controller.terminalAction(
+                    action = "open_and_exec",
+                    command = "python3 --version",
+                    cwd = null,
+                    timeoutMs = 5_000,
+                    identity = "root",
+                    mergeStderr = false,
+                    sessionId = null,
+                    jobId = null,
+                    async = false,
+                    offsetChars = 0,
+                    maxChars = 8_000,
+                    closeIfDone = false,
+                    environment = "ubuntu",
+                ),
+            )
+            assertFalse(result.toString(), result.getBoolean("ok"))
+            assertEquals("LINUX_ENVIRONMENT_NOT_READY", result.getString("code"))
+            assertEquals(TerminalEnvironment.UBUNTU, requestedEnvironment)
+            assertTrue(result.getString("message").contains("ubuntu"))
+        } finally {
+            controller.closeAll()
+        }
+    }
+
     private object NoopLogger : AgentLogger {
         override fun debug(message: () -> String) = Unit
         override fun info(message: String) = Unit
