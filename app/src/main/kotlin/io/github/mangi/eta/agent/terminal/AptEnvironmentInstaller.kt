@@ -224,6 +224,9 @@ internal class AptEnvironmentInstaller(
             "${'$'}eta_busybox" chmod 1777 "${'$'}eta_temporary/tmp"
             "${'$'}eta_busybox" rm -f "${'$'}eta_temporary/sdcard"
             "${'$'}eta_busybox" ln -s /storage/emulated/0 "${'$'}eta_temporary/sdcard"
+            # Ubuntu 云镜像把 /etc/resolv.conf 做成指向 /run/systemd/resolve/stub-resolv.conf 的符号链接，
+            # 而 rootfs 里没有那个目录，直接写会跟着链接落到不存在的路径上，容器内 DNS 随之全废。
+            "${'$'}eta_busybox" rm -f "${'$'}eta_temporary/etc/resolv.conf"
             cat > "${'$'}eta_temporary/etc/resolv.conf" <<'ETA_RESOLV_EOF'
             nameserver 223.5.5.5
             nameserver 119.29.29.29
