@@ -26,29 +26,39 @@ class ConversationRunPurgeTest {
 
     @Test
     fun purgeRemovesEveryRunOfTheDeletedConversationAndKeepsOthers() {
-        addRun(conversationId = "conv-a", runId = "run-a1")
-        addRun(conversationId = "conv-a", runId = "run-a2")
-        addRun(conversationId = "conv-b", runId = "run-b1")
+        val tag = System.nanoTime()
+        val deletedConversation = "conv-a-$tag"
+        val keptRunId = "kept-$tag"
+        addRun(conversationId = deletedConversation, runId = "deleted-1-$tag")
+        addRun(conversationId = deletedConversation, runId = "deleted-2-$tag")
+        addRun(conversationId = "conv-b-$tag", runId = keptRunId)
 
-        assertEquals(6, ConversationRunPurge.purge(context, "conv-a"))
+        assertEquals(6, ConversationRunPurge.purge(context, deletedConversation))
 
-        assertEquals(listOf("run-b1"), AgentRunArchiveStore.list(context).map { it.result.runId })
-        assertEquals(listOf("run-b1"), AgentRunCheckpointStore.list(context).map { it.runId })
-        assertEquals(listOf("run-b1"), AgentRuntimeResultStore.list(context).map { it.result.runId })
+        assertEquals(listOf(keptRunId), AgentRunArchiveStore.list(context).map { it.result.runId })
+        assertEquals(listOf(keptRunId), AgentRunCheckpointStore.list(context).map { it.runId })
+        assertEquals(listOf(keptRunId), AgentRuntimeResultStore.list(context).map { it.result.runId })
     }
 
     @Test
     fun purgeMatchesLegacyPlainPayloadAndIgnoresUnknownConversation() {
-        addRun(conversationId = "conv-a", runId = "run-a1", encodePayload = false)
-        addRun(conversationId = "conv-b", runId = "run-b1", encodePayload = false)
+        val tag = System.nanoTime()
+        val conversation = "conv-a-$tag"
+        val keptRunId = "kept-$tag"
+        addRun(conversationId = conversation, runId = "legacy-$tag", encodePayload = false)
+        addRun(conversationId = "conv-b-$tag", runId = keptRunId, encodePayload = false)
 
-        assertEquals(0, ConversationRunPurge.purge(context, "conv-c"))
-        assertEquals(3, ConversationRunPurge.purge(context, "conv-a"))
+        assertEquals(0, ConversationRunPurge.purge(context, "conv-missing-$tag"))
+        assertEquals(3, ConversationRunPurge.purge(context, conversation))
 
-        assertEquals(listOf("run-b1"), AgentRuntimeResultStore.list(context).map { it.result.runId })
+        assertEquals(listOf(keptRunId), AgentRuntimeResultStore.list(context).map { it.result.runId })
         assertEquals(0, ConversationRunPurge.purge(context, "   "))
     }
 
+    /**
+     * runId 必须逐次唯一：[AgentRuntimeResultStore] 会把已确认的 runId 记在进程级缓存里，
+     * 同一 runId 再次写入会被拒绝，复用会让测试之间互相干扰。
+     */
     private fun addRun(conversationId: String, runId: String, encodePayload: Boolean = true) {
         val handoff = AgentRuntimeWire.EntryHandoff(
             id = runId,
