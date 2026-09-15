@@ -537,71 +537,68 @@ internal object BrowserDomScripts {
      *
      * 表达式包在 async 函数里，因此可以写 await；返回值只以文本形式保留，超过 maxChars 时截断。
      * 页面跳转会连带这段结果和 JS 上下文一起失效，所以结果落在 window 上，而不是靠 evaluateJavascript 的返回值。
+     * 这段代码是 wrap() 的函数体，自己不要再包一层 IIFE：wrap 取到的返回值会变成 undefined。
      */
     fun evaluateScript(expression: String, resultKey: String, maxChars: Int): String =
         """
-        (function() {
-          var key = ${JSONObject.quote(resultKey)};
-          var limit = $maxChars;
-          function describe(value) {
-            if (value === undefined) return { kind: 'undefined', text: '' };
-            if (value === null) return { kind: 'null', text: '' };
-            var type = typeof value;
-            if (type === 'string') return { kind: 'string', text: value };
-            if (type === 'number' || type === 'boolean') return { kind: type, text: String(value) };
-            if (type === 'function') {
-              return { kind: 'function', text: '[function ' + (value.name || 'anonymous') + ']' };
-            }
-            if (typeof value.nodeType === 'number' && typeof value.outerHTML === 'string') {
-              return { kind: 'element', text: value.outerHTML };
-            }
-            try {
-              var encoded = JSON.stringify(value);
-              if (typeof encoded === 'string') {
-                return { kind: Array.isArray(value) ? 'array' : 'object', text: encoded };
-              }
-            } catch (error) {
-            }
-            return { kind: 'value', text: String(value) };
+        var key = ${JSONObject.quote(resultKey)};
+        var limit = $maxChars;
+        function describe(value) {
+          if (value === undefined) return { kind: 'undefined', text: '' };
+          if (value === null) return { kind: 'null', text: '' };
+          var type = typeof value;
+          if (type === 'string') return { kind: 'string', text: value };
+          if (type === 'number' || type === 'boolean') return { kind: type, text: String(value) };
+          if (type === 'function') {
+            return { kind: 'function', text: '[function ' + (value.name || 'anonymous') + ']' };
           }
-          function report(payload) {
-            window[key] = JSON.stringify(payload);
+          if (typeof value.nodeType === 'number' && typeof value.outerHTML === 'string') {
+            return { kind: 'element', text: value.outerHTML };
           }
-          function fail(error) {
-            report({ ok: false, error: String(error && error.message ? error.message : error) });
-          }
-          var pending = null;
           try {
-            pending = (async function() { return ($expression); })();
+            var encoded = JSON.stringify(value);
+            if (typeof encoded === 'string') {
+              return { kind: Array.isArray(value) ? 'array' : 'object', text: encoded };
+            }
           } catch (error) {
-            fail(error);
-            return null;
           }
-          Promise.resolve(pending).then(function(value) {
-            var described = describe(value);
-            var truncated = described.text.length > limit;
-            report({
-              ok: true,
-              kind: described.kind,
-              text: truncated ? described.text.slice(0, limit) : described.text,
-              full_length: described.text.length,
-              truncated: truncated
-            });
-          }, fail);
+          return { kind: 'value', text: String(value) };
+        }
+        function report(payload) {
+          window[key] = JSON.stringify(payload);
+        }
+        function fail(error) {
+          report({ ok: false, error: String(error && error.message ? error.message : error) });
+        }
+        var pending = null;
+        try {
+          pending = (async function() { return ($expression); })();
+        } catch (error) {
+          fail(error);
           return null;
-        })();
+        }
+        Promise.resolve(pending).then(function(value) {
+          var described = describe(value);
+          var truncated = described.text.length > limit;
+          report({
+            ok: true,
+            kind: described.kind,
+            text: truncated ? described.text.slice(0, limit) : described.text,
+            full_length: described.text.length,
+            truncated: truncated
+          });
+        }, fail);
+        return null;
         """.trimIndent()
 
     /** 读走 evaluateScript 留在页面上的结果；结果还没落到 window 时返回 done=false。 */
     fun scriptOutcome(resultKey: String): String =
         """
-        (function() {
-          var key = ${JSONObject.quote(resultKey)};
-          if (window[key] === undefined) return { done: false };
-          var payload = window[key];
-          delete window[key];
-          return { done: true, payload: String(payload) };
-        })();
+        var key = ${JSONObject.quote(resultKey)};
+        if (window[key] === undefined) return { done: false };
+        var payload = window[key];
+        delete window[key];
+        return { done: true, payload: String(payload) };
         """.trimIndent()
 
     private fun targeted(selector: String?, x: Int?, y: Int?): String {
