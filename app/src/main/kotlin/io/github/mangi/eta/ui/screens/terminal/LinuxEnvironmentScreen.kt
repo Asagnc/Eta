@@ -40,6 +40,7 @@ import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.app.rememberExecutionNotificationRequest
+import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.PreferenceIcon
 import io.github.mangi.eta.ui.navigation.AppRoute
@@ -52,6 +53,7 @@ import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.window.WindowDialog
 
 private enum class InstallTarget {
     BASE,
@@ -65,6 +67,7 @@ private enum class InstallTarget {
     BUILD_TOOLS,
     SECURITY_TOOLS,
     CTF_TOOLS,
+    UNINSTALL,
 }
 
 private data class PackageProfileUi(
@@ -188,6 +191,8 @@ internal fun LinuxEnvironmentScreen(
         mutableStateOf(apkAnalysisInstaller.isReady())
     }
     var apkAnalysisProgress by remember { mutableStateOf<ApkAnalysisInstallProgress?>(null) }
+    var showUninstallDialog by remember { mutableStateOf(false) }
+    var uninstallWorking by remember { mutableStateOf(false) }
     val selectedBaseReady = envStatus.state != AptEnvironmentState.NOT_INSTALLED
     val selectedToolsReady = envStatus.state == AptEnvironmentState.READY
 
@@ -249,6 +254,33 @@ internal fun LinuxEnvironmentScreen(
         }
     }
 
+    fun uninstallEnvironment() {
+        if (busyTarget != null) return
+        busyTarget = InstallTarget.UNINSTALL
+        uninstallWorking = true
+        resultMessage = null
+        launchInstallation {
+            try {
+                val deleted = envInstaller.uninstall()
+                envStatus = envInstaller.status()
+                profileReady = packageProfileUis.associate {
+                    it.target to profileInstallers.getValue(it.target).isReady()
+                }
+                apkAnalysisReady = apkAnalysisInstaller.isReady()
+                resultMessage = context.getString(
+                    if (deleted) {
+                        R.string.linux_environment_uninstall_done
+                    } else {
+                        R.string.linux_environment_uninstall_failed
+                    },
+                )
+            } finally {
+                uninstallWorking = false
+                showUninstallDialog = false
+            }
+        }
+    }
+
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_linux_tool_environment_314d22),
         onBack = onBack,
@@ -291,6 +323,23 @@ internal fun LinuxEnvironmentScreen(
                     else if (selectedBaseReady) installTools() else installBase()
                 },
             )
+        }
+        if (selectedBaseReady) {
+            item(key = "uninstall-card") {
+                Card(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    BasicComponent(
+                        title = stringResource(R.string.linux_environment_uninstall),
+                        summary = stringResource(R.string.linux_environment_uninstall_summary),
+                        endActions = {
+                            TextButton(
+                                text = stringResource(R.string.linux_environment_uninstall),
+                                enabled = busyTarget == null,
+                                onClick = { showUninstallDialog = true },
+                            )
+                        },
+                    )
+                }
+            }
         }
         item(key = "configuration-title") { SmallTitle(stringResource(R.string.linux_environment_configuration)) }
         item(key = "configuration-card") {
@@ -434,6 +483,40 @@ internal fun LinuxEnvironmentScreen(
                 }
             }
         }
+    }
+
+    UninstallConfirmDialog(
+        show = showUninstallDialog,
+        working = uninstallWorking,
+        onDismissRequest = { if (!uninstallWorking) showUninstallDialog = false },
+        onConfirm = { uninstallEnvironment() },
+    )
+}
+
+@Composable
+private fun UninstallConfirmDialog(
+    show: Boolean,
+    working: Boolean,
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    WindowDialog(
+        show = show,
+        title = stringResource(R.string.linux_environment_uninstall),
+        summary = stringResource(R.string.linux_environment_uninstall_confirm),
+        onDismissRequest = onDismissRequest,
+    ) {
+        MiuixDialogActions(
+            confirmText = if (working) {
+                stringResource(R.string.status_processing)
+            } else {
+                stringResource(R.string.action_confirm)
+            },
+            cancelEnabled = !working,
+            confirmEnabled = !working,
+            onCancel = onDismissRequest,
+            onConfirm = onConfirm,
+        )
     }
 }
 

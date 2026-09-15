@@ -947,6 +947,11 @@
   <string name="linux_distribution_kali_summary">Security testing distribution</string>
   <string name="linux_install_base">Install base</string>
   <string name="linux_install_base_tools">Install base tools</string>
+  <string name="linux_environment_uninstall">Uninstall environment</string>
+  <string name="linux_environment_uninstall_summary">Delete the rootfs and all installed tools of this distribution</string>
+  <string name="linux_environment_uninstall_confirm">This deletes the rootfs and every installed tool of this distribution. Background tasks running in this environment will stop working. This cannot be undone.</string>
+  <string name="linux_environment_uninstall_done">Environment uninstalled</string>
+  <string name="linux_environment_uninstall_failed">Uninstall failed, please retry</string>
   <string name="linux_upgrade_tools">Upgrade tools</string>
   <string name="linux_continue_installation">Continue installation</string>
   <string name="linux_download_install">Download and install</string>

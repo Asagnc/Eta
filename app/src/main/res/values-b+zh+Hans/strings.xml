@@ -934,6 +934,11 @@
   <string name="linux_distribution_kali_summary">面向安全测试的发行版</string>
   <string name="linux_install_base">安装基础环境</string>
   <string name="linux_install_base_tools">安装基础工具</string>
+  <string name="linux_environment_uninstall">卸载环境</string>
+  <string name="linux_environment_uninstall_summary">删除该发行版的 rootfs 与已安装的全部工具</string>
+  <string name="linux_environment_uninstall_confirm">将删除该发行版的 rootfs 与全部已安装工具，该环境下正在运行的后台任务会失效。此操作不可撤销。</string>
+  <string name="linux_environment_uninstall_done">环境已卸载</string>
+  <string name="linux_environment_uninstall_failed">卸载失败，请重试</string>
   <string name="linux_upgrade_tools">升级工具</string>
   <string name="linux_continue_installation">继续安装</string>
   <string name="linux_download_install">下载并安装</string>

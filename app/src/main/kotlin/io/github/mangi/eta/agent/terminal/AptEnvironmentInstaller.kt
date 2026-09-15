@@ -276,6 +276,29 @@ internal class AptEnvironmentInstaller(
 
     private fun rootfsDir(): File = LinuxEnvironmentPaths.rootfsDir(context, distribution)
 
+    /**
+     * 删除该发行版的 rootfs，让环境回到未安装状态。该环境下的后台任务由终端页负责停止，
+     * 这里不代管；rootfs 消失后它们读不到环境内的文件。
+     */
+    suspend fun uninstall(): Boolean = withContext(Dispatchers.IO) {
+        installMutex.lock()
+        try {
+            val rootfs = rootfsDir()
+            if (!rootfs.exists()) return@withContext true
+            if (LinuxEnvironmentPaths.backendOf(rootfs.absolutePath) == LinuxExecutionBackend.PROOT) {
+                return@withContext rootfs.deleteRecursively()
+            }
+            val result = InstallerShellRunner.run(
+                command = "rm -rf ${shellQuote(rootfs.absolutePath)}",
+                timeoutSeconds = UNINSTALL_TIMEOUT_SECONDS,
+                environment = TerminalEnvironment.ANDROID,
+            )
+            result.exitCode == 0 && !rootfs.exists()
+        } finally {
+            installMutex.unlock()
+        }
+    }
+
     private fun commonToolsReady(rootfs: File): Boolean {
         val marker = File(rootfs, COMMON_TOOLS_MARKER)
         if (!baseRootfsReady(rootfs) || !marker.isFile) return false
@@ -295,6 +318,7 @@ internal class AptEnvironmentInstaller(
         private const val COMMON_TOOLS_MARKER = ".eta-common-tools-ready"
         private const val TOOLSET_REVISION = 1
         private const val COMMON_TOOLS_TIMEOUT_SECONDS = 900L
+        private const val UNINSTALL_TIMEOUT_SECONDS = 180L
         private const val PREFLIGHT_ROOT_UNAVAILABLE = 40
         private const val PREFLIGHT_BUSYBOX_UNAVAILABLE = 41
         private const val PREFLIGHT_BUSYBOX_INCOMPLETE = 42
