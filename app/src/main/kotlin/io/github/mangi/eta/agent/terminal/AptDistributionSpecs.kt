@@ -10,7 +10,7 @@ internal data class AptMirror(
 internal object AptDistributionSpecs {
     fun versionOf(distribution: LinuxDistribution): String = when (distribution) {
         LinuxDistribution.DEBIAN -> "13"
-        LinuxDistribution.UBUNTU -> "25.04"
+        LinuxDistribution.UBUNTU -> "26.04"
         LinuxDistribution.KALI -> "2026.2"
     }
 
@@ -18,11 +18,11 @@ internal object AptDistributionSpecs {
     fun mirrorsOf(distribution: LinuxDistribution): List<AptMirror> = when (distribution) {
         LinuxDistribution.DEBIAN -> listOf(
             AptMirror(
-                id = "tuna",
+                id = "ustc",
                 sources = listOf(
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/debian trixie main",
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/debian trixie-updates main",
-                    "deb https://security.debian.org/debian-security trixie-security main",
+                    "deb https://mirrors.ustc.edu.cn/debian trixie main",
+                    "deb https://mirrors.ustc.edu.cn/debian trixie-updates main",
+                    "deb https://mirrors.ustc.edu.cn/debian-security trixie-security main",
                 ),
             ),
             AptMirror(
@@ -36,27 +36,29 @@ internal object AptDistributionSpecs {
         )
         LinuxDistribution.UBUNTU -> listOf(
             AptMirror(
-                id = "tuna",
+                id = "ustc",
                 sources = listOf(
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu plucky main restricted universe multiverse",
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu plucky-updates main restricted universe multiverse",
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu plucky-security main restricted universe multiverse",
+                    "deb https://mirrors.ustc.edu.cn/ubuntu resolute main restricted universe multiverse",
+                    "deb https://mirrors.ustc.edu.cn/ubuntu resolute-updates main restricted universe multiverse",
+                    "deb https://mirrors.ustc.edu.cn/ubuntu resolute-security main restricted universe multiverse",
+                    "deb https://mirrors.ustc.edu.cn/ubuntu resolute-backports main restricted universe multiverse",
                 ),
             ),
             AptMirror(
                 id = "official",
                 sources = listOf(
-                    "deb http://archive.ubuntu.com/ubuntu plucky main restricted universe multiverse",
-                    "deb http://archive.ubuntu.com/ubuntu plucky-updates main restricted universe multiverse",
-                    "deb http://security.ubuntu.com/ubuntu plucky-security main restricted universe multiverse",
+                    "deb http://archive.ubuntu.com/ubuntu resolute main restricted universe multiverse",
+                    "deb http://archive.ubuntu.com/ubuntu resolute-updates main restricted universe multiverse",
+                    "deb http://security.ubuntu.com/ubuntu resolute-security main restricted universe multiverse",
+                    "deb http://archive.ubuntu.com/ubuntu resolute-backports main restricted universe multiverse",
                 ),
             ),
         )
         LinuxDistribution.KALI -> listOf(
             AptMirror(
-                id = "tuna",
+                id = "ustc",
                 sources = listOf(
-                    "deb https://mirrors.tuna.tsinghua.edu.cn/kali kali-rolling main contrib non-free non-free-firmware",
+                    "deb https://mirrors.ustc.edu.cn/kali kali-rolling main contrib non-free non-free-firmware",
                 ),
             ),
             AptMirror(
@@ -87,18 +89,18 @@ internal object AptDistributionSpecs {
             else -> null
         }
         LinuxDistribution.UBUNTU -> when (abi) {
-            "arm64-v8a" -> prootDistroArtifact(
-                id = "ubuntu-plucky-aarch64-pd-v4.29.0",
-                fileName = "ubuntu-plucky-aarch64-pd-v4.29.0.tar.xz",
-                sha256 = "63cee3aecc0473785ef761ec1127387ed2abbea0b26d74e5187601568fbb335f",
-                sizeBytes = 56_752_204L,
+            "arm64-v8a" -> ubuntuCloudArtifact(
+                id = "ubuntu-resolute-minimal-arm64",
+                fileName = "ubuntu-26.04-minimal-cloudimg-arm64-root.tar.xz",
+                sha256 = "a6a90ffe1cabfd721b3f0472c1f3db7eeb4a16d5c00e7874510a72308088bc8e",
+                sizeBytes = 102_536_744L,
                 version = versionOf(distribution),
             )
-            "x86_64" -> prootDistroArtifact(
-                id = "ubuntu-plucky-x86_64-pd-v4.29.0",
-                fileName = "ubuntu-plucky-x86_64-pd-v4.29.0.tar.xz",
-                sha256 = "fcac0b71a98524e1dd10a3b1fe6753b8e85716b98207940169fe01bbd21b1538",
-                sizeBytes = 61_294_804L,
+            "x86_64" -> ubuntuCloudArtifact(
+                id = "ubuntu-resolute-minimal-amd64",
+                fileName = "ubuntu-26.04-minimal-cloudimg-amd64-root.tar.xz",
+                sha256 = "580f77431750d95cc130df35e5c089d447aeaba7e6609ac8b9b445129758411a",
+                sizeBytes = 139_914_932L,
                 version = versionOf(distribution),
             )
             else -> null
@@ -140,6 +142,26 @@ internal object AptDistributionSpecs {
             preferredUrls = GITHUB_PROXY_PREFIXES.map { prefix -> prefix + officialUrl },
         )
     }
+
+    /**
+     * Ubuntu 官方 cloud 镜像的 rootfs 归档。proot-distro 承接的制品停在 25.04，该版本已停止支持、
+     * 包索引从各镜像撤下，因此固定改用仍在支持期内的 LTS 官方制品。
+     */
+    private fun ubuntuCloudArtifact(
+        id: String,
+        fileName: String,
+        sha256: String,
+        sizeBytes: Long,
+        version: String,
+    ): VerifiedArtifact = VerifiedArtifact(
+        id = id,
+        version = version,
+        fileName = fileName,
+        url = "https://cloud-images.ubuntu.com/minimal/releases/resolute/release/${'$'}fileName",
+        sha256 = sha256,
+        sizeBytes = sizeBytes,
+        preferredUrls = emptyList(),
+    )
 
     /** Kali 的 rootfs 由官方 NetHunter 项目发布；镜像目录按版本固定，保证校验值稳定。 */
     private fun kaliArtifact(

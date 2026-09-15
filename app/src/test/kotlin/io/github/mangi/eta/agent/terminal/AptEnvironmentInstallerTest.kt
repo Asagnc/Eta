@@ -31,8 +31,9 @@ class AptEnvironmentInstallerTest {
 
         val ubuntu = AptEnvironmentInstaller.artifactForAbis(LinuxDistribution.UBUNTU, listOf("arm64-v8a"))
         requireNotNull(ubuntu)
-        assertEquals("25.04", ubuntu.version)
-        assertEquals(56_752_204L, ubuntu.sizeBytes)
+        assertEquals("26.04", ubuntu.version)
+        assertEquals(102_536_744L, ubuntu.sizeBytes)
+        assertTrue(ubuntu.url.contains("cloud-images.ubuntu.com/minimal/releases/resolute/"))
 
         val kali = AptEnvironmentInstaller.artifactForAbis(LinuxDistribution.KALI, listOf("arm64-v8a"))
         requireNotNull(kali)
@@ -74,12 +75,12 @@ class AptEnvironmentInstallerTest {
     @Test
     fun aptMirrorsKeepDomesticCandidatesBeforeOfficialFallback() {
         val mirrors = AptDistributionSpecs.mirrorsOf(LinuxDistribution.DEBIAN)
-        assertEquals(listOf("tuna", "official"), mirrors.map { it.id })
-        assertTrue(mirrors.first().sources.any { it.contains("mirrors.tuna.tsinghua.edu.cn") })
+        assertEquals(listOf("ustc", "official"), mirrors.map { it.id })
+        assertTrue(mirrors.first().sources.any { it.contains("mirrors.ustc.edu.cn") })
         assertTrue(mirrors.last().sources.any { it.contains("deb.debian.org") })
         val script = AptEnvironmentInstaller.aptMirrorScript(LinuxDistribution.DEBIAN)
         assertTrue(script.contains("apt-get -o Acquire::Retries=2"))
-        assertFalse(script.contains("mirrors.ustc.edu.cn"))
+        assertFalse(script.contains("mirrors.tuna.tsinghua.edu.cn"))
     }
 
     @Test

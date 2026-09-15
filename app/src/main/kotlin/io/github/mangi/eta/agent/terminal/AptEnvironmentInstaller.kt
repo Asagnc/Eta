@@ -218,6 +218,9 @@ internal class AptEnvironmentInstaller(
             nameserver 119.29.29.29
             nameserver 1.1.1.1
             ETA_RESOLV_EOF
+            # 官方 cloud 镜像自带 deb822 源文件，清掉以免与接下来写入的 sources.list 重复
+            "${'$'}eta_busybox" rm -rf "${'$'}eta_temporary/etc/apt/sources.list.d"
+            "${'$'}eta_busybox" mkdir -p "${'$'}eta_temporary/etc/apt/sources.list.d"
             "${'$'}eta_busybox" mkdir -p "${'$'}eta_temporary/etc/apt/apt.conf.d" "${'$'}eta_temporary/usr/local/bin"
             cat > "${'$'}eta_temporary/etc/apt/apt.conf.d/99eta-network" <<'ETA_APT_CONFIG_EOF'
             Acquire::Retries "2";
