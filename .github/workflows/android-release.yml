@@ -66,6 +66,13 @@ jobs:
             > "$RUNNER_TEMP/eta-release.jks"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
+      - name: 运行会话清理相关单测
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" \
+            :app:testDebugUnitTest \
+            --tests "*ConversationRunPurgeTest*" \
+            --tests "*AgentUiHandoffPayloadMatchTest*"
+
       - name: 构建 APK
         env:
           ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
