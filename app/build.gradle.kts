@@ -32,8 +32,9 @@ android {
         minSdk = 34
         targetSdk = 36
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
+        // versionName 的 -asN 后缀是本 fork 的构建序号，与上游版本号区分；每次出包手动递增。
         versionCode = 2026091202
-        versionName = "3.0.4"
+        versionName = "3.0.4-as1"
     }
 
     signingConfigs {
