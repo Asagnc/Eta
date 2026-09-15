@@ -101,23 +101,21 @@ internal fun McpServersScreen(
                     )
                 } else {
                     servers.forEach { server ->
-                        // 长按删除：单击仍由 ArrowPreference 处理，长按落到外层。
-                        Box(
+                        // 单击进详情、长按删除都走这里的 combinedClickable。不能改用外层 Box 包住
+                        // ArrowPreference：行组件在 onClick 非空时会自己挂 clickable 并先消费按下
+                        // 事件，外层的长按收不到手势，长按删除会失效。
+                        ArrowPreference(
+                            title = server.name,
+                            summary = stringResource(
+                                R.string.mcp_server_row_summary,
+                                server.activeTools.size,
+                                server.tools.size,
+                            ),
                             modifier = Modifier.combinedClickable(
-                                onClick = {},
+                                onClick = { onNavigate(AppRoute.McpServerDetail(server.id)) },
                                 onLongClick = { deleteTarget = server },
                             ),
-                        ) {
-                            ArrowPreference(
-                                title = server.name,
-                                summary = stringResource(
-                                    R.string.mcp_server_row_summary,
-                                    server.activeTools.size,
-                                    server.tools.size,
-                                ),
-                                onClick = { onNavigate(AppRoute.McpServerDetail(server.id)) },
-                            )
-                        }
+                        )
                     }
                 }
             }

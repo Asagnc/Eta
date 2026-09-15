@@ -32,9 +32,11 @@ android {
         minSdk = 34
         targetSdk = 36
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        // versionName 的 -asN 后缀是本 fork 的构建序号，与上游版本号区分；每次出包手动递增。
+        // versionName 的 -asN 后缀是本 fork 的构建序号，与上游版本号区分；CI 传入本次构建号
+        // （GitHub run number，逐次递增），本地构建没有构建号时退回 as1。
+        val buildNumber = providers.gradleProperty("etaBuildNumber").orNull?.takeIf { it.isNotBlank() }
         versionCode = 2026091202
-        versionName = "3.0.4-as1"
+        versionName = if (buildNumber != null) "3.0.4-as$buildNumber" else "3.0.4-as1"
     }
 
     signingConfigs {

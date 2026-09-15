@@ -74,9 +74,9 @@ jobs:
           ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
           if [[ "${{ steps.signing.outputs.available }}" == "true" ]]; then
-            ./gradlew --no-daemon --no-configuration-cache :app:assembleDebug :app:assembleRelease
+            ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" :app:assembleDebug :app:assembleRelease
           else
-            ./gradlew --no-daemon --no-configuration-cache :app:assembleDebug
+            ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" :app:assembleDebug
           fi
 
       - name: 验证并整理 APK
