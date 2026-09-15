@@ -153,15 +153,20 @@ internal object AptDistributionSpecs {
         sha256: String,
         sizeBytes: Long,
         version: String,
-    ): VerifiedArtifact = VerifiedArtifact(
-        id = id,
-        version = version,
-        fileName = fileName,
-        url = "https://cloud-images.ubuntu.com/minimal/releases/resolute/release/${'$'}fileName",
-        sha256 = sha256,
-        sizeBytes = sizeBytes,
-        preferredUrls = emptyList(),
-    )
+    ): VerifiedArtifact {
+        val path = "minimal/releases/resolute/release/${fileName}"
+        return VerifiedArtifact(
+            id = id,
+            version = version,
+            fileName = fileName,
+            url = "https://cloud-images.ubuntu.com/${path}",
+            sha256 = sha256,
+            sizeBytes = sizeBytes,
+            // 官方源在部分网络下带宽很低，接近 100 MB 的归档会耗尽下载总时长；
+            // 中科大镜像同步了同一份归档，体积与摘要都与官方一致。
+            preferredUrls = listOf("https://mirrors.ustc.edu.cn/ubuntu-cloud-images/${path}"),
+        )
+    }
 
     /** Kali 的 rootfs 由官方 NetHunter 项目发布；镜像目录按版本固定，保证校验值稳定。 */
     private fun kaliArtifact(

@@ -132,7 +132,8 @@ internal class VerifiedArtifactDownloader(
             OkHttpClient.Builder()
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
-                .callTimeout(10, TimeUnit.MINUTES)
+                // 最大的 rootfs 归档约 140 MB，慢速网络下需要更宽的总时长上限。
+                .callTimeout(30, TimeUnit.MINUTES)
                 .build()
     }
 }

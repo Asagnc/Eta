@@ -71,7 +71,8 @@ jobs:
           ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" \
             :app:testDebugUnitTest \
             --tests "*ConversationRunPurgeTest*" \
-            --tests "*AgentUiHandoffPayloadMatchTest*"
+            --tests "*AgentUiHandoffPayloadMatchTest*" \
+            --tests "*AptEnvironmentInstallerTest*"
 
       - name: 构建 APK
         env:

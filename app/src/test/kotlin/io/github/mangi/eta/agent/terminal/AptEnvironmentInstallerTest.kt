@@ -34,6 +34,10 @@ class AptEnvironmentInstallerTest {
         assertEquals("26.04", ubuntu.version)
         assertEquals(102_536_744L, ubuntu.sizeBytes)
         assertTrue(ubuntu.url.contains("cloud-images.ubuntu.com/minimal/releases/resolute/"))
+        // 归档地址必须由模板拼出真实文件名，写成转义后的 $ 会变成字面量并导致 404
+        assertEquals("ubuntu-26.04-minimal-cloudimg-arm64-root.tar.xz", ubuntu.url.substringAfterLast("/"))
+        assertEquals("ubuntu-26.04-minimal-cloudimg-arm64-root.tar.xz",
+            ubuntu.preferredUrls.single().substringAfterLast("/"))
 
         val kali = AptEnvironmentInstaller.artifactForAbis(LinuxDistribution.KALI, listOf("arm64-v8a"))
         requireNotNull(kali)
