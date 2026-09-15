@@ -43,6 +43,7 @@ import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
+import io.github.mangi.eta.agent.runtime.ConversationRunPurge
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -876,6 +877,9 @@ internal class AgentAppState(
     }
 
     fun deleteConversation(conversationId: String) {
+        if (currentRunId?.let { runConversationIds[it] } == conversationId) {
+            stopCurrentRun()
+        }
         val wasSelected = selectedConversationId == conversationId
         conversationsById = conversationsById - conversationId
         conversationTitles = conversationTitles - conversationId
@@ -895,6 +899,20 @@ internal class AgentAppState(
         conversationPaneState = conversationPaneState.copy(selectedConversationId = selectedConversationId)
         refreshConversationSummaries()
         persistConversations()
+        scope.launch(Dispatchers.IO) {
+            runCatching { ConversationRunPurge.purge(appContext, conversationId) }
+                .onSuccess { removed ->
+                    AndroidAgentLogger.info(
+                        "Agent conversation action=purge conversation=$conversationId removed=$removed",
+                    )
+                }
+                .onFailure { failure ->
+                    AndroidAgentLogger.warnThrottled("conversation_purge_failed") {
+                        "Agent conversation action=purge outcome=failed conversation=$conversationId " +
+                            "error=${failure.message}"
+                    }
+                }
+        }
     }
 
     fun renameConversation(conversationId: String, title: String) {
