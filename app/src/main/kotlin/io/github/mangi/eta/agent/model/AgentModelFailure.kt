@@ -22,20 +22,31 @@ internal class AgentModelFailure(
         private val transientCodes = setOf(
             "rate_limit_exceeded", "rate_limit_error", "overloaded_error", "server_error",
             "api_error", "internal_error", "provider_unavailable", "service_unavailable",
+            // 网关路由层可能暂时无法把请求送到模型，属可恢复抖动。
+            "model_not_available",
         )
 
+        /**
+         * 只展示已解析出的错误对象内容：正文不是 JSON 时保持沉默，避免把网关的
+         * 挑战页、代理错误页之类正文当作服务端说明展示。message 为空时退回 code，
+         * 部分网关只回一个错误码。
+         */
         private fun serverDetail(error: JSONObject?): String {
             val detail = error?.optString("message").orEmpty().trim()
+                .ifBlank { error?.optString("code").orEmpty().trim() }
             if (detail.isBlank()) return ""
             return "｜服务端返回：" + detail.take(400)
         }
 
+        /** 兼容 `{"error":{...}}` 与把 code/message 直接放在顶层的网关。 */
+        private fun errorPayload(body: String): JSONObject? = try {
+            JSONObject(body).let { payload -> payload.optJSONObject("error") ?: payload }
+        } catch (_: org.json.JSONException) {
+            null
+        }
+
         fun http(status: Int, body: String): AgentModelFailure {
-            val error = try {
-                JSONObject(body).optJSONObject("error")
-            } catch (_: org.json.JSONException) {
-                null
-            }
+            val error = errorPayload(body)
             if (isContextOverflow(error)) return AgentModelFailure(
                 "CONTEXT_OVERFLOW", false, "模型上下文超过容量限制。",
             )
@@ -51,7 +62,9 @@ internal class AgentModelFailure(
             }
             return AgentModelFailure(
                 code = "HTTP_$status",
-                retryable = status in transientStatus && !permanent,
+                retryable = (status in transientStatus && !permanent) ||
+                    // 部分网关用 4xx 的非标准 code 表示瞬时不可用（如路由摘走模型）。
+                    !permanent && error?.optString("code").orEmpty() in transientCodes,
                 // 服务端原文常常直接点明请求哪里不合法，只保留概括文案会让排查没有线索。
                 message = summary + serverDetail(error),
             )

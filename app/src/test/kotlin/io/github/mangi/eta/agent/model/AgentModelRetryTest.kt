@@ -25,9 +25,9 @@ class AgentModelRetryTest {
         val failure = assertThrows(AgentModelFailure::class.java) {
             complete(retry, provider { _, _ -> calls++; throw SocketTimeoutException("timeout") })
         }
-        assertEquals(4, calls)
-        assertEquals(listOf(2_000L, 4_000L, 8_000L), delays)
-        assertTrue(failure.message.orEmpty().contains("已重试 3 次"))
+        assertEquals(3, calls)
+        assertEquals(listOf(2_000L, 4_000L), delays)
+        assertTrue(failure.message.orEmpty().contains("已重试 2 次"))
         delays.clear()
         calls = 0
         val result = complete(retry, provider { _, _ ->
@@ -80,11 +80,32 @@ class AgentModelRetryTest {
             assertFalse(AgentModelFailure.http(status, "").retryable)
         }
         assertFalse(AgentModelFailure.http(429, """{"error":{"code":"insufficient_quota"}}""").retryable)
+        assertTrue(AgentModelFailure.http(400, """{"code":"model_not_available"}""").retryable)
+        assertTrue(AgentModelFailure.http(503, """{"error":{"code":"server_error"}}""").retryable)
+        assertFalse(AgentModelFailure.http(400, """{"code":"unknown_field"}""").retryable)
         assertNull(AgentModelFailure.transport(SSLHandshakeException("certificate")))
         assertNull(AgentModelFailure.transport(org.json.JSONException("invalid JSON")))
         assertTrue(AgentModelFailure.stream(JSONObject().put("type", "overloaded_error"), "过载").retryable)
         assertFalse(AgentModelFailure.stream(JSONObject().put("type", "authentication_error"), "认证失败").retryable)
         assertFalse(AgentModelFailure.http(503, "secret request text").message.orEmpty().contains("secret"))
+    }
+
+    @Test
+    fun readsFailureDetailAndCodeFromTopLevelErrorBody() {
+        val failure = AgentModelFailure.http(
+            400,
+            """{"code":"MODEL_NOT_AVAILABLE","message":"模型不可用：deepseek-flash"}""",
+        )
+        assertEquals("HTTP_400", failure.code)
+        assertTrue(failure.message.orEmpty().contains("模型不可用：deepseek-flash"))
+        assertEquals(
+            "CONTEXT_OVERFLOW",
+            AgentModelFailure.http(400, """{"code":"input_too_long"}""").code,
+        )
+        assertTrue(
+            AgentModelFailure.http(503, """{"code":"provider_unavailable"}""")
+                .message.orEmpty().contains("provider_unavailable")
+        )
     }
 
     private fun complete(
