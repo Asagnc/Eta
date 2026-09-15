@@ -270,6 +270,59 @@ class AnthropicMessagesProviderTest {
         }
     }
 
+    @Test
+    fun consecutiveToolResultsShareOneUserMessage() {
+        val body = event("message_stop", JSONObject().put("type", "message_stop"))
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(body, onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = ProviderRequest(
+                    config = AgentModelClient.ModelConfig(
+                        providerType = ProviderTypes.ANTHROPIC,
+                        baseUrl = baseUrl,
+                        apiKey = "key",
+                        model = "claude-sonnet-5",
+                        systemPrompt = "system",
+                    ),
+                    messages = JSONArray()
+                        .put(JSONObject().put("role", "user").put("content", "跑两个命令"))
+                        .put(
+                            JSONObject()
+                                .put("role", "assistant")
+                                .put(
+                                    "tool_calls",
+                                    JSONArray()
+                                        .put(toolCallJson("call_1"))
+                                        .put(toolCallJson("call_2"))
+                                )
+                        )
+                        .put(JSONObject().put("role", "tool").put("tool_call_id", "call_1").put("content", "one"))
+                        .put(JSONObject().put("role", "tool").put("tool_call_id", "call_2").put("content", "two")),
+                    tools = JSONArray(),
+                ),
+                runController = AgentRunController(),
+            )
+
+            val messages = JSONObject(requestBody.get()).getJSONArray("messages")
+            assertEquals(3, messages.length())
+            val toolResults = messages.getJSONObject(2)
+            assertEquals("user", toolResults.getString("role"))
+            val blocks = toolResults.getJSONArray("content")
+            assertEquals(2, blocks.length())
+            assertEquals("call_1", blocks.getJSONObject(0).getString("tool_use_id"))
+            assertEquals("call_2", blocks.getJSONObject(1).getString("tool_use_id"))
+        }
+    }
+
+    private fun toolCallJson(id: String) =
+        JSONObject()
+            .put("id", id)
+            .put("type", "function")
+            .put(
+                "function",
+                JSONObject().put("name", "terminal").put("arguments", "{\"action\":\"open\"}")
+            )
+
     private fun providerRequest(baseUrl: String) = ProviderRequest(
         config = AgentModelClient.ModelConfig(
             providerType = ProviderTypes.ANTHROPIC,

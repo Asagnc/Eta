@@ -85,35 +85,52 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
     ): JSONObject {
         val systemParts = mutableListOf<String>()
         val anthropicMessages = JSONArray()
+        var toolResultBatch: JSONObject? = null
         for (index in 0 until messages.length()) {
             val message = messages.optJSONObject(index) ?: continue
             when (message.optString("role")) {
-                "system" -> providerMessageText(message.opt("content"))
-                    .takeIf { it.isNotBlank() }
-                    ?.let(systemParts::add)
-                "user" -> anthropicMessages.put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put("content", convertUserContent(message.opt("content")))
-                )
-                "assistant" -> anthropicMessages.put(
-                    JSONObject()
-                        .put("role", "assistant")
-                        .put("content", convertAssistantContent(message))
-                )
-                "tool" -> anthropicMessages.put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put(
-                            "content",
-                            JSONArray().put(
-                                JSONObject()
-                                    .put("type", "tool_result")
-                                    .put("tool_use_id", message.optString("tool_call_id"))
-                                    .put("content", message.optString("content"))
-                            )
-                        )
-                )
+                "system" -> {
+                    toolResultBatch = null
+                    providerMessageText(message.opt("content"))
+                        .takeIf { it.isNotBlank() }
+                        ?.let(systemParts::add)
+                }
+                "user" -> {
+                    toolResultBatch = null
+                    anthropicMessages.put(
+                        JSONObject()
+                            .put("role", "user")
+                            .put("content", convertUserContent(message.opt("content")))
+                    )
+                }
+                "assistant" -> {
+                    toolResultBatch = null
+                    anthropicMessages.put(
+                        JSONObject()
+                            .put("role", "assistant")
+                            .put("content", convertAssistantContent(message))
+                    )
+                }
+                "tool" -> {
+                    // 同一轮 assistant 的多个 tool_result 必须合并在紧随其后的一条 user 消息里，
+                    // 每个结果各占一条 user 消息会被严格的渠道判 400：
+                    // tool_use ids were found without tool_result blocks immediately after
+                    //（并行调用工具时命中）。
+                    val batch = toolResultBatch
+                        ?: JSONObject()
+                            .put("role", "user")
+                            .put("content", JSONArray())
+                            .also {
+                                anthropicMessages.put(it)
+                                toolResultBatch = it
+                            }
+                    batch.getJSONArray("content").put(
+                        JSONObject()
+                            .put("type", "tool_result")
+                            .put("tool_use_id", message.optString("tool_call_id"))
+                            .put("content", message.optString("content"))
+                    )
+                }
             }
         }
 
