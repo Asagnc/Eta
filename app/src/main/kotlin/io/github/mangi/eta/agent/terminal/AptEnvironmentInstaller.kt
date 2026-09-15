@@ -191,7 +191,6 @@ internal class AptEnvironmentInstaller(
         val command = """
             ${AndroidBusyBox.discoveryScript()}
             [ -n "${'$'}eta_busybox" ] || exit 127
-            eta_sources=${shellQuote(etaSources)}
             eta_archive=${shellQuote(archive.absolutePath)}
             eta_parent=${shellQuote(parent.absolutePath)}
             eta_rootfs=${shellQuote(rootfs.absolutePath)}
@@ -201,7 +200,19 @@ internal class AptEnvironmentInstaller(
             "${'$'}eta_busybox" mkdir -p "${'$'}eta_parent" || exit 66
             "${'$'}eta_busybox" rm -rf "${'$'}eta_temporary"
             "${'$'}eta_busybox" mkdir -p "${'$'}eta_temporary" || exit 66
-            "${'$'}eta_busybox" tar -xJf "${'$'}eta_archive" -C "${'$'}eta_temporary" --strip-components=1 || exit 67
+            "${'$'}eta_busybox" tar -xJf "${'$'}eta_archive" -C "${'$'}eta_temporary" || exit 67
+            # 归档顶层形状不一致：proot-distro 的制品带 "./" 前缀，解包后直接落在根；Ubuntu 官方 cloud
+            # 镜像的 root tar 没有顶层目录。这里统一成"根就是文件系统"：解包后确实只剩一个顶层目录时，
+            # 才把它提上来。
+            eta_top_count=${'$'}("${'$'}eta_busybox" ls -A "${'$'}eta_temporary" | "${'$'}eta_busybox" wc -l)
+            eta_top_name=${'$'}("${'$'}eta_busybox" ls -A "${'$'}eta_temporary")
+            if [ "${'$'}eta_top_count" -eq 1 ] && [ -d "${'$'}eta_temporary/${'$'}eta_top_name" ]; then
+              for eta_child in "${'$'}eta_temporary/${'$'}eta_top_name"/* "${'$'}eta_temporary/${'$'}eta_top_name"/.[!.]* "${'$'}eta_temporary/${'$'}eta_top_name"/..?*; do
+                [ -e "${'$'}eta_child" ] || continue
+                "${'$'}eta_busybox" mv "${'$'}eta_child" "${'$'}eta_temporary/" || exit 67
+              done
+              "${'$'}eta_busybox" rmdir "${'$'}eta_temporary/${'$'}eta_top_name" || exit 67
+            fi
             "${'$'}eta_busybox" mkdir -p \
               "${'$'}eta_temporary/proc" \
               "${'$'}eta_temporary/sys" \
@@ -227,7 +238,7 @@ internal class AptEnvironmentInstaller(
             Acquire::http::Pipeline-Depth "0";
             Acquire::https::Pipeline-Depth "0";
             ETA_APT_CONFIG_EOF
-            printf '%s\n' ${'$'}eta_sources > "${'$'}eta_temporary/etc/apt/sources.list"
+            printf '%s\n' ${etaSources} > "${'$'}eta_temporary/etc/apt/sources.list"
             printf '%s\n' '#!/bin/sh' > "${'$'}eta_temporary/usr/local/bin/eta-apt"
             printf %s ${shellQuote(aptMirrorScriptBody(distribution))} >> "${'$'}eta_temporary/usr/local/bin/eta-apt"
             "${'$'}eta_busybox" chmod 0755 "${'$'}eta_temporary/usr/local/bin/eta-apt"
