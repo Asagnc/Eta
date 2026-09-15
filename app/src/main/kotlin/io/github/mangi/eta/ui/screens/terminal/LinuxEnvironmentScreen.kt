@@ -287,6 +287,10 @@ internal fun LinuxEnvironmentScreen(
     ) {
         item(key = "status-card") {
             val version = envStatus.version
+            // 卸载与安装共用同一个 busy 状态，文案按当前动作区分。
+            val busyLabel = stringResource(
+                if (busyTarget == InstallTarget.UNINSTALL) R.string.linux_uninstalling else R.string.linux_installing,
+            )
             val activeProgress = when (busyTarget) {
                 InstallTarget.BASE, InstallTarget.TOOLS -> envProgress?.summary(context)
                 InstallTarget.APK_ANALYSIS -> apkAnalysisProgress?.summary(context)
@@ -298,7 +302,7 @@ internal fun LinuxEnvironmentScreen(
                 mode = backend.displayName(),
                 summary = when {
                     requiresRoot -> stringResource(R.string.capability_linux_root_lost)
-                    busyTarget != null -> activeProgress ?: stringResource(R.string.linux_installing)
+                    busyTarget != null -> activeProgress ?: busyLabel
                     selectedToolsReady -> stringResource(R.string.linux_environment_tools_ready)
                     selectedBaseReady -> stringResource(R.string.linux_environment_base_ready)
                     else -> stringResource(R.string.linux_not_installed) + "\n" + stringResource(
@@ -313,7 +317,7 @@ internal fun LinuxEnvironmentScreen(
                 actionText = when {
                     requiresRoot -> stringResource(R.string.capability_enhancements)
                     selectedToolsReady -> null
-                    busyTarget != null -> stringResource(R.string.linux_installing)
+                    busyTarget != null -> busyLabel
                     selectedBaseReady -> stringResource(R.string.linux_install_base_tools)
                     else -> stringResource(R.string.linux_install_base)
                 },

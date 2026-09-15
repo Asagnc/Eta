@@ -937,6 +937,7 @@
   <string name="provider_context_tag">%1$s context</string>
   <string name="provider_sync_failed">Sync failed</string>
   <string name="linux_installing">Installing</string>
+  <string name="linux_uninstalling">Uninstalling</string>
   <string name="linux_ready">Ready</string>
   <string name="linux_distribution_title">Linux distribution</string>
   <string name="linux_distribution_debian">Debian</string>
