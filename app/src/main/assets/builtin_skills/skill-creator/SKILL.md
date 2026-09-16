@@ -44,6 +44,22 @@ description: What the skill does and when the agent should use it.
 ---
 ```
 
+Declare a command when the skill is a fixed procedure that should run without loading this file into context:
+
+```yaml
+---
+name: capture-traffic
+description: ...
+command: bash scripts/capture.sh
+requires: root
+timeout_seconds: 300
+inputs: 目标应用包名
+outputs: 抓包文件路径与命令摘要
+---
+```
+
+`skills_run` executes `command` with the skill root as the working directory and returns only the command output, so neither the script nor this body is read into the model context. `requires` accepts only `root` and `linux` (linux runs the command in the Linux environment instead of the Android shell); any other value makes the call fail instead of being ignored. `timeout_seconds` is used when the caller does not pass one, defaults to 300, and is capped at 600. Leave `command` out when the procedure needs a judgement call in the middle, and keep the body as the instructions.
+
 Write the description as the trigger contract:
 
 - State the task type clearly.

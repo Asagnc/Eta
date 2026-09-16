@@ -68,6 +68,7 @@ internal object AgentToolRequirements {
         register(
             RootRequirement.PARTIAL,
             "press_key", "terminal", "run_command", "write_file", "edit_file", "read_image",
+            "skills_run",
         )
         registerParallelSafe(
             RootRequirement.PARTIAL,
@@ -196,6 +197,9 @@ internal object AgentToolRequirements {
             }
             "search_personal_orders" -> function.put("description",
                 "从用户已授权保存的通知历史检索外卖、购物、快递、票券和出行订单。")
+            "skills_run" -> function.put("description",
+                "执行已安装 Skill 在 SKILL.md frontmatter 里声明的 command，只返回命令输出。" +
+                    "当前没有 Root 授权：声明 requires: root 的 Skill 会被拒绝，其余按普通身份执行。")
         }
     }
 }

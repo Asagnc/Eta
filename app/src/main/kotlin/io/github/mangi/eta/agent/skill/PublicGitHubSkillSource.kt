@@ -25,9 +25,16 @@ internal data class GitHubSkillRepository(
     val slug: String = "$owner/$repository"
 }
 
+internal data class GitHubSkillFile(
+    val path: String,
+    val sizeBytes: Long,
+)
+
 internal data class GitHubSkillCandidate(
     val name: String,
     val path: String,
+    /** 该 Skill 根目录下的文件，来自同一次 tree 响应；用于安装前的静态审计。 */
+    val files: List<GitHubSkillFile> = emptyList(),
 )
 
 internal data class GitHubSkillInspection(
@@ -225,34 +232,47 @@ internal class PublicGitHubSkillSource(
             )
         }
         val prefix = repository.path?.takeUnless { it == "." }?.trimEnd('/')
-        val candidates = buildList {
+        val blobs = buildList {
             val entries = tree.optJSONArray("tree") ?: return@buildList
             for (index in 0 until entries.length()) {
                 val entry = entries.optJSONObject(index) ?: continue
                 if (entry.optString("type") != "blob") continue
-                val skillFilePath = entry.optString("path")
-                if (skillFilePath.substringAfterLast('/') != SKILL_FILE_NAME) continue
+                val path = entry.optString("path")
+                if (path.isBlank()) continue
+                add(GitHubSkillFile(path = path, sizeBytes = entry.optLong("size")))
+            }
+        }
+        val roots = blobs
+            .filter { blob -> blob.path.substringAfterLast('/') == SKILL_FILE_NAME }
+            .mapNotNull { blob ->
                 val root = runCatching {
                     GitHubSkillRepositoryParser.normalizeRelativePath(
-                        skillFilePath.substringBeforeLast('/', missingDelimiterValue = "."),
+                        blob.path.substringBeforeLast('/', missingDelimiterValue = "."),
                     )
-                }.getOrNull() ?: continue
-                if (prefix != null && root != prefix && !root.startsWith("$prefix/")) continue
-                add(
-                    GitHubSkillCandidate(
-                        name = root.substringAfterLast('/').takeUnless { root == "." }
-                            ?: repository.repository,
-                        path = root,
-                    ),
-                )
-                if (size > MAX_CANDIDATES) {
-                    throw GitHubSkillSourceException(
-                        "TOO_MANY_SKILL_CANDIDATES",
-                        "候选 Skill 超过 $MAX_CANDIDATES 个，请缩小仓库路径",
-                    )
-                }
+                }.getOrNull() ?: return@mapNotNull null
+                if (prefix != null && root != prefix && !root.startsWith("$prefix/")) return@mapNotNull null
+                root
             }
-        }.sortedBy { it.path }
+            .distinct()
+            .sorted()
+        if (roots.size > MAX_CANDIDATES) {
+            throw GitHubSkillSourceException(
+                "TOO_MANY_SKILL_CANDIDATES",
+                "候选 Skill 超过 $MAX_CANDIDATES 个，请缩小仓库路径",
+            )
+        }
+        val candidates = roots.map { root ->
+            GitHubSkillCandidate(
+                name = root.substringAfterLast('/').takeUnless { root == "." }
+                    ?: repository.repository,
+                path = root,
+                files = if (root == ".") {
+                    blobs
+                } else {
+                    blobs.filter { blob -> blob.path.startsWith("$root/") }
+                },
+            )
+        }
         return GitHubSkillInspection(
             repository = repository.slug,
             ref = ref,

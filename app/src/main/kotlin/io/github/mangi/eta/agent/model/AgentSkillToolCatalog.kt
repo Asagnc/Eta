@@ -97,6 +97,43 @@ internal object AgentSkillToolCatalog {
                         ),
                 ),
             )
+            .put(
+                AgentToolSchema.function(
+                    name = "skills_run",
+                    description = "执行 Skill 在 SKILL.md frontmatter 里声明的 command（例如 command: bash scripts/build.sh）。" +
+                        "脚本与 SKILL.md 正文都不会进入上下文，只返回命令输出；执行前按 requires 预检环境。" +
+                        "需要已启用终端工具；未声明 command 的 Skill 改用 skills_read 按文档手工执行。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put(
+                                    "skillId",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 500)
+                                        .put("description", "Installed Skill id, name, or SKILL.md path.")
+                                )
+                                .put(
+                                    "arguments",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put("maxLength", 1_000)
+                                        .put("description", "附加到声明命令末尾的参数串，由该环境的 Shell 解析；默认空。")
+                                )
+                                .put(
+                                    "timeout_seconds",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("minimum", 1)
+                                        .put("maximum", 600)
+                                        .put("description", "命令超时秒数，1-600；未提供时用 frontmatter 的 timeout_seconds，仍缺省为 300。")
+                                )
+                        )
+                        .put("required", JSONArray().put("skillId"))
+                )
+            )
         if (githubDiscovery) appendGitHubDiscoveryTools(tools)
         if (githubInstall) appendGitHubInstallTool(tools)
     }
@@ -115,7 +152,7 @@ internal object AgentSkillToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "skills_inspect_github",
-                    description = "Inspect a public GitHub repository and list every directory containing SKILL.md. This never installs anything. Use the returned commitSha as ref for installation; if multiple candidates match, ask the user to choose exact paths.",
+                    description = "Inspect a public GitHub repository and list every directory containing SKILL.md. This never installs anything. Each candidate reports the files visible in the same tree response, including scripts and binaries, so bundled executables are visible before installing. Use the returned commitSha as ref for installation; if multiple candidates match, ask the user to choose exact paths.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -152,7 +189,7 @@ internal object AgentSkillToolCatalog {
         tools.put(
             AgentToolSchema.function(
                 name = "skills_install_from_github",
-                description = "Install selected Skill directories from a public GitHub repository. Paths must come from skills_inspect_github. If one replaceable user Skill conflicts, retry that exact repository, commitSha, path, and id with replaceExisting=true; built-in Skills can never be overwritten. Installation does not run bundled scripts, and installed Skills become available next turn.",
+                description = "Install selected Skill directories from a public GitHub repository. Paths must come from skills_inspect_github. If the downloaded archive contains scripts, binaries, or scripts that reference network commands, the first call is refused with SKILL_AUDIT_CONFIRMATION_REQUIRED and the findings: review them, then retry the same call with acknowledge_audit=true. If one replaceable user Skill conflicts, retry that exact repository, commitSha, path, and id with replaceExisting=true; built-in Skills can never be overwritten. Installation does not run bundled scripts, and installed Skills become available next turn.",
                 parameters = JSONObject()
                     .put("type", "object")
                     .put(
@@ -199,6 +236,12 @@ internal object AgentSkillToolCatalog {
                                     .put("type", "string")
                                     .put("maxLength", 500)
                                     .put("description", "Required when replaceExisting is true. Copy the exact id from the single prior SKILL_CONFLICT result; never infer it."),
+                            )
+                            .put(
+                                "acknowledge_audit",
+                                JSONObject()
+                                    .put("type", "boolean")
+                                    .put("description", "Set true only after reading the SKILL_AUDIT_CONFIRMATION_REQUIRED findings for this exact download and concluding the scripts are expected."),
                             ),
                     )
                     .put("required", JSONArray().put("repository").put("paths")),

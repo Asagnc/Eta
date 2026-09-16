@@ -19,6 +19,7 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
+import io.github.mangi.eta.agent.skill.SkillContentAudit
 import io.github.mangi.eta.agent.skill.SkillIndexService
 import io.github.mangi.eta.agent.skill.SkillInstallErrorCode
 import io.github.mangi.eta.agent.skill.SkillInstallResult
@@ -47,6 +48,7 @@ import io.github.mangi.eta.data.repository.AgentMemoryMutation
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
+import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -228,6 +230,7 @@ internal class AgentLocalTools(
                 "skills_list_curated" -> textResult(skillsListCurated())
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
+                "skills_run" -> textResult(terminalTool { skillsRun(args) })
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",
@@ -1296,8 +1299,17 @@ internal class AgentLocalTools(
             .put("references", references)
             .put("frontmatter", frontmatter)
             .put("bodyMarkdown", body)
+            .put("split_hint", splitHint(resolved.bodyMarkdown.length) ?: JSONObject.NULL)
             .toString()
     }
+
+    /** 正文过长时提示按"互斥内容拆文件"的原则拆分，避免每次触发都要整篇读入。 */
+    private fun splitHint(bodyChars: Int): String? = bodyChars
+        .takeIf { it >= SKILL_BODY_SPLIT_HINT_CHARS }
+        ?.let { chars ->
+            "SKILL.md 正文约 $chars 字符；建议把互不共用的内容拆到 references/ 下，" +
+                "由 skills_read_resource 按需读取"
+        }
 
     private fun skillsReadResource(args: JSONObject): String {
         if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
@@ -1464,6 +1476,29 @@ internal class AgentLocalTools(
                         "Skill 安装已取消，未提交文件",
                     )
                 }
+                val audit = SkillContentAudit.auditArchive(archive.file, selectedPaths)
+                val flagged = audit.filterValues { summary -> summary.requiresConfirmation }
+                if (flagged.isNotEmpty() && !args.optBoolean("acknowledge_audit", false)) {
+                    return@skillSourceResult JSONObject()
+                        .put("ok", false)
+                        .put("code", "SKILL_AUDIT_CONFIRMATION_REQUIRED")
+                        .put(
+                            "message",
+                            "下载内容包含可执行脚本、二进制或脚本里的网络命令；确认这是预期的 Skill 内容后，" +
+                                "带 acknowledge_audit=true 重试同一次安装",
+                        )
+                        .put("repository", archive.repository)
+                        .put("ref", archive.ref)
+                        .put("commitSha", archive.commitSha)
+                        .put("selectedPaths", JSONArray(selectedPaths))
+                        .put(
+                            "audit",
+                            JSONObject().also { result ->
+                                flagged.forEach { (path, summary) -> result.put(path, summary.toJson()) }
+                            },
+                        )
+                        .toString()
+                }
                 val result = installer.installRepositoryZip(
                     openStream = { archive.file.inputStream() },
                     selectedPaths = selectedPaths,
@@ -1496,6 +1531,10 @@ internal class AgentLocalTools(
             .mapTo(mutableSetOf()) { SkillParser.normalizeSkillLookup(it.id) }
         val items = JSONArray()
         inspection.candidates.forEach { candidate ->
+            val audit = SkillContentAudit.summarize(
+                root = candidate.path,
+                files = candidate.files.map { file -> SkillContentAudit.FileEntry(file.path, file.sizeBytes) },
+            )
             items.put(
                 JSONObject()
                     .put("name", candidate.name)
@@ -1503,7 +1542,8 @@ internal class AgentLocalTools(
                     .put(
                         "installed",
                         SkillParser.normalizeSkillLookup(candidate.name) in installedIds,
-                    ),
+                    )
+                    .put("audit", audit.toJson()),
             )
         }
         return JSONObject()
@@ -1513,6 +1553,10 @@ internal class AgentLocalTools(
             .put("commitSha", inspection.commitSha)
             .put("prefix", inspection.prefix ?: JSONObject.NULL)
             .put("count", inspection.candidates.size)
+            .put(
+                "install_note",
+                "含脚本或二进制的 Skill 在安装时会被要求带 acknowledge_audit=true 二次确认",
+            )
             .put("items", items)
             .toString()
     }
@@ -1559,6 +1603,97 @@ internal class AgentLocalTools(
             )
         }
         return null
+    }
+
+    /**
+     * 执行 Skill 在 frontmatter 中声明的命令。
+     *
+     * 命令文本与 SKILL.md 正文都不进入上下文：脚本内容由 Shell 读取，模型只看到输出，
+     * 这也是让"已固化流程"不再消耗上下文的关键。requires 只支持 root 与 linux 两个值，
+     * 未知值直接拒绝而不是忽略，避免 Skill 作者以为写了预检条件。
+     */
+    private fun skillsRun(args: JSONObject): String {
+        if (skillTreeMutationUncertain.get()) return nextTurnRequired("Skill 树")
+        val indexService = skillIndexService
+            ?: return errorResult("SKILLS_UNAVAILABLE", "技能服务未初始化")
+        val skillId = args.optString("skillId").trim()
+        if (skillId.isBlank()) return errorResult("MISSING_PARAM", "缺少 skillId")
+        val entry = indexService.findInstalledSkill(skillId)
+            ?: return errorResult("NOT_FOUND", "未找到 skill：$skillId")
+        if (!isVisibleInCurrentRun(entry.id)) return nextTurnRequired(entry.id)
+        val compatibility = SkillCompatibilityChecker.evaluate(entry)
+        if (!compatibility.available) {
+            return errorResult("INCOMPATIBLE", compatibility.reason ?: "当前环境不可用")
+        }
+        val frontmatter = SkillParser.parseSkillFile(File(entry.skillFilePath))?.frontmatter
+            ?: return errorResult("READ_FAILED", "读取 SKILL.md 失败：${entry.skillFilePath}")
+        val declared = frontmatter["command"]?.trim().orEmpty()
+        if (declared.isBlank()) {
+            return errorResult(
+                "SKILL_COMMAND_NOT_DECLARED",
+                "该 Skill 未声明 command；请用 skills_read 读取正文后按步骤执行",
+            )
+        }
+        val requirements = frontmatter["requires"].orEmpty()
+            .split(',', ' ', '\n', '\t')
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .filter { it.isNotBlank() }
+        val unsupported = requirements.filterNot { it in SUPPORTED_SKILL_REQUIREMENTS }
+        if (unsupported.isNotEmpty()) {
+            return errorResult(
+                "SKILL_REQUIREMENT_UNSUPPORTED",
+                "Skill 声明了不支持的 requires：${unsupported.joinToString("、")}；可选值只有 root 与 linux",
+            )
+        }
+        if ("root" in requirements && !rootAvailable()) {
+            return errorResult("ROOT_REQUIRED", "该 Skill 声明 requires: root，当前没有 Root 授权，本次未执行")
+        }
+        val extra = args.optString("arguments").trim()
+        if (extra.length > MAX_SKILL_COMMAND_ARGUMENTS) {
+            return errorResult("INVALID_ARGUMENT", "arguments 过长，最多 $MAX_SKILL_COMMAND_ARGUMENTS 字符")
+        }
+        val command = if (extra.isBlank()) declared else "$declared $extra"
+        val declaredTimeout = frontmatter["timeout_seconds"]?.trim()?.toIntOrNull()
+        val timeout = args.optInt("timeout_seconds", declaredTimeout ?: DEFAULT_SKILL_COMMAND_TIMEOUT_SECONDS)
+            .coerceIn(1, MAX_SKILL_COMMAND_TIMEOUT_SECONDS)
+        val linux = "linux" in requirements
+        val output = if (linux) {
+            terminalController.terminalAction(
+                action = "open_and_exec",
+                command = command,
+                cwd = null,
+                timeoutMs = timeout * 1_000,
+                identity = "",
+                mergeStderr = false,
+                sessionId = null,
+                jobId = null,
+                async = false,
+                offsetChars = 0,
+                maxChars = 8_000,
+                closeIfDone = false,
+                environment = "linux",
+                taskId = null,
+            )
+        } else {
+            terminalController.runCommand(
+                command = command,
+                cwd = entry.rootPath,
+                timeoutSeconds = timeout,
+            )
+        }
+        val outputJson = runCatching { JSONObject(output) }.getOrNull()
+        return JSONObject()
+            .put("ok", outputJson?.optBoolean("ok") ?: true)
+            .put("skill", entry.id)
+            .put("command", command)
+            .put("environment", if (linux) "linux" else "android")
+            .put("cwd", if (linux) JSONObject.NULL else entry.rootPath)
+            .put("timeout_seconds", timeout)
+            .put("inputs", frontmatter["inputs"].orEmpty())
+            .put("outputs", frontmatter["outputs"].orEmpty())
+            .put("skill_body_loaded", false)
+            .put("output", outputJson?.opt("output") ?: output)
+            .toString()
     }
 
     private fun isVisibleInCurrentRun(skillId: String): Boolean {
@@ -1748,6 +1883,7 @@ internal class AgentLocalTools(
             DEVICE_DIRECT_TOOL_NAMES + DEVICE_SENSITIVE_READ_TOOL_NAMES +
                 DEVICE_SENSITIVE_ACTION_TOOL_NAMES
         val MEMORY_TOOL_NAMES = setOf("memory_get", "memory_write")
+        val SUPPORTED_SKILL_REQUIREMENTS = setOf("root", "linux")
     }
 }
 
@@ -1768,3 +1904,11 @@ private const val SEQUENCE_NO_SELECTION_CODE = "TEXT_SELECTION_UNAVAILABLE"
 
 /** 任务清单允许的状态值。 */
 private val TASK_PLAN_STATUSES = setOf("pending", "in_progress", "completed")
+
+/** Skill 声明式命令的默认与上限超时，以及附加参数的长度上限。 */
+private const val DEFAULT_SKILL_COMMAND_TIMEOUT_SECONDS = 300
+private const val MAX_SKILL_COMMAND_TIMEOUT_SECONDS = 600
+private const val MAX_SKILL_COMMAND_ARGUMENTS = 1_000
+
+/** SKILL.md 正文超过该长度时提示拆分为按需读取的 references 文件。 */
+private const val SKILL_BODY_SPLIT_HINT_CHARS = 12_000

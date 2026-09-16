@@ -181,6 +181,19 @@ Skill 安装工具始终向模型提供，不再根据顶层用户输入的固�
 - GitHub 下载与本地 ZIP 共用受限解包和校验流程：拒绝路径穿越、绝对路径、重复条目、嵌套 Skill、非法 frontmatter，以及超过条目数、单文件、归档或总解压预算的输入。
 - 安装先在 App 私有临时目录完整验证，再提交到正式 Skills 目录。文件系统与 Room 变更由持久事务日志协调，进程异常退出后会在下次变更前恢复；批量安装任一步失败都会回滚。同名用户 Skill 默认保持不变；GitHub 单冲突替换绑定仓库、提交、路径和 Skill ID，可在同一 run 精确重试；内置 Skill 永远不能被导入包覆盖。
 - 安装只保存文件、登记索引并默认启用，不执行 `scripts/`，也不改变终端/文件工具开关。本轮 Skill 索引在模型调用前已经冻结，因此新 Skill 从下一轮对话开始可用。
+- 检查结果按同一次 tree 响应列出每个候选 Skill 目录下的文件，并标出脚本与二进制；安装时对真实下载的归档再做一次审计：含脚本、二进制或脚本里出现网络命令（curl、wget、httpx、requests、ssh 等）时，第一次调用返回 `SKILL_AUDIT_CONFIRMATION_REQUIRED` 与命中明细，只有带 `acknowledge_audit=true` 重试才继续。审计按文件后缀与脚本文本里的命令名判定，是提示而非安全边界：拦不住混淆过的脚本，也不保证脚本没有网络之外的副作用。
+
+Skill 可以通过 frontmatter 声明一条命令，由 `skills_run` 执行：
+
+```yaml
+command: bash scripts/capture.sh
+requires: root
+timeout_seconds: 300
+inputs: 目标应用包名
+outputs: 抓包文件路径与命令摘要
+```
+
+`skills_run` 以 Skill 根目录为工作目录执行命令，只把命令输出交回模型，脚本与 SKILL.md 正文都不进入上下文——这正是"已固化流程"不消耗上下文的原因。`requires` 只接受 `root` 与 `linux`：前者在执行前检查 Root 授权，缺失时直接拒绝；后者把命令放到 Linux 环境执行。出现未知取值时拒绝执行而不是忽略，避免作者以为条件已经生效。`timeout_seconds` 在调用方未指定时生效，默认 300 秒、上限 600 秒。
 
 已安装 Skill 的附属文本资源通过独立的有界读取工具访问，读取时再次做相对路径、canonical root、UTF-8 与大小检查；脚本和二进制 asset 不会借此被执行或当作无限文本送入上下文。
 
