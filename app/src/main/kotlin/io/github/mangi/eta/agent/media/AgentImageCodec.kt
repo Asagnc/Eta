@@ -247,22 +247,23 @@ internal object AgentImageCodec {
         return readBytes()
     }
 
-    private fun java.io.InputStream.readBytesLimited(): ByteArray {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        var total = 0
-        while (true) {
-            val read = read(buffer)
-            if (read < 0) break
-            total += read
-            require(total <= MAX_AGENT_IMAGE_BYTES) { "图片数据过大：$total" }
-            output.write(buffer, 0, read)
-        }
-        return output.toByteArray()
-    }
-
     private fun String.looksLikeBase64(): Boolean {
         if (length < 64 || length > MAX_AGENT_IMAGE_BYTES * 2) return false
         return all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' || it == '\n' || it == '\r' }
     }
+}
+
+/** 按上限读取输入流，超过 [MAX_AGENT_IMAGE_BYTES] 时以异常终止，避免把超大图片整段读进内存。 */
+internal fun java.io.InputStream.readBytesLimited(): ByteArray {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        total += read
+        require(total <= MAX_AGENT_IMAGE_BYTES) { "图片数据过大：$total" }
+        output.write(buffer, 0, read)
+    }
+    return output.toByteArray()
 }

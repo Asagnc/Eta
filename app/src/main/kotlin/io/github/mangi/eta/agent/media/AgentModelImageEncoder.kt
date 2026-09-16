@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ImageDecoder
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
@@ -14,6 +15,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.nio.ByteBuffer
 import kotlin.math.min
 import kotlin.math.sqrt
 
@@ -108,17 +110,12 @@ internal object AgentModelImageEncoder {
         context: Context,
         image: AgentModelClient.ModelImage,
     ): AgentModelClient.ModelImage? = runCatching {
-        val width = image.width ?: return@runCatching null
-        val height = image.height ?: return@runCatching null
-        val target = targetSize(width, height, previewProfile)
+        image.width ?: return@runCatching null
+        image.height ?: return@runCatching null
         val openStream = referenceStreamFactory(context, image.reference) ?: return@runCatching null
-        val options = BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inSampleSize = sampleSize(width, height, target)
-        }
-        val decoded = openStream().use { input ->
-            BitmapFactory.decodeStream(input, null, options)
-        } ?: return@runCatching null
+        val bytes = openStream().use { input -> input.readBytesLimited() }
+        val decoded = decodeScaled(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), previewProfile)
+            ?: return@runCatching null
         try {
             encodeBitmap(decoded, image.source, previewProfile, flattenAlpha = true)
         } finally {
@@ -133,12 +130,7 @@ internal object AgentModelImageEncoder {
         profile: EncodingProfile,
     ): AgentModelClient.ModelImage? {
         if (bounds.width <= 0 || bounds.height <= 0) return null
-        val target = bounds.targetSize(profile)
-        val options = BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inSampleSize = sampleSize(bounds.width, bounds.height, target)
-        }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+        val bitmap = decodeScaled(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), profile) ?: return null
         return try {
             encodeBitmap(
                 bitmap = bitmap,
@@ -151,6 +143,19 @@ internal object AgentModelImageEncoder {
             if (!bitmap.isRecycled) bitmap.recycle()
         }
     }
+
+    /**
+     * 按目标尺寸直接解码。ImageDecoder 给出的尺寸已经应用 EXIF 方向，采样目标不会因旋转错位；
+     * 位图后续要 compress，因此必须落在软件内存而不是硬件位图。
+     */
+    private fun decodeScaled(source: ImageDecoder.Source, profile: EncodingProfile): Bitmap? =
+        runCatching {
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val target = targetSize(info.size.width, info.size.height, profile)
+                decoder.setTargetSize(target.width, target.height)
+            }
+        }.getOrNull()
 
     private fun encodeBitmap(
         bitmap: Bitmap,
@@ -231,9 +236,6 @@ internal object AgentModelImageEncoder {
         )
     }
 
-    private fun ImageBounds.targetSize(profile: EncodingProfile): TargetSize =
-        targetSize(width, height, profile)
-
     private fun targetSize(
         width: Int,
         height: Int,
@@ -253,27 +255,6 @@ internal object AgentModelImageEncoder {
             width = (width * scale).toInt().coerceIn(1, width),
             height = (height * scale).toInt().coerceIn(1, height),
         )
-    }
-
-    private fun sampleSize(
-        width: Int,
-        height: Int,
-        target: TargetSize,
-    ): Int {
-        var sample = 1
-        while (sample <= 64) {
-            val next = sample * 2
-            val nextWidth = width.toDouble() / next
-            val nextHeight = height.toDouble() / next
-            if (
-                nextWidth < target.width * 0.9 ||
-                nextHeight < target.height * 0.9
-            ) {
-                break
-            }
-            sample = next
-        }
-        return sample
     }
 
     private fun referenceStreamFactory(
