@@ -169,7 +169,7 @@ TLS 校验使用系统信任锚，并额外信任用户证书库里的 CA：抓�
 
 除读取与交互类动作外，`browser_use` 还提供：
 
-- `evaluate_js`：在页面里执行表达式并取回结果。表达式包在 async 函数里，因此可以写 `await`；结果经 JSON 序列化后按上限截断（默认 2000 字符，上限 2500）。结果先写到页面上的临时键、再由宿主轮询取回——`evaluateJavascript` 的返回值只覆盖同步结果，而页面跳转会让结果连同 JS 上下文一起失效（这种情况返回 `SCRIPT_RESULT_LOST`）。
+- `evaluate_js`：在页面里执行表达式并取回结果。表达式包在 async 函数里，因此可以写 `await`；结果经 JSON 序列化后按上限截断（默认 2000 字符，上限 2500）。结果通过注入的 JS 桥（`WebViewCompat.addWebMessageListener`，按每次调用的 nonce 匹配）回传，宿主按事件接收；WebView 不支持该特性或桥在当前文档里不可用时，回退到“写页面临时键 + 宿主轮询”。之所以不直接用 `evaluateJavascript` 的返回值：它只覆盖同步结果，而页面跳转会让结果连同 JS 上下文一起失效（两条路径都返回 `SCRIPT_RESULT_LOST`）。
 - 自定义 `user_agent` 与 `headers`：User-Agent 走 `WebSettings`（`loadUrl` 的附加请求头会被 WebView 自身的默认值覆盖），附加请求头只作用于本次导航的主文档请求，页面内的 XHR/fetch 不会带上。
 - `get_cookies` / `set_cookie`：基于 `CookieManager`。写入采用无回调形式再回读确认，因为写入回调投递到调用线程的 Looper，而工具线程没有 Looper。
 - `set_proxy` / `clear_proxy`：基于 `androidx.webkit` 的 `ProxyController`，是**进程级**设置，作用于 Eta 内所有 WebView，不改动系统代理；只在 Eta 进程存活期间有效，进程重启即失效。浏览器页有对应开关，当前规则显示在地址栏下方，也会出现在每次工具结果里。

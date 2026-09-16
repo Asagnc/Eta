@@ -539,9 +539,15 @@ internal object BrowserDomScripts {
      * 页面跳转会连带这段结果和 JS 上下文一起失效，所以结果落在 window 上，而不是靠 evaluateJavascript 的返回值。
      * 这段代码是 wrap() 的函数体，自己不要再包一层 IIFE：wrap 取到的返回值会变成 undefined。
      */
-    fun evaluateScript(expression: String, resultKey: String, maxChars: Int): String =
+    fun evaluateScript(
+        expression: String,
+        resultKey: String,
+        maxChars: Int,
+        bridgeObjectName: String? = null,
+    ): String =
         """
         var key = ${JSONObject.quote(resultKey)};
+        var bridge = ${bridgeObjectName?.let { JSONObject.quote(it) } ?: "null"};
         var limit = $maxChars;
         function describe(value) {
           if (value === undefined) return { kind: 'undefined', text: '' };
@@ -565,6 +571,14 @@ internal object BrowserDomScripts {
           return { kind: 'value', text: String(value) };
         }
         function report(payload) {
+          if (bridge !== null) {
+            var target = window[bridge];
+            if (target && typeof target.postMessage === 'function') {
+              payload.nonce = key;
+              target.postMessage(JSON.stringify(payload));
+              return;
+            }
+          }
           window[key] = JSON.stringify(payload);
         }
         function fail(error) {
@@ -589,6 +603,13 @@ internal object BrowserDomScripts {
           });
         }, fail);
         return null;
+        """.trimIndent()
+
+    /** 检查页面里是否真的存在宿主注入的桥对象：它只对安装监听之后创建的文档生效。 */
+    fun bridgeAvailable(objectName: String): String =
+        """
+        var target = window[${JSONObject.quote(objectName)}];
+        return { available: !!target && typeof target.postMessage === 'function' };
         """.trimIndent()
 
     /** 读走 evaluateScript 留在页面上的结果；结果还没落到 window 时返回 done=false。 */

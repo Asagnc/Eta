@@ -27,6 +27,8 @@ import androidx.core.graphics.createBitmap
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.ScriptHandler
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.io.ByteArrayOutputStream
@@ -101,6 +103,8 @@ internal object AgentBrowserSession {
     private const val MAX_COOKIE_ITEMS = 100
     private const val MAX_COOKIE_HEADER_CHARS = 4_000
     private const val REPEATED_TEXT_PREVIEW_CHARS = 200
+    private const val SCRIPT_BRIDGE_NAME = "etaBridge"
+    private const val BRIDGE_WAIT_INTERVAL_MS = 200L
     private const val POST_ACTION_TIMEOUT_MS = 10_000L
     private const val SCREENSHOT_MAX_WIDTH = 1_280
     private const val SCREENSHOT_MAX_HEIGHT = 2_400
@@ -189,6 +193,33 @@ internal object AgentBrowserSession {
 
     @Volatile
     private var headerScript: ScriptHandler? = null
+
+    private val scriptResults = HashMap<String, CompletableFuture<String>>()
+    private val scriptResultsLock = Any()
+
+    @Volatile
+    private var scriptBridgeInstalled = false
+
+    /**
+     * JS → 宿主的结果通道：页面按 nonce 回传 evaluate_js 的结果，比轮询 window 上的临时键更直接。
+     * 任何页面都能 post，所以只认带当前 nonce 的消息，且只取主框架。
+     */
+    private val scriptBridgeListener = object : WebViewCompat.WebMessageListener {
+        override fun onPostMessage(
+            view: WebView,
+            message: WebMessageCompat,
+            sourceOrigin: Uri,
+            isMainFrame: Boolean,
+            replyProxy: JavaScriptReplyProxy,
+        ) {
+            if (!isMainFrame || message.type != WebMessageCompat.TYPE_STRING) return
+            val raw = message.data ?: return
+            val nonce = runCatching { JSONObject(raw).optString("nonce") }.getOrNull().orEmpty()
+            if (nonce.isBlank()) return
+            val future = synchronized(scriptResultsLock) { scriptResults.remove(nonce) } ?: return
+            future.complete(raw)
+        }
+    }
 
     fun initialize(context: Context) {
         if (appContext == null) {
@@ -696,17 +727,92 @@ internal object AgentBrowserSession {
         val view = requirePage()
         val resultKey = "etaScript" + System.nanoTime().toString(36)
         val urlAtStart = currentUrl
+        val payload = if (bridgeUsable(view)) {
+            awaitBridgePayload(view, expression, resultKey, maxChars, timeout, urlAtStart)
+        } else {
+            awaitPolledPayload(view, expression, resultKey, maxChars, timeout, urlAtStart)
+        }
+        return scriptResult(payload)
+    }
+
+    /** 桥对象只对安装监听之后创建的文档生效，所以要在页面里确认一次再决定走哪条路。 */
+    private fun bridgeUsable(view: WebView): Boolean {
+        if (!scriptBridgeInstalled ||
+            !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        ) {
+            return false
+        }
+        return runCatching {
+            evaluateObject(view, BrowserDomScripts.bridgeAvailable(SCRIPT_BRIDGE_NAME)).optBoolean("available")
+        }.getOrDefault(false)
+    }
+
+    private fun startScript(
+        view: WebView,
+        expression: String,
+        resultKey: String,
+        maxChars: Int,
+        bridgeName: String?,
+    ) {
         try {
-            evaluateObject(view, BrowserDomScripts.evaluateScript(expression, resultKey, maxChars))
+            evaluateObject(view, BrowserDomScripts.evaluateScript(expression, resultKey, maxChars, bridgeName))
         } catch (failure: BrowserFailure) {
             if (failure.code != "SCRIPT_FAILED") throw failure
             throw BrowserFailure("SCRIPT_FAILED", "expression 无法执行，请检查语法是否完整")
         }
+    }
+
+    private fun awaitBridgePayload(
+        view: WebView,
+        expression: String,
+        resultKey: String,
+        maxChars: Int,
+        timeout: Long,
+        urlAtStart: String,
+    ): String {
+        val future = CompletableFuture<String>()
+        synchronized(scriptResultsLock) { scriptResults[resultKey] = future }
+        try {
+            startScript(view, expression, resultKey, maxChars, SCRIPT_BRIDGE_NAME)
+            val deadline = System.currentTimeMillis() + timeout
+            while (true) {
+                throwIfInterrupted()
+                try {
+                    return future.get(BRIDGE_WAIT_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                } catch (_: TimeoutException) {
+                    // 这一小段没有消息就继续等，并顺带做与轮询路径一致的判断
+                }
+                if (currentUrl != urlAtStart) {
+                    throw BrowserFailure("SCRIPT_RESULT_LOST", "脚本触发了页面跳转，返回值已丢失")
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    throw BrowserFailure("SCRIPT_RESULT_TIMEOUT", "脚本没有在超时前返回结果", "timeout")
+                }
+            }
+        } catch (error: ExecutionException) {
+            throw error.cause ?: error
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw BrowserFailure("CANCELLED", "操作已取消", "cancelled")
+        } finally {
+            synchronized(scriptResultsLock) { scriptResults.remove(resultKey) }
+        }
+    }
+
+    private fun awaitPolledPayload(
+        view: WebView,
+        expression: String,
+        resultKey: String,
+        maxChars: Int,
+        timeout: Long,
+        urlAtStart: String,
+    ): String {
+        startScript(view, expression, resultKey, maxChars, null)
         val deadline = System.currentTimeMillis() + timeout
         while (true) {
             throwIfInterrupted()
             val outcome = evaluateObject(view, BrowserDomScripts.scriptOutcome(resultKey))
-            if (outcome.optBoolean("done")) return scriptResult(outcome.optString("payload"))
+            if (outcome.optBoolean("done")) return outcome.optString("payload")
             if (currentUrl != urlAtStart) {
                 throw BrowserFailure("SCRIPT_RESULT_LOST", "脚本触发了页面跳转，返回值已丢失")
             }
@@ -1053,6 +1159,7 @@ internal object AgentBrowserSession {
                     settings.displayZoomControls = false
                     webViewClient = BrowserClient()
                     webChromeClient = BrowserChrome()
+                    installScriptBridgeOnMain(this)
                     setDownloadListener { url, _, contentDisposition, mimeType, contentLength ->
                         pendingDownload = BrowserDownloadRequest(
                             url = url.orEmpty(),
@@ -1073,6 +1180,16 @@ internal object AgentBrowserSession {
                 publishSnapshotOnMain()
                 view
             }
+        }
+    }
+
+    private fun installScriptBridgeOnMain(view: WebView) {
+        scriptBridgeInstalled = false
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        runCatching {
+            WebViewCompat.addWebMessageListener(view, SCRIPT_BRIDGE_NAME, setOf("*"), scriptBridgeListener)
+        }.onSuccess {
+            scriptBridgeInstalled = true
         }
     }
 
@@ -1106,6 +1223,11 @@ internal object AgentBrowserSession {
         headerScript?.let { handler -> runCatching { handler.remove() } }
         headerScript = null
         val view = webView ?: return
+        if (scriptBridgeInstalled) {
+            runCatching { WebViewCompat.removeWebMessageListener(view, SCRIPT_BRIDGE_NAME) }
+        }
+        scriptBridgeInstalled = false
+        synchronized(scriptResultsLock) { scriptResults.clear() }
         (view.parent as? ViewGroup)?.removeView(view)
         runCatching { view.stopLoading() }
         runCatching { view.clearHistory() }
