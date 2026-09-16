@@ -98,6 +98,7 @@ internal object AgentBrowserSession {
     private const val SCRIPT_POLL_INTERVAL_MS = 120L
     private const val MAX_COOKIE_ITEMS = 100
     private const val MAX_COOKIE_HEADER_CHARS = 4_000
+    private const val REPEATED_TEXT_PREVIEW_CHARS = 200
     private const val POST_ACTION_TIMEOUT_MS = 10_000L
     private const val SCREENSHOT_MAX_WIDTH = 1_280
     private const val SCREENSHOT_MAX_HEIGHT = 2_400
@@ -180,6 +181,9 @@ internal object AgentBrowserSession {
 
     @Volatile
     private var activeProxy: String? = null
+
+    @Volatile
+    private var lastReadMark: BrowserReadMark? = null
 
     fun initialize(context: Context) {
         if (appContext == null) {
@@ -426,6 +430,20 @@ internal object AgentBrowserSession {
     private fun navigate(args: JSONObject): BrowserToolResult {
         val rawUrl = args.optString("url").trim()
         if (rawUrl.isBlank()) throw BrowserFailure("INVALID_ARGUMENT", "navigate 缺少 url")
+        // 同一地址的重复导航不再重新加载：页面已经是这个状态，要刷新用 reload，要继续读正文用 next_offset。
+        // 用户自己提交地址栏（userInitiated）时不受这条影响。
+        if (!activeActionIsUserInitiated &&
+            rawUrl == currentUrl &&
+            snapshots.value.available &&
+            !snapshots.value.isLoading
+        ) {
+            return toolResult(
+                baseEnvelope("navigate", ok = true, status = "ok")
+                    .put("redirected", false)
+                    .put("unchanged", true)
+                    .put("message", "页面已经是这个地址，未重新加载；需要刷新用 reload，需要继续读正文请用 get_readable 的 next_offset")
+            )
+        }
         val headers = customHeaders(args)
         val userAgent = if (args.has("user_agent") && !args.isNull("user_agent")) {
             args.optString("user_agent").trim()
@@ -504,10 +522,9 @@ internal object AgentBrowserSession {
             }
         )
         val action = if (readable) "get_readable" else "get_text"
-        return toolResult(
-            mergeValue(baseEnvelope(action, true, "ok"), value)
-                .put("content_format", if (readable) "markdown" else "text")
-        )
+        val envelope = mergeValue(baseEnvelope(action, true, "ok"), value)
+            .put("content_format", if (readable) "markdown" else "text")
+        return toolResult(elideRepeatedRead(action, offset, maxChars, value, envelope))
     }
 
     private fun findElements(args: JSONObject): BrowserToolResult {
@@ -875,6 +892,36 @@ internal object AgentBrowserSession {
                 .put("source_url", outcome.sourceUrl)
                 .put("final_url", outcome.finalUrl)
         )
+    }
+
+    /**
+     * 同一 run 内重复读取完全相同的区间时，正文不再整段回传：只给前缀与长度，正文留在更早的结果里。
+     * 记账带 runId，跨 run、换区间或用户触发的读取都会照常返回全文。
+     */
+    private fun elideRepeatedRead(
+        action: String,
+        offset: Int,
+        maxChars: Int,
+        value: JSONObject,
+        envelope: JSONObject,
+    ): JSONObject {
+        val key = "$action|$currentUrl|$offset|$maxChars"
+        val text = value.optString("text")
+        val previous = lastReadMark
+        val runId = activeAgentRunId
+        lastReadMark = BrowserReadMark(runId, key, text.hashCode())
+        // 只去掉“同区间且内容逐字相同”的那种重复：同区间但正文变了（例如读取后又点了下页面）必须照常回传。
+        if (runId == null || text.isBlank() || previous == null ||
+            previous.key != key || previous.runId != runId || previous.textHash != text.hashCode()
+        ) {
+            return envelope
+        }
+        val preview = text.take(REPEATED_TEXT_PREVIEW_CHARS)
+        return envelope
+            .put("text", preview)
+            .put("returned_chars", preview.length)
+            .put("text_repeated", true)
+            .put("message", "与本次运行内上一次读取（同一地址、同一区间）完全相同，正文已在上一条结果里；继续读请用 next_offset")
     }
 
     private fun targetFrom(args: JSONObject): BrowserTarget {
@@ -1374,6 +1421,12 @@ internal object AgentBrowserSession {
             publishSnapshotOnMain()
         }
     }
+
+    private data class BrowserReadMark(
+        val runId: String?,
+        val key: String,
+        val textHash: Int,
+    )
 
     private data class BrowserDownloadRequest(
         val url: String,
