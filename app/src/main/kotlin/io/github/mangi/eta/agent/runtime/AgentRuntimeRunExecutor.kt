@@ -55,6 +55,8 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
+    /** ask 档的执行前确认门；为 null 时只按 allow/deny 处理。 */
+    private val approvals: AgentApprovalGate? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -219,7 +221,30 @@ internal class AgentRuntimeRunExecutor(
                 screenshotExcludedPackages = {
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },
-                beforeToolExecution = { toolName ->
+                beforeToolExecution = approval@{ toolName, args ->
+                    val permission = AgentRuntimePolicy.permissionFor(
+                        currentPermissions().permissionMode,
+                        toolName,
+                    )
+                    if (permission != AgentRuntimePolicy.ToolPermission.ALLOW) {
+                        val groupKey = AgentRuntimePolicy.approvalGroupKey(toolName, args)
+                        val allowed = when (permission) {
+                            AgentRuntimePolicy.ToolPermission.DENY -> false
+                            AgentRuntimePolicy.ToolPermission.ASK ->
+                                approvals?.request(
+                                    toolName = toolName,
+                                    groupKey = groupKey,
+                                    maxWaitMillis = AgentApprovalGate.MAX_WAIT_MILLIS,
+                                ) ?: false
+                            AgentRuntimePolicy.ToolPermission.ALLOW -> true
+                        }
+                        if (!allowed) {
+                            return@approval ToolExecutionDecision.Reject(
+                                code = "PERMISSION_DENIED",
+                                message = "当前权限档位下 $toolName 未获授权；如需执行，请先调整权限档位或让用户确认",
+                            )
+                        }
+                    }
                     val requiresAccessibility =
                         AgentToolRequirements.requiresAccessibility(toolName)
                     if (

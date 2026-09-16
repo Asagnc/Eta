@@ -17,6 +17,7 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
+import io.github.mangi.eta.ui.model.AgentTaskPlanCodec
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.TokenUsageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
@@ -79,6 +80,7 @@ internal object AgentConversationStore {
                         appliedRuntimeRunIdsJson = json.encodeToString(state.appliedRuntimeRunIds),
                         roleplayJson = state.roleplay?.let { json.encodeToString(it) }.orEmpty(),
                         revisionsJson = if (state.roleplay == null) "" else json.encodeToString(state.roleplayMessages),
+                        taskPlanJson = AgentTaskPlanCodec.encode(state.taskPlan),
                         createdAt = updatedAt[id] ?: now,
                         updatedAt = updatedAt[id] ?: now,
                     )
@@ -165,6 +167,7 @@ internal object AgentConversationStore {
                 isStreaming = false,
                 thinkingEnabled = conversation.reasoningEffortValue.enablesReasoning,
                 reasoningEffort = conversation.reasoningEffortValue,
+                taskPlan = AgentTaskPlanCodec.decode(conversation.taskPlanJson),
             ).let(RoleplayConversationReducer::decorate)
             titles[conversation.id] = conversation.title.takeUnless { it == LEGACY_UNNAMED_TITLE }.orEmpty()
             updatedAt[conversation.id] = conversation.updatedAt

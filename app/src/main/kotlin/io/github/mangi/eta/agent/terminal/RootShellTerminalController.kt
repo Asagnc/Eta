@@ -210,7 +210,8 @@ internal class RootShellTerminalController(
         sessionId: String?,
         async: Boolean
     ): String {
-        val session = sessionId?.takeIf { it.isNotBlank() }?.let { id ->
+        val resolvedSessionId = resolveAlias(sessionId, "session", orderedSessionIds())
+        val session = resolvedSessionId?.takeIf { it.isNotBlank() }?.let { id ->
             synchronized(sessions) { sessions[id] }
                 ?: return errorJson("SESSION_NOT_FOUND", "未找到 terminal session：$id")
         }
@@ -352,7 +353,8 @@ internal class RootShellTerminalController(
         maxChars: Int,
         closeIfDone: Boolean
     ): String {
-        val job = synchronized(asyncJobs) { asyncJobs[jobId] }
+        val resolvedJobId = resolveAlias(jobId, "job", orderedJobIds()) ?: jobId
+        val job = synchronized(asyncJobs) { asyncJobs[resolvedJobId] }
             ?: return errorJson("JOB_NOT_FOUND", "未找到 async terminal job：$jobId")
         if (job.identity == "root" && !rootAvailable()) return errorJson("ROOT_REQUIRED", "Root 授权不可用")
         val stdoutRaw = job.stdout.text()
@@ -420,14 +422,34 @@ internal class RootShellTerminalController(
     }
 
     /** 一次列出会话、异步任务与守护任务，省去按 id 逐个查询的往返。 */
+    /** 任务列表里给出的短别名（session-1 / job-2 / daemon-3）解析回真实 id，模型就不用抄长 id 了。 */
+    private fun resolveAlias(id: String?, prefix: String, ordered: List<String>): String? {
+        val value = id?.takeIf { it.isNotBlank() } ?: return null
+        if (!value.startsWith("$prefix-")) return value
+        val index = value.removePrefix("$prefix-").toIntOrNull() ?: return value
+        return ordered.getOrNull(index - 1) ?: value
+    }
+
+    private fun orderedSessionIds(): List<String> =
+        synchronized(sessions) { sessions.values.sortedBy { it.createdAt }.map { it.id } }
+
+    private fun orderedJobIds(): List<String> =
+        synchronized(asyncJobs) { asyncJobs.values.sortedBy { it.startedAt }.map { it.id } }
+
+    private fun orderedDaemonIds(): List<String> {
+        val statuses = runCatching { detachedSupervisor?.list() }.getOrNull() ?: return emptyList()
+        return statuses.sortedBy { it.task.startedAt }.map { it.task.id }
+    }
+
     private fun taskList(): String {
         val sessionItems = JSONArray()
         val jobItems = JSONArray()
         synchronized(sessions) {
-            sessions.values.forEach { session ->
+            sessions.values.sortedBy { it.createdAt }.forEachIndexed { index, session ->
                 sessionItems.put(
                     JSONObject()
                         .put("session_id", session.id)
+                        .put("alias", "session-${index + 1}")
                         .put("identity", session.identity)
                         .put("environment", session.environment.wireName)
                         .put("cwd", session.cwd)
@@ -436,10 +458,11 @@ internal class RootShellTerminalController(
             }
         }
         synchronized(asyncJobs) {
-            asyncJobs.values.forEach { job ->
+            asyncJobs.values.sortedBy { it.startedAt }.forEachIndexed { index, job ->
                 jobItems.put(
                     JSONObject()
                         .put("job_id", job.id)
+                        .put("alias", "job-${index + 1}")
                         .put("session_id", job.sessionId ?: JSONObject.NULL)
                         .put("environment", job.environment.wireName)
                         .put("running", job.exitCode == null)
@@ -452,10 +475,11 @@ internal class RootShellTerminalController(
             }
         }
         val daemonItems = JSONArray()
-        detachedSupervisor?.list()?.forEach { status ->
+        detachedSupervisor?.list()?.sortedBy { it.task.startedAt }?.forEachIndexed { index, status ->
             daemonItems.put(
                 JSONObject()
                     .put("task_id", status.task.id)
+                    .put("alias", "daemon-${index + 1}")
                     .put("running", status.running)
                     .put("command", status.task.command)
                     .put("environment", status.task.environment.wireName)
@@ -507,7 +531,8 @@ internal class RootShellTerminalController(
         val supervisor = detachedSupervisor
             ?: return errorJson("DAEMON_UNAVAILABLE", "守护任务宿主不可用")
         if (taskId.isBlank()) return errorJson("INVALID_ARGUMENT", "task_id 不能为空")
-        val result = supervisor.readLogs(taskId)
+        val resolvedTaskId = resolveAlias(taskId, "daemon", orderedDaemonIds()) ?: taskId
+        val result = supervisor.readLogs(resolvedTaskId)
         if (!result.ok) {
             return errorJson(result.code.ifBlank { "LOGS_UNAVAILABLE" }, result.message)
         }
@@ -525,9 +550,10 @@ internal class RootShellTerminalController(
         val supervisor = detachedSupervisor
             ?: return errorJson("DAEMON_UNAVAILABLE", "守护任务宿主不可用")
         if (taskId.isBlank()) return errorJson("INVALID_ARGUMENT", "task_id 不能为空")
-        val task = supervisor.findTask(taskId) ?: return errorJson("TASK_NOT_FOUND", "未找到守护任务：$taskId")
+        val resolvedTaskId = resolveAlias(taskId, "daemon", orderedDaemonIds()) ?: taskId
+        val task = supervisor.findTask(resolvedTaskId) ?: return errorJson("TASK_NOT_FOUND", "未找到守护任务：$taskId")
         if (task.identity == "root" && !rootAvailable()) return errorJson("ROOT_REQUIRED", "Root 授权不可用")
-        if (!supervisor.stop(taskId)) {
+        if (!supervisor.stop(resolvedTaskId)) {
             return errorJson("DAEMON_STOP_FAILED", "守护任务停止失败，请重试")
         }
         return JSONObject()
@@ -541,10 +567,10 @@ internal class RootShellTerminalController(
     private fun closeTerminal(sessionId: String?, jobId: String?): String {
         var closedSession = false
         var closedJob = false
-        sessionId?.takeIf { it.isNotBlank() }?.let { id ->
+        resolveAlias(sessionId, "session", orderedSessionIds())?.takeIf { it.isNotBlank() }?.let { id ->
             closedSession = closeSession(id)
         }
-        jobId?.takeIf { it.isNotBlank() }?.let { id ->
+        resolveAlias(jobId, "job", orderedJobIds())?.takeIf { it.isNotBlank() }?.let { id ->
             closedJob = closeJob(id)
         }
         return JSONObject()

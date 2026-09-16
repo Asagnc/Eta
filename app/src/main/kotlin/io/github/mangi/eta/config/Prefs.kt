@@ -51,6 +51,8 @@ internal object Prefs {
         const val AGENT_CONTEXT_NOTICE_PERCENT = "agent_context_notice_percent"
         /** 同批只读工具的并发上限；默认值与运行时的并发配置项一致。 */
         const val AGENT_PARALLEL_TOOL_LIMIT = "agent_parallel_tool_limit"
+        /** 高风险工具的权限档位：0 = 放行，1 = 需要用户确认，2 = 直接拒绝。 */
+        const val AGENT_PERMISSION_MODE = "agent_permission_mode"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
 
         /** 全部布尔开关及其默认值。 */
@@ -78,6 +80,7 @@ internal object Prefs {
             AGENT_PARALLEL_TOOL_LIMIT to 4,
             AGENT_TOOL_RESULT_KEEP to 6,
             AGENT_CONTEXT_NOTICE_PERCENT to 60,
+            AGENT_PERMISSION_MODE to 0,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -89,6 +92,7 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
             AGENT_THINKING_ENABLED,
             AGENT_SUBAGENTS_ENABLED,
+            AGENT_PERMISSION_MODE,
         )
     }
 

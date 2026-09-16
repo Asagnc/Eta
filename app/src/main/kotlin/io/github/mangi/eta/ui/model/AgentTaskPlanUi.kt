@@ -2,6 +2,7 @@ package io.github.mangi.eta.ui.model
 
 import androidx.compose.runtime.Immutable
 import org.json.JSONArray
+import org.json.JSONObject
 
 /** 任务清单单项的状态；与 task_plan 工具接受的字符串一一对应。 */
 @Immutable
@@ -39,4 +40,27 @@ internal object AgentTaskPlanCodec {
             )
         }
     }.getOrDefault(emptyList())
+
+    /** 写回存档：空清单返回空串，免得在库里躺一个没意义的 "[]"。 */
+    fun encode(items: List<AgentTaskPlanItemUi>): String {
+        if (items.isEmpty()) return ""
+        val array = JSONArray()
+        items.forEach { item ->
+            array.put(
+                JSONObject()
+                    .put("id", item.id)
+                    .put("content", item.content)
+                    .put("status", item.status.wireValue),
+            )
+        }
+        return array.toString()
+    }
+
+    private val AgentTaskPlanStatus.wireValue: String
+        get() = when (this) {
+            AgentTaskPlanStatus.PENDING -> "pending"
+            AgentTaskPlanStatus.IN_PROGRESS -> "in_progress"
+            AgentTaskPlanStatus.COMPLETED -> "completed"
+            AgentTaskPlanStatus.INTERRUPTED -> "interrupted"
+        }
 }

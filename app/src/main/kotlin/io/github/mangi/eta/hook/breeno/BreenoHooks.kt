@@ -664,12 +664,13 @@ internal object BreenoHooks {
                             images = images,
                             history = request.history,
                             handoff = request.toRuntimeHandoff(prompt)
-                        )
-                    ) { event ->
-                        if (activeAgentRun.get() === runState) {
-                            streamRenderer.onEvent(event)
-                        }
-                    }
+                        ),
+                        onEvent = { event ->
+                            if (activeAgentRun.get() === runState) {
+                                streamRenderer.onEvent(event)
+                            }
+                        },
+                    )
                     ackRunId = result.runId.ifBlank { null }
                     if (!result.ok) {
                         error(result.error ?: injected(

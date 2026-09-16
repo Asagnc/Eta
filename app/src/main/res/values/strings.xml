@@ -172,6 +172,9 @@
   <string name="conversation_no_results">No matching conversations</string>
   <string name="conversation_rename_title">Rename conversation</string>
   <string name="conversation_rename_hint">Conversation name</string>
+  <string name="tool_approval_title">Approve this action?</string>
+  <string name="tool_approval_message">%1$s wants to run: %2$s</string>
+  <string name="tool_approval_allow">Allow</string>
   <string name="conversation_delete_title">Delete conversation?</string>
   <string name="conversation_delete_message">This conversation and its messages will be permanently deleted.</string>
   <string name="conversation_delete_message_title">Delete message?</string>

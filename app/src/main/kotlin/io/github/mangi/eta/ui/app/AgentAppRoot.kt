@@ -701,6 +701,21 @@ fun AgentAppRoot(
         }
     }
 
+    agentState.pendingApproval?.let { approval ->
+        WindowDialog(
+            show = true,
+            title = stringResource(R.string.tool_approval_title),
+            summary = stringResource(R.string.tool_approval_message, approval.tool, approval.summary),
+            onDismissRequest = { agentState.respondApproval(false) },
+        ) {
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.tool_approval_allow),
+                onCancel = { agentState.respondApproval(false) },
+                onConfirm = { agentState.respondApproval(true) },
+            )
+        }
+    }
+
     conversationDeleteTarget?.let { conversation ->
         WindowDialog(
             show = true,

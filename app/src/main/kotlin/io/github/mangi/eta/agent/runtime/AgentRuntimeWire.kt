@@ -232,6 +232,47 @@ internal object AgentRuntimeWire {
         val createdAt: Long
     )
 
+    /** service -> client：请求用户确认一次高风险工具调用。 */
+    const val MSG_APPROVAL_REQUEST = 16
+
+    /** client -> service：用户对某次确认请求的决定。 */
+    const val MSG_APPROVAL_RESULT = 17
+
+    /** 确认请求的载荷：一次弹窗代表同一类工具的一批调用。 */
+    data class ApprovalRequest(
+        val id: String,
+        val tool: String,
+        val summary: String,
+        val count: Int,
+    )
+
+    fun approvalRequestBundle(request: ApprovalRequest): Bundle = Bundle().apply {
+        putString("approval_id", request.id)
+        putString("approval_tool", request.tool)
+        putString("approval_summary", request.summary)
+        putInt("approval_count", request.count)
+    }
+
+    fun approvalRequestFromBundle(bundle: Bundle?): ApprovalRequest? {
+        val id = bundle?.getString("approval_id")?.takeIf { it.isNotBlank() } ?: return null
+        return ApprovalRequest(
+            id = id,
+            tool = bundle.getString("approval_tool").orEmpty(),
+            summary = bundle.getString("approval_summary").orEmpty(),
+            count = bundle.getInt("approval_count", 1).coerceAtLeast(1),
+        )
+    }
+
+    fun approvalResultBundle(id: String, granted: Boolean): Bundle = Bundle().apply {
+        putString("approval_id", id)
+        putBoolean("approval_granted", granted)
+    }
+
+    fun approvalResultFromBundle(bundle: Bundle?): Pair<String, Boolean>? {
+        val id = bundle?.getString("approval_id")?.takeIf { it.isNotBlank() } ?: return null
+        return id to bundle.getBoolean("approval_granted", false)
+    }
+
     fun serviceIntent(): Intent =
         Intent(ACTION_BIND).setComponent(ComponentName(MODULE_PACKAGE, SERVICE_CLASS))
 

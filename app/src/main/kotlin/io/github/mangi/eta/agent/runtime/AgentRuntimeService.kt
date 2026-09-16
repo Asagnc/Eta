@@ -73,6 +73,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val mainHandler = Handler(Looper.getMainLooper())
     private val resultIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "agent-result-io") }
     private val serviceMessenger = Messenger(IncomingHandler())
+    /** ask 档的执行前确认门：挂在工具执行前，等待界面回填。 */
+    private val approvalGate = AgentApprovalGate()
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -201,12 +203,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         finishWithFailure("Agent Runtime 请求缺少 runId 或用户输入", msg.replyTo)
                         return
                     }
+                    approvalGate.attach(msg.replyTo)
                     ingestRunRequest(incoming, msg.replyTo)
                 }
 
                 AgentRuntimeWire.MSG_CANCEL -> {
                     val runId = msg.data?.let(AgentRuntimeWire::runIdFromBundle).orEmpty()
                     if (runId.isNotBlank()) cancelRun(runId)
+                }
+
+                AgentRuntimeWire.MSG_APPROVAL_RESULT -> {
+                    val answer = AgentRuntimeWire.approvalResultFromBundle(msg.data) ?: return
+                    approvalGate.resolve(answer.first, answer.second)
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -365,6 +373,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             } finally {
                 AgentExecutionService.release("run:${request.runId}")
                 AgentExecutionService.notifyFinished(applicationContext, finished)
+                approvalGate.clear()
             }
         }
     }
@@ -381,6 +390,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 handleAcceptedRunEvent(session, event, entrySurfaceGuard)
             },
             persistArtifacts = ::persistRunArtifacts,
+            approvals = approvalGate,
         ).execute(session, request)
         if (!outcome.shouldUpdateHost) return true
         postTerminalOverlay(
