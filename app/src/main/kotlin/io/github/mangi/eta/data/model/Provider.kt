@@ -86,6 +86,8 @@ data class AnthropicProviderSetting(
     val anthropicVersion: String = DEFAULT_ANTHROPIC_VERSION,
     /** 上游支持 Anthropic 提示缓存时才在请求体里放 cache_control：网关不认识该字段会直接 400。 */
     val promptCacheEnabled: Boolean = false,
+    /** 让服务端按官方默认阈值清理较早的工具结果；需要上游透传 context-management beta 头。 */
+    val contextEditingEnabled: Boolean = false,
 ) : ProviderSetting {
     companion object {
         const val DEFAULT_ANTHROPIC_VERSION = "2023-06-01"

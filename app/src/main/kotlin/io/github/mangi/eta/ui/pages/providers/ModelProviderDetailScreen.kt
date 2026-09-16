@@ -275,6 +275,12 @@ private fun ProviderConfigTab(
                             checked = draft.promptCacheEnabled,
                             onCheckedChange = { onDraftChange(draft.copy(promptCacheEnabled = it)) },
                         )
+                        SwitchPreference(
+                            title = stringResource(R.string.provider_context_editing_title),
+                            summary = stringResource(R.string.provider_context_editing_summary),
+                            checked = draft.contextEditingEnabled,
+                            onCheckedChange = { onDraftChange(draft.copy(contextEditingEnabled = it)) },
+                        )
                     }
                 }
                 if (provider !is AnthropicProviderSetting) {
@@ -343,6 +349,7 @@ private fun ProviderConfigTab(
                                         hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                         anthropicVersion = draft.anthropicVersion,
                                         promptCacheEnabled = draft.promptCacheEnabled,
+                                        contextEditingEnabled = draft.contextEditingEnabled,
                                         customHeaders = draft.headers.map { it.header },
                                     )
                                 )
@@ -428,6 +435,7 @@ private fun ProviderConfigTab(
                                 hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                 anthropicVersion = draft.anthropicVersion,
                                 promptCacheEnabled = draft.promptCacheEnabled,
+                                contextEditingEnabled = draft.contextEditingEnabled,
                                 customHeaders = draft.headers.map { it.header },
                             )
                             try {

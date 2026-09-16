@@ -124,6 +124,7 @@ internal object RuntimeConfigRepository {
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
             promptCacheEnabled = (provider as? AnthropicProviderSetting)?.promptCacheEnabled ?: false,
+            contextEditingEnabled = (provider as? AnthropicProviderSetting)?.contextEditingEnabled ?: false,
             openAiEndpointMode = endpointMode,
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             thinkingEnabled = reasoningCapabilities != null,

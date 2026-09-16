@@ -24,6 +24,7 @@ class ProviderComponentsTest {
             hostedWebSearchEnabled = true,
             anthropicVersion = "2023-06-01",
             promptCacheEnabled = true,
+            contextEditingEnabled = true,
         )
 
         val saved = with(ProviderConfigDraftSaver) {

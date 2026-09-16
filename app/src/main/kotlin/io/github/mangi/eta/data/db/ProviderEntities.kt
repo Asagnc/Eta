@@ -44,6 +44,7 @@ internal data class ProviderEntity(
     val hostedWebSearchEnabled: Boolean,
     @ColumnInfo(name = "anthropic_version") val anthropicVersion: String,
     @ColumnInfo(name = "prompt_cache_enabled", defaultValue = "0") val promptCacheEnabled: Boolean = false,
+    @ColumnInfo(name = "context_editing_enabled", defaultValue = "0") val contextEditingEnabled: Boolean = false,
 )
 
 @Serializable
@@ -125,6 +126,7 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
             else -> AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION
         },
         promptCacheEnabled = (this as? AnthropicProviderSetting)?.promptCacheEnabled ?: false,
+        contextEditingEnabled = (this as? AnthropicProviderSetting)?.contextEditingEnabled ?: false,
     )
 
 internal fun ProviderSetting.toModelEntities(): List<ProviderModelEntity> =
@@ -158,6 +160,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
                 AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION
             },
             promptCacheEnabled = provider.promptCacheEnabled,
+            contextEditingEnabled = provider.contextEditingEnabled,
         )
 
         ProviderTypes.CUSTOM -> CustomProviderSetting(

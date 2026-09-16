@@ -25,6 +25,7 @@ internal data class ProviderConfigDraft(
     val hostedWebSearchEnabled: Boolean,
     val anthropicVersion: String,
     val promptCacheEnabled: Boolean,
+    val contextEditingEnabled: Boolean,
     val headers: List<ProviderHeaderDraft> = emptyList(),
 ) {
     companion object {
@@ -44,6 +45,7 @@ internal data class ProviderConfigDraft(
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
             promptCacheEnabled = (provider as? AnthropicProviderSetting)?.promptCacheEnabled ?: false,
+            contextEditingEnabled = (provider as? AnthropicProviderSetting)?.contextEditingEnabled ?: false,
         )
     }
 }
@@ -61,6 +63,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             "hostedWebSearchEnabled" to draft.hostedWebSearchEnabled,
             "anthropicVersion" to draft.anthropicVersion,
             "promptCacheEnabled" to draft.promptCacheEnabled,
+            "contextEditingEnabled" to draft.contextEditingEnabled,
         )
     },
     restore = { state ->
@@ -77,6 +80,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             hostedWebSearchEnabled = state.getValue("hostedWebSearchEnabled") as Boolean,
             anthropicVersion = state.getValue("anthropicVersion") as String,
             promptCacheEnabled = state.getValue("promptCacheEnabled") as Boolean,
+            contextEditingEnabled = state.getValue("contextEditingEnabled") as Boolean,
         )
     },
 )
@@ -92,6 +96,7 @@ internal fun buildUpdatedProvider(
     hostedWebSearchEnabled: Boolean,
     anthropicVersion: String,
     promptCacheEnabled: Boolean,
+    contextEditingEnabled: Boolean,
     customHeaders: List<CustomHeader>,
 ): ProviderSetting {
     val prompt = systemPrompt.trim().takeIf { it.isNotBlank() }
@@ -125,6 +130,7 @@ internal fun buildUpdatedProvider(
             isEnabled = isEnabled,
             anthropicVersion = anthropicVersion.trim().ifBlank { AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION },
             promptCacheEnabled = promptCacheEnabled,
+            contextEditingEnabled = contextEditingEnabled,
         )
     }
 }

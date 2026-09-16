@@ -100,6 +100,7 @@ internal object AgentRuntimeWire {
     private const val KEY_SYSTEM_PROMPT = "system_prompt"
     private const val KEY_ANTHROPIC_VERSION = "anthropic_version"
     private const val KEY_PROMPT_CACHE_ENABLED = "prompt_cache_enabled"
+    private const val KEY_CONTEXT_EDITING_ENABLED = "context_editing_enabled"
     private const val KEY_OPENAI_ENDPOINT_MODE = "openai_endpoint_mode"
     private const val KEY_HOSTED_WEB_SEARCH_ENABLED = "hosted_web_search_enabled"
     private const val KEY_TERMINAL_TOOLS = "terminal_tools"
@@ -292,6 +293,7 @@ internal object AgentRuntimeWire {
         AgentWireText.put(this, KEY_SYSTEM_PROMPT, request.config.systemPrompt, payloadDirectory)
         putString(KEY_ANTHROPIC_VERSION, request.config.anthropicVersion)
         putBoolean(KEY_PROMPT_CACHE_ENABLED, request.config.promptCacheEnabled)
+        putBoolean(KEY_CONTEXT_EDITING_ENABLED, request.config.contextEditingEnabled)
         putString(KEY_OPENAI_ENDPOINT_MODE, request.config.openAiEndpointMode)
         putBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, request.config.hostedWebSearchEnabled)
         putBoolean(KEY_TERMINAL_TOOLS, request.config.terminalTools)
@@ -420,6 +422,7 @@ internal object AgentRuntimeWire {
                 anthropicVersion = bundle.getString(KEY_ANTHROPIC_VERSION).orEmpty()
                     .ifBlank { io.github.mangi.eta.data.model.AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION },
                 promptCacheEnabled = bundle.getBoolean(KEY_PROMPT_CACHE_ENABLED, false),
+                contextEditingEnabled = bundle.getBoolean(KEY_CONTEXT_EDITING_ENABLED, false),
                 openAiEndpointMode = bundle.getString(KEY_OPENAI_ENDPOINT_MODE).orEmpty()
                     .ifBlank { io.github.mangi.eta.data.model.OpenAiEndpointMode.CHAT_COMPLETIONS },
                 hostedWebSearchEnabled = bundle.getBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, false),

@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.model
 import com.sun.net.httpserver.HttpServer
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
+import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.ProviderTypes
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -344,6 +345,77 @@ class AnthropicMessagesProviderTest {
         }
     }
 
+    @Test
+    fun contextEditingAbsentUnlessProviderEnablesIt() {
+        val requestBody = AtomicReference<String>()
+        val requestHeaders = AtomicReference<Map<String, String>>()
+        withAnthropicServer(
+            body = event("message_stop", JSONObject()),
+            onRequest = requestBody::set,
+            onHeaders = requestHeaders::set,
+        ) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = providerRequest(baseUrl),
+                runController = AgentRunController(),
+            )
+
+            assertFalse(requestHeaders.get().containsKey("anthropic-beta"))
+            assertFalse(JSONObject(requestBody.get()).has("context_management"))
+        }
+    }
+
+    @Test
+    fun contextEditingAddsBetaHeaderAndToolResultStrategy() {
+        val requestBody = AtomicReference<String>()
+        val requestHeaders = AtomicReference<Map<String, String>>()
+        withAnthropicServer(
+            body = event("message_stop", JSONObject()),
+            onRequest = requestBody::set,
+            onHeaders = requestHeaders::set,
+        ) { baseUrl ->
+            val request = providerRequest(baseUrl)
+            AnthropicMessagesProvider.complete(
+                request = request.copy(config = request.config.copy(contextEditingEnabled = true)),
+                runController = AgentRunController(),
+            )
+
+            assertEquals("context-management-2025-06-27", requestHeaders.get()["anthropic-beta"])
+            assertEquals(
+                "clear_tool_uses_20250919",
+                JSONObject(requestBody.get())
+                    .getJSONObject("context_management")
+                    .getJSONArray("edits")
+                    .getJSONObject(0)
+                    .getString("type"),
+            )
+        }
+    }
+
+    @Test
+    fun contextEditingMergesCustomAnthropicBetaHeader() {
+        val requestHeaders = AtomicReference<Map<String, String>>()
+        withAnthropicServer(
+            body = event("message_stop", JSONObject()),
+            onHeaders = requestHeaders::set,
+        ) { baseUrl ->
+            val request = providerRequest(baseUrl)
+            AnthropicMessagesProvider.complete(
+                request = request.copy(
+                    config = request.config.copy(
+                        contextEditingEnabled = true,
+                        customHeaders = listOf(CustomHeader("anthropic-beta", "prompt-caching-2024-07-31")),
+                    ),
+                ),
+                runController = AgentRunController(),
+            )
+
+            assertEquals(
+                "prompt-caching-2024-07-31,context-management-2025-06-27",
+                requestHeaders.get()["anthropic-beta"],
+            )
+        }
+    }
+
     private fun toolCallJson(id: String) =
         JSONObject()
             .put("id", id)
@@ -379,6 +451,7 @@ class AnthropicMessagesProviderTest {
     private fun withAnthropicServer(
         body: String,
         onRequest: (String) -> Unit = {},
+        onHeaders: (Map<String, String>) -> Unit = {},
         writeBody: ((OutputStream) -> Unit)? = null,
         block: (String) -> Unit
     ) {
@@ -386,6 +459,11 @@ class AnthropicMessagesProviderTest {
         val executor = Executors.newSingleThreadExecutor()
         server.executor = executor
         server.createContext("/v1/messages") { exchange ->
+            onHeaders(
+                exchange.requestHeaders.entries.associate { entry ->
+                    entry.key.lowercase() to entry.value.joinToString(",")
+                }
+            )
             onRequest(exchange.requestBody.use { it.readBytes().toString(Charsets.UTF_8) })
             val bytes = body.toByteArray(Charsets.UTF_8)
             exchange.responseHeaders.add("Content-Type", "text/event-stream")

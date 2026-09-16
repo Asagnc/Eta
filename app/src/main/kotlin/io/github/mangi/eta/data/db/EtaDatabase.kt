@@ -26,7 +26,7 @@ import androidx.room.migration.Migration
         CharacterEntity::class,
         UserPersonaEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -65,6 +65,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_19_20,
                         MIGRATION_20_21,
                         MIGRATION_21_22,
+                        MIGRATION_22_23,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -107,6 +108,12 @@ internal abstract class EtaDatabase : RoomDatabase() {
             database.execSQL("CREATE TABLE IF NOT EXISTS roleplay_user_persona (" +
                 "id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL)")
             createTextChunkCleanup(database)
+        }
+
+        internal val MIGRATION_22_23 = Migration(22, 23) { database ->
+            database.execSQL(
+                "ALTER TABLE model_providers ADD COLUMN context_editing_enabled INTEGER NOT NULL DEFAULT 0"
+            )
         }
 
         internal val MIGRATION_21_22 = Migration(21, 22) { database ->

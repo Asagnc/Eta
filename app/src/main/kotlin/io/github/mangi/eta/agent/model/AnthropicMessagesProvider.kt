@@ -11,6 +11,9 @@ import org.json.JSONObject
 
 internal object AnthropicMessagesProvider : AgentProviderClient {
     private const val DEFAULT_MAX_TOKENS = 4096
+    private const val CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
+    private const val CLEAR_TOOL_USES_STRATEGY = "clear_tool_uses_20250919"
+
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     override val id: String = "anthropic_messages"
@@ -32,7 +35,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         onEvent: (ProviderEvent) -> Unit
     ): ProviderResponse {
         val config = request.effectiveConfig
-        val headers = okhttp3.Headers.Builder()
+        val headerBuilder = okhttp3.Headers.Builder()
             .add("Content-Type", "application/json; charset=utf-8")
             .add("Accept", "text/event-stream")
             .add("anthropic-version", config.anthropicVersion)
@@ -42,7 +45,18 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 }
                 ProviderRequestHeaders.mergeInto(this, config.baseUrl, config.customHeaders, request.sessionId)
             }
-            .build()
+        if (config.contextEditingEnabled) {
+            // 与自定义头合并成单个 anthropic-beta，重复的同名头会被部分网关丢弃。
+            headerBuilder.set(
+                "anthropic-beta",
+                (headerBuilder.build()["anthropic-beta"].orEmpty().split(',') + CONTEXT_MANAGEMENT_BETA)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                    .joinToString(","),
+            )
+        }
+        val headers = headerBuilder.build()
         val httpRequest = Request.Builder()
             .url(ProviderUrls.anthropicMessagesUrl(config.baseUrl))
             .headers(headers)
@@ -147,6 +161,17 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 // 顶层 cache_control 把缓存断点交给服务端自动落在最后一个可缓存块上，随对话增长自行前移。
                 if (config.promptCacheEnabled) {
                     request.put("cache_control", JSONObject().put("type", "ephemeral"))
+                }
+                // 服务端按官方默认阈值（10 万输入 token）清理较早的工具结果、保留最近 3 次；
+                // 清理发生在服务端，客户端持有的历史不变。
+                if (config.contextEditingEnabled) {
+                    request.put(
+                        "context_management",
+                        JSONObject().put(
+                            "edits",
+                            JSONArray().put(JSONObject().put("type", CLEAR_TOOL_USES_STRATEGY)),
+                        ),
+                    )
                 }
                 RequestBodyMerge.mergeCustomBody(request, config.customBody)
                 ProviderReasoning.applyAnthropicRequest(request, config)

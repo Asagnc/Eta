@@ -263,6 +263,7 @@ internal object AgentModelClient {
         val systemPrompt: String,
         val anthropicVersion: String = AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
         val promptCacheEnabled: Boolean = false,
+        val contextEditingEnabled: Boolean = false,
         val openAiEndpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
         val hostedWebSearchEnabled: Boolean = false,
         val terminalTools: Boolean = false,
