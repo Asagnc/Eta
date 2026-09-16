@@ -605,6 +605,44 @@ internal object BrowserDomScripts {
         return null;
         """.trimIndent()
 
+    /**
+     * 页面内取回 blob:/data: 内容并经桥回传。
+     *
+     * 二进制走 WebMessageListener 的 ArrayBuffer 通道：头部是一段 UTF-8 JSON（前 4 字节大端长度），
+     * 后面紧跟原始字节，这样元信息与内容在同一条消息里，不用靠两条消息的先后顺序配对。
+     */
+    fun blobDownload(url: String, resultKey: String, bridgeObjectName: String): String =
+        """
+        var key = ${JSONObject.quote(resultKey)};
+        var bridge = ${JSONObject.quote(bridgeObjectName)};
+        var targetUrl = ${JSONObject.quote(url)};
+        function pack(payload, bytes) {
+          var header = new TextEncoder().encode(JSON.stringify(payload));
+          var total = new Uint8Array(4 + header.length + (bytes ? bytes.byteLength : 0));
+          new DataView(total.buffer).setUint32(0, header.length);
+          total.set(header, 4);
+          if (bytes) total.set(new Uint8Array(bytes), 4 + header.length);
+          return total.buffer;
+        }
+        function send(payload, bytes) {
+          var target = window[bridge];
+          if (!target || typeof target.postMessage !== 'function') throw new Error('SCRIPT_BRIDGE_MISSING');
+          target.postMessage(pack(payload, bytes));
+        }
+        fetch(targetUrl).then(function(response) {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          var type = response.headers.get('Content-Type') || '';
+          return response.arrayBuffer().then(function(buffer) {
+            return { type: type, buffer: buffer };
+          });
+        }).then(function(result) {
+          send({ nonce: key, ok: true, mime_type: result.type, size: result.buffer.byteLength }, result.buffer);
+        }, function(error) {
+          send({ nonce: key, ok: false, error: String(error && error.message ? error.message : error) }, null);
+        });
+        return null;
+        """.trimIndent()
+
     /** 检查页面里是否真的存在宿主注入的桥对象：它只对安装监听之后创建的文档生效。 */
     fun bridgeAvailable(objectName: String): String =
         """

@@ -47,7 +47,7 @@ internal object AgentBrowserToolCatalog {
                                 "url",
                                 JSONObject()
                                     .put("type", "string")
-                                    .put("description", "navigate、get_cookies、set_cookie 或 download 要访问的 URL；后三者省略时使用当前页面地址；download 只支持 http/https，blob:/data: 需要先用 evaluate_js 取内容。")
+                                    .put("description", "navigate、get_cookies、set_cookie 或 download 要访问的 URL；后三者省略时使用当前页面地址；download 支持 http(s)，也支持页面内的 blob:/data:（由页面读出内容再回传）。")
                             )
                             .put(
                                 "user_agent",

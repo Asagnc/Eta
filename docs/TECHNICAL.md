@@ -173,7 +173,7 @@ TLS 校验使用系统信任锚，并额外信任用户证书库里的 CA：抓�
 - 自定义 `user_agent` 与 `headers`：User-Agent 走 `WebSettings`（`loadUrl` 的附加请求头会被 WebView 自身的默认值覆盖），附加请求头只作用于本次导航的主文档请求，页面内的 XHR/fetch 不会带上。
 - `get_cookies` / `set_cookie`：基于 `CookieManager`。写入采用无回调形式再回读确认，因为写入回调投递到调用线程的 Looper，而工具线程没有 Looper。
 - `set_proxy` / `clear_proxy`：基于 `androidx.webkit` 的 `ProxyController`，是**进程级**设置，作用于 Eta 内所有 WebView，不改动系统代理；只在 Eta 进程存活期间有效，进程重启即失效。浏览器页有对应开关，当前规则显示在地址栏下方，也会出现在每次工具结果里。
-- `download`：用 OkHttp 取回文件，复用当前页面的 Cookie / User-Agent / Referer，并跟随当前代理；保存到公共下载目录的 `Download/Eta`，重名时追加序号而不覆盖。页面自己触发的下载（`Content-Disposition`）不会被静默丢弃，而是在工具结果里报一次 `download_requested`，由调用方决定是否取回。`blob:` / `data:` 地址需要先用 `evaluate_js` 取内容；写入公共下载目录依赖已授予的「所有文件访问」权限。
+- `download`：用 OkHttp 取回文件，复用当前页面的 Cookie / User-Agent / Referer，并跟随当前代理；保存到公共下载目录的 `Download/Eta`，重名时追加序号而不覆盖。页面自己触发的下载（`Content-Disposition`）不会被静默丢弃，而是在工具结果里报一次 `download_requested`，由调用方决定是否取回。`blob:` / `data:` 地址由页面内的脚本读出内容、经 JS 桥以二进制回传后再落盘（依赖 `WebMessageListener` 特性）；写入公共下载目录依赖已授予的「所有文件访问」权限。
 
 ## 终端与文件
 

@@ -11,6 +11,13 @@ import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+/** 已落盘的文件：远端下载与页面内取回共用同一套命名与扫描逻辑。 */
+internal data class BrowserSavedFile(
+    val file: File,
+    val bytes: Long,
+    val mimeType: String,
+)
+
 internal data class BrowserDownloadOutcome(
     val sourceUrl: String,
     val finalUrl: String,
@@ -49,13 +56,6 @@ internal object BrowserDownloader {
         referer: String?,
         proxyRule: String?,
     ): BrowserDownloadOutcome {
-        val directory = File(
-            Environment.getExternalStorageDirectory(),
-            BrowserDownloadNaming.RELATIVE_DIRECTORY,
-        )
-        if (!directory.isDirectory && !directory.mkdirs()) {
-            throw IOException("无法创建下载目录 ${directory.absolutePath}")
-        }
         val request = Request.Builder()
             .url(url)
             .header("Accept", "*/*")
@@ -74,20 +74,16 @@ internal object BrowserDownloader {
             val suggested = fileName
                 ?: BrowserDownloadNaming.contentDispositionFileName(response.header("Content-Disposition"))
                 ?: BrowserDownloadNaming.urlFileName(url)
-            val target = BrowserDownloadNaming.uniqueFile(
-                directory,
-                BrowserDownloadNaming.sanitizeFileName(suggested),
-            )
-            body.byteStream().use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+            val saved = save(context, suggested) { output ->
+                body.byteStream().use { input -> input.copyTo(output) }
             }
             val mimeType = body.contentType()?.toString()?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME_TYPE
-            MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mimeType), null)
+            MediaScannerConnection.scanFile(context, arrayOf(saved.file.absolutePath), arrayOf(mimeType), null)
             return BrowserDownloadOutcome(
                 sourceUrl = url,
                 finalUrl = response.request.url.toString(),
-                file = target,
-                bytes = target.length(),
+                file = saved.file,
+                bytes = saved.file.length(),
                 mimeType = mimeType,
                 httpStatus = response.code,
             )
@@ -98,6 +94,30 @@ internal object BrowserDownloader {
      * 代理是浏览器会话级状态：设置后下载与 WebView 走同一条网络路径，
      * 避免出现"浏览器能打开、下载却直连失败"的分叉。
      */
+    /** 页面内取回的字节直接落盘，命名与重名处理跟远端下载一致。 */
+    fun saveBytes(context: Context, fileName: String?, mimeType: String, bytes: ByteArray): BrowserSavedFile {
+        val saved = save(context, fileName) { output -> output.write(bytes) }
+        val resolved = mimeType.takeIf { it.isNotBlank() } ?: DEFAULT_MIME_TYPE
+        MediaScannerConnection.scanFile(context, arrayOf(saved.file.absolutePath), arrayOf(resolved), null)
+        return BrowserSavedFile(file = saved.file, bytes = saved.file.length(), mimeType = resolved)
+    }
+
+    private fun save(context: Context, fileName: String?, write: (java.io.OutputStream) -> Unit): BrowserSavedFile {
+        val directory = File(
+            Environment.getExternalStorageDirectory(),
+            BrowserDownloadNaming.RELATIVE_DIRECTORY,
+        )
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            throw IOException("无法创建下载目录 ${directory.absolutePath}")
+        }
+        val target = BrowserDownloadNaming.uniqueFile(
+            directory,
+            BrowserDownloadNaming.sanitizeFileName(fileName),
+        )
+        target.outputStream().use(write)
+        return BrowserSavedFile(file = target, bytes = target.length(), mimeType = DEFAULT_MIME_TYPE)
+    }
+
     private fun clientWithProxy(proxyRule: String?): OkHttpClient {
         val target = proxyRule?.let(BrowserProxyRules::parse) ?: return client
         val type = if (target.scheme == "socks") Proxy.Type.SOCKS else Proxy.Type.HTTP

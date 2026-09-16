@@ -105,6 +105,7 @@ internal object AgentBrowserSession {
     private const val REPEATED_TEXT_PREVIEW_CHARS = 200
     private const val SCRIPT_BRIDGE_NAME = "etaBridge"
     private const val BRIDGE_WAIT_INTERVAL_MS = 200L
+    private const val BLOB_DOWNLOAD_TIMEOUT_MS = 30_000L
     private const val POST_ACTION_TIMEOUT_MS = 10_000L
     private const val SCREENSHOT_MAX_WIDTH = 1_280
     private const val SCREENSHOT_MAX_HEIGHT = 2_400
@@ -195,6 +196,7 @@ internal object AgentBrowserSession {
     private var headerScript: ScriptHandler? = null
 
     private val scriptResults = HashMap<String, CompletableFuture<String>>()
+    private val pendingBlobs = HashMap<String, CompletableFuture<BrowserBridgeBlob>>()
     private val scriptResultsLock = Any()
 
     @Volatile
@@ -212,7 +214,12 @@ internal object AgentBrowserSession {
             isMainFrame: Boolean,
             replyProxy: JavaScriptReplyProxy,
         ) {
-            if (!isMainFrame || message.type != WebMessageCompat.TYPE_STRING) return
+            if (!isMainFrame) return
+            if (message.type == WebMessageCompat.TYPE_ARRAY_BUFFER) {
+                completeBlobFromBridge(message.arrayBuffer)
+                return
+            }
+            if (message.type != WebMessageCompat.TYPE_STRING) return
             val raw = message.data ?: return
             val nonce = runCatching { JSONObject(raw).optString("nonce") }.getOrNull().orEmpty()
             if (nonce.isBlank()) return
@@ -963,8 +970,17 @@ internal object AgentBrowserSession {
         val rawUrl = args.optString("url").trim().ifEmpty { currentUrl }
         if (rawUrl.isBlank()) throw BrowserFailure("INVALID_ARGUMENT", "download 缺少 url，且当前没有已打开的网页")
         val scheme = runCatching { Uri.parse(rawUrl).scheme.orEmpty().lowercase(Locale.ROOT) }.getOrDefault("")
+        val fileName = if (args.has("file_name") && !args.isNull("file_name")) {
+            args.optString("file_name").trim().takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
+        // blob:/data: 的内容只存在于页面上下文，交给页面读出来经桥回传
+        if (scheme == "blob" || scheme == "data") {
+            return downloadFromPage(rawUrl, fileName)
+        }
         if (scheme != "http" && scheme != "https") {
-            throw BrowserFailure("INVALID_ARGUMENT", "url 需要是 http 或 https 地址")
+            throw BrowserFailure("INVALID_ARGUMENT", "url 需要是 http、https，或页面内的 blob:/data: 地址")
         }
         val context = appContext
             ?: throw BrowserFailure("BROWSER_NOT_INITIALIZED", "浏览器尚未初始化")
@@ -973,11 +989,6 @@ internal object AgentBrowserSession {
                 "DOWNLOAD_PERMISSION_REQUIRED",
                 "缺少「所有文件访问」权限，无法写入公共下载目录",
             )
-        }
-        val fileName = if (args.has("file_name") && !args.isNull("file_name")) {
-            args.optString("file_name").trim().takeIf { it.isNotEmpty() }
-        } else {
-            null
         }
         val view = ensureWebView()
         val outcome = try {
@@ -1034,6 +1045,62 @@ internal object AgentBrowserSession {
             .put("returned_chars", preview.length)
             .put("text_repeated", true)
             .put("message", "与本次运行内上一次读取（同一地址、同一区间）完全相同，正文已在上一条结果里；继续读请用 next_offset")
+    }
+
+    private fun downloadFromPage(url: String, fileName: String?): BrowserToolResult {
+        val context = appContext
+            ?: throw BrowserFailure("BROWSER_NOT_INITIALIZED", "浏览器尚未初始化")
+        if (!Environment.isExternalStorageManager()) {
+            throw BrowserFailure(
+                "DOWNLOAD_PERMISSION_REQUIRED",
+                "缺少「所有文件访问」权限，无法写入公共下载目录",
+            )
+        }
+        val view = requirePage()
+        if (!bridgeUsable(view)) {
+            throw BrowserFailure(
+                "PAGE_DOWNLOAD_UNAVAILABLE",
+                "当前 WebView 不支持页面内取文件（需要 WebMessageListener 特性）",
+            )
+        }
+        val resultKey = "etaBlob" + System.nanoTime().toString(36)
+        val blob = awaitBridgeBlob(view, url, resultKey)
+        val saved = try {
+            BrowserDownloader.saveBytes(context, fileName ?: blob.fileName, blob.mimeType, blob.bytes)
+        } catch (failure: IOException) {
+            throw BrowserFailure("DOWNLOAD_FAILED", failure.message ?: "下载失败")
+        }
+        return toolResult(
+            baseEnvelope("download", ok = true, status = "ok")
+                .put("file_name", saved.file.name)
+                .put("file_path", saved.file.absolutePath)
+                .put("size_bytes", saved.bytes)
+                .put("mime_type", saved.mimeType)
+                .put("source_url", url)
+        )
+    }
+
+    private fun awaitBridgeBlob(view: WebView, url: String, resultKey: String): BrowserBridgeBlob {
+        val future = CompletableFuture<BrowserBridgeBlob>()
+        synchronized(scriptResultsLock) { pendingBlobs[resultKey] = future }
+        try {
+            try {
+                evaluateObject(view, BrowserDomScripts.blobDownload(url, resultKey, SCRIPT_BRIDGE_NAME))
+            } catch (failure: BrowserFailure) {
+                if (failure.code != "SCRIPT_FAILED") throw failure
+                throw BrowserFailure("DOWNLOAD_FAILED", "页面内取文件的脚本无法执行")
+            }
+            return future.get(BLOB_DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            throw BrowserFailure("DOWNLOAD_TIMEOUT", "页面内取文件没有在超时前完成", "timeout")
+        } catch (error: ExecutionException) {
+            throw error.cause ?: error
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw BrowserFailure("CANCELLED", "操作已取消", "cancelled")
+        } finally {
+            synchronized(scriptResultsLock) { pendingBlobs.remove(resultKey) }
+        }
     }
 
     private fun targetFrom(args: JSONObject): BrowserTarget {
@@ -1183,6 +1250,38 @@ internal object AgentBrowserSession {
         }
     }
 
+    /**
+     * 二进制消息：前 4 字节是大端头部长度，头部是 UTF-8 JSON，后面是原始字节。
+     * 元信息与内容在同一条消息里，不用靠两条消息的先后顺序配对。
+     */
+    private fun completeBlobFromBridge(packed: ByteArray) {
+        if (packed.size < 4) return
+        val headerLength = ((packed[0].toInt() and 0xFF) shl 24) or
+            ((packed[1].toInt() and 0xFF) shl 16) or
+            ((packed[2].toInt() and 0xFF) shl 8) or
+            (packed[3].toInt() and 0xFF)
+        if (headerLength <= 0 || packed.size < 4 + headerLength) return
+        val header = runCatching {
+            JSONObject(String(packed, 4, headerLength, Charsets.UTF_8))
+        }.getOrNull() ?: return
+        val nonce = header.optString("nonce")
+        if (nonce.isBlank()) return
+        val future = synchronized(scriptResultsLock) { pendingBlobs.remove(nonce) } ?: return
+        if (!header.optBoolean("ok", false)) {
+            future.completeExceptionally(
+                BrowserFailure("DOWNLOAD_FAILED", header.optString("error").ifBlank { "页面内取文件失败" }),
+            )
+            return
+        }
+        future.complete(
+            BrowserBridgeBlob(
+                mimeType = header.optString("mime_type"),
+                fileName = header.optString("file_name").takeIf { it.isNotBlank() },
+                bytes = packed.copyOfRange(4 + headerLength, packed.size),
+            )
+        )
+    }
+
     private fun installScriptBridgeOnMain(view: WebView) {
         scriptBridgeInstalled = false
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
@@ -1227,7 +1326,10 @@ internal object AgentBrowserSession {
             runCatching { WebViewCompat.removeWebMessageListener(view, SCRIPT_BRIDGE_NAME) }
         }
         scriptBridgeInstalled = false
-        synchronized(scriptResultsLock) { scriptResults.clear() }
+        synchronized(scriptResultsLock) {
+            scriptResults.clear()
+            pendingBlobs.clear()
+        }
         (view.parent as? ViewGroup)?.removeView(view)
         runCatching { view.stopLoading() }
         runCatching { view.clearHistory() }
@@ -1570,6 +1672,12 @@ internal object AgentBrowserSession {
             publishSnapshotOnMain()
         }
     }
+
+    private data class BrowserBridgeBlob(
+        val mimeType: String,
+        val fileName: String?,
+        val bytes: ByteArray,
+    )
 
     private data class BrowserReadMark(
         val runId: String?,
