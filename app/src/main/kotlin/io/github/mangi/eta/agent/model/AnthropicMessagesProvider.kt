@@ -144,6 +144,10 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 val system = systemParts.joinToString("\n\n").trim()
                 if (system.isNotBlank()) request.put("system", system)
                 convertTools(tools)?.let { request.put("tools", it) }
+                // 顶层 cache_control 把缓存断点交给服务端自动落在最后一个可缓存块上，随对话增长自行前移。
+                if (config.promptCacheEnabled) {
+                    request.put("cache_control", JSONObject().put("type", "ephemeral"))
+                }
                 RequestBodyMerge.mergeCustomBody(request, config.customBody)
                 ProviderReasoning.applyAnthropicRequest(request, config)
             }

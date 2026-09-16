@@ -40,6 +40,8 @@ internal class AgentModelFailure(
             "stream_options",
             "parallel_tool_calls",
             "prompt_cache_key",
+            // 提示缓存只影响计费与延迟，去掉不改变模型行为。
+            "cache_control",
         )
         private val REJECTED_FIELD_PATTERNS = listOf(
             Regex("""未知(?:请求)?字段[：:\s]+([A-Za-z0-9_.-]+)"""),

@@ -268,6 +268,13 @@ private fun ProviderConfigTab(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
+                        SwitchPreference(
+                            title = stringResource(R.string.provider_prompt_cache_title),
+                            summary = stringResource(R.string.provider_prompt_cache_summary),
+                            checked = draft.promptCacheEnabled,
+                            onCheckedChange = { onDraftChange(draft.copy(promptCacheEnabled = it)) },
+                        )
                     }
                 }
                 if (provider !is AnthropicProviderSetting) {
@@ -335,6 +342,7 @@ private fun ProviderConfigTab(
                                         endpointMode = draft.endpointMode,
                                         hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                         anthropicVersion = draft.anthropicVersion,
+                                        promptCacheEnabled = draft.promptCacheEnabled,
                                         customHeaders = draft.headers.map { it.header },
                                     )
                                 )
@@ -419,6 +427,7 @@ private fun ProviderConfigTab(
                                 endpointMode = draft.endpointMode,
                                 hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                 anthropicVersion = draft.anthropicVersion,
+                                promptCacheEnabled = draft.promptCacheEnabled,
                                 customHeaders = draft.headers.map { it.header },
                             )
                             try {

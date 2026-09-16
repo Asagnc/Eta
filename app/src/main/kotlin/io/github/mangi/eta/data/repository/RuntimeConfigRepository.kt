@@ -123,6 +123,7 @@ internal object RuntimeConfigRepository {
             systemPrompt = systemPrompt,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
+            promptCacheEnabled = (provider as? AnthropicProviderSetting)?.promptCacheEnabled ?: false,
             openAiEndpointMode = endpointMode,
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             thinkingEnabled = reasoningCapabilities != null,

@@ -24,6 +24,7 @@ internal data class ProviderConfigDraft(
     val endpointMode: String,
     val hostedWebSearchEnabled: Boolean,
     val anthropicVersion: String,
+    val promptCacheEnabled: Boolean,
     val headers: List<ProviderHeaderDraft> = emptyList(),
 ) {
     companion object {
@@ -42,6 +43,7 @@ internal data class ProviderConfigDraft(
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
+            promptCacheEnabled = (provider as? AnthropicProviderSetting)?.promptCacheEnabled ?: false,
         )
     }
 }
@@ -58,6 +60,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             "endpointMode" to draft.endpointMode,
             "hostedWebSearchEnabled" to draft.hostedWebSearchEnabled,
             "anthropicVersion" to draft.anthropicVersion,
+            "promptCacheEnabled" to draft.promptCacheEnabled,
         )
     },
     restore = { state ->
@@ -73,6 +76,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             endpointMode = state.getValue("endpointMode") as String,
             hostedWebSearchEnabled = state.getValue("hostedWebSearchEnabled") as Boolean,
             anthropicVersion = state.getValue("anthropicVersion") as String,
+            promptCacheEnabled = state.getValue("promptCacheEnabled") as Boolean,
         )
     },
 )
@@ -87,6 +91,7 @@ internal fun buildUpdatedProvider(
     endpointMode: String,
     hostedWebSearchEnabled: Boolean,
     anthropicVersion: String,
+    promptCacheEnabled: Boolean,
     customHeaders: List<CustomHeader>,
 ): ProviderSetting {
     val prompt = systemPrompt.trim().takeIf { it.isNotBlank() }
@@ -119,6 +124,7 @@ internal fun buildUpdatedProvider(
             systemPrompt = prompt,
             isEnabled = isEnabled,
             anthropicVersion = anthropicVersion.trim().ifBlank { AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION },
+            promptCacheEnabled = promptCacheEnabled,
         )
     }
 }

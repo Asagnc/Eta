@@ -314,6 +314,36 @@ class AnthropicMessagesProviderTest {
         }
     }
 
+    @Test
+    fun promptCacheAbsentUnlessProviderEnablesIt() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = providerRequest(baseUrl),
+                runController = AgentRunController(),
+            )
+
+            assertFalse(JSONObject(requestBody.get()).has("cache_control"))
+        }
+    }
+
+    @Test
+    fun promptCacheEnabledAddsTopLevelEphemeralBreakpoint() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            val request = providerRequest(baseUrl)
+            AnthropicMessagesProvider.complete(
+                request = request.copy(config = request.config.copy(promptCacheEnabled = true)),
+                runController = AgentRunController(),
+            )
+
+            assertEquals(
+                "ephemeral",
+                JSONObject(requestBody.get()).getJSONObject("cache_control").getString("type"),
+            )
+        }
+    }
+
     private fun toolCallJson(id: String) =
         JSONObject()
             .put("id", id)

@@ -363,6 +363,8 @@
   <string name="ui_replace_user_skills_250e98">替换 Skill？</string>
   <string name="ui_how_can_i_help_you_e75391">有什么可以帮你？</string>
   <string name="ui_server_side_web_search_ddb8e0">Provider 托管网页搜索</string>
+  <string name="provider_prompt_cache_title">提示缓存</string>
+  <string name="provider_prompt_cache_summary">在 Anthropic Messages 请求里加 cache_control 缓存断点。只在上游支持提示缓存时开启；拒收未知字段的网关会直接返回 HTTP 400。</string>
   <string name="ui_permissions_560165">权限</string>
   <string name="ui_permissions_and_status_35f368">权限与状态</string>
   <string name="ui_permission_health_3048bb">权限健康</string>

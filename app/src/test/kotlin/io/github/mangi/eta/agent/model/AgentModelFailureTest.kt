@@ -12,6 +12,10 @@ class AgentModelFailureTest {
             failure("UNKNOWN_FIELD", "未知请求字段：prompt_cache_key").droppableField(),
         )
         assertEquals(
+            "cache_control",
+            failure("UNKNOWN_FIELD", "未知请求字段：cache_control").droppableField(),
+        )
+        assertEquals(
             "stream_options",
             failure("INVALID_REQUEST", "Unrecognized request argument supplied: stream_options").droppableField(),
         )

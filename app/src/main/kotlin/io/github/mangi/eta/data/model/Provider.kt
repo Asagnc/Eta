@@ -83,7 +83,9 @@ data class AnthropicProviderSetting(
     override val customHeaders: List<CustomHeader> = emptyList(),
     override val customBody: List<CustomBody> = emptyList(),
     override val createdAt: Long = System.currentTimeMillis(),
-    val anthropicVersion: String = DEFAULT_ANTHROPIC_VERSION
+    val anthropicVersion: String = DEFAULT_ANTHROPIC_VERSION,
+    /** 上游支持 Anthropic 提示缓存时才在请求体里放 cache_control：网关不认识该字段会直接 400。 */
+    val promptCacheEnabled: Boolean = false,
 ) : ProviderSetting {
     companion object {
         const val DEFAULT_ANTHROPIC_VERSION = "2023-06-01"

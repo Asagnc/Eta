@@ -382,6 +382,8 @@
   <string name="ui_replace_user_skills_250e98">Replace Skill?</string>
   <string name="ui_how_can_i_help_you_e75391">How can I help you?</string>
   <string name="ui_server_side_web_search_ddb8e0">Provider-hosted web search</string>
+  <string name="provider_prompt_cache_title">Prompt caching</string>
+  <string name="provider_prompt_cache_summary">Add a cache_control breakpoint to Anthropic Messages requests. Enable only when the upstream supports prompt caching; gateways that reject unknown fields answer HTTP 400.</string>
   <string name="ui_permissions_560165">Permissions</string>
   <string name="ui_permissions_and_status_35f368">Permissions and status</string>
   <string name="ui_permission_health_3048bb">Permissions</string>
