@@ -222,6 +222,7 @@ internal class AgentLocalTools(
                 "edit_file" -> textResult(terminalTool { editFile(args) })
                 "search_code" -> textResult(terminalTool { searchCode(args) })
                 "list_directory" -> textResult(terminalTool { listDirectory(args) })
+                "find_files" -> textResult(terminalTool { findFiles(args) })
                 "task_plan" -> textResult(taskPlan(args))
                 AgentRunStatsToolCatalog.NAME -> textResult(
                     runStatsSummary?.invoke()
@@ -1068,13 +1069,63 @@ internal class AgentLocalTools(
         )
 
     private fun searchCode(args: JSONObject): String =
-        terminalController.searchCode(
-            path = args.optString("path"),
-            pattern = args.optString("pattern"),
-            glob = args.optString("glob").ifBlank { null },
-            maxResults = args.optInt("max_results", FileTextOperations.DEFAULT_SEARCH_RESULTS),
-            contextLines = args.optInt("context_lines", 0)
+        appendBusyBoxRegexHint(
+            terminalController.searchCode(
+                path = args.optString("path"),
+                pattern = args.optString("pattern"),
+                glob = args.optString("glob").ifBlank { null },
+                maxResults = args.optInt("max_results", FileTextOperations.DEFAULT_SEARCH_RESULTS),
+                contextLines = args.optInt("context_lines", 0)
+            ),
         )
+
+    /**
+     * 用 shell 的 find 复用既有文件通道，只返回匹配到的路径。
+     *
+     * glob 与 path 里出现 Shell 元字符时直接拒绝，不把模型给的字符串拼进命令行。
+     */
+    private fun findFiles(args: JSONObject): String {
+        val glob = args.optString("glob").trim()
+        if (glob.isBlank()) return errorResult("MISSING_PARAM", "缺少 glob")
+        if (glob.any { it in FORBIDDEN_SHELL_CHARS }) {
+            return errorResult("INVALID_ARGUMENT", "glob 不能包含引号、分号、管道等 Shell 字符")
+        }
+        val path = args.optString("path").trim().ifBlank { DEFAULT_FILE_WORKSPACE }
+        if (path.any { it in FORBIDDEN_SHELL_CHARS }) {
+            return errorResult("INVALID_ARGUMENT", "path 不能包含引号、分号、管道等 Shell 字符")
+        }
+        val limit = args.optInt("limit", DEFAULT_FIND_LIMIT).coerceIn(1, MAX_FIND_LIMIT)
+        val output = terminalController.runCommand(
+            command = "find '$path' -name '$glob' -type f 2>/dev/null | head -n $limit",
+            cwd = null,
+            timeoutSeconds = FIND_TIMEOUT_SECONDS,
+        )
+        val parsed = runCatching { JSONObject(output) }.getOrNull()
+        val files = parsed?.optString("output").orEmpty()
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        return JSONObject()
+            .put("ok", parsed?.optBoolean("ok") ?: true)
+            .put("path", path)
+            .put("glob", glob)
+            .put("count", files.size)
+            .put("files", JSONArray(files))
+            .toString()
+    }
+
+    /** BusyBox 的 grep -E 不支持 PCRE 语法；报错时直接给出可用写法，省掉一轮试错。 */
+    private fun appendBusyBoxRegexHint(content: String): String {
+        if (!content.contains("\"ok\":false")) return content
+        if (BUSYBOX_REGEX_ERROR_MARKERS.none { marker -> content.contains(marker) }) return content
+        val parsed = runCatching { JSONObject(content) }.getOrNull() ?: return content
+        val message = parsed.optString("message")
+        if (message.contains("BusyBox")) return content
+        return parsed.put(
+            "message",
+            "$message（BusyBox grep -E 不支持 \\d、\\w 等 PCRE 语法，请改用 [0-9]、[[:alnum:]]）",
+        ).toString()
+    }
 
     private fun writeFile(args: JSONObject): String =
         terminalController.writeFile(
@@ -2008,6 +2059,21 @@ private const val MAX_SKILL_COMMAND_ARGUMENTS = 1_000
 
 /** SKILL.md 正文超过该长度时提示拆分为按需读取的 references 文件。 */
 private const val SKILL_BODY_SPLIT_HINT_CHARS = 12_000
+
+/** find_files 的取值范围与拒绝的 Shell 元字符。 */
+private const val DEFAULT_FILE_WORKSPACE = "/data/local/tmp/eta"
+private const val DEFAULT_FIND_LIMIT = 80
+private const val MAX_FIND_LIMIT = 200
+private const val FIND_TIMEOUT_SECONDS = 20
+private val FORBIDDEN_SHELL_CHARS = setOf('\'', '"', ';', '|', '&', '$', '`', '>', '<', '\n')
+
+/** BusyBox grep -E 报正则错误时的特征文本。 */
+private val BUSYBOX_REGEX_ERROR_MARKERS = listOf(
+    "Invalid regular expression",
+    "Unmatched",
+    "invalid character range",
+    "Trailing backslash",
+)
 
 /** 子智能体入口的取值范围，与 AgentSubAgentToolCatalog 的 schema 保持一致。 */
 private const val MAX_SUB_AGENT_TASK_CHARS = 2_000

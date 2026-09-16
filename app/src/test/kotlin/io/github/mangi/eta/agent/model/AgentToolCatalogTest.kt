@@ -238,6 +238,7 @@ class AgentToolCatalogTest {
             "run_command",
             "read_file",
             "edit_file",
+            "find_files",
             "search_code",
             "write_file",
             "list_directory",

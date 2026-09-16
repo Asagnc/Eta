@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.tool
 
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,6 +24,14 @@ internal data class LocalToolRequirement(
 
 /** 展示、模型目录与执行边界共同使用的本地工具能力合同。未登记的工具不能发布。 */
 internal object AgentToolRequirements {
+    /** 同一个入口下混有只读与写操作、需要按 action 判定的工具。 */
+    private val ACTION_SCOPED_TOOLS = setOf("terminal")
+
+    /** `terminal` 里真正只读的 action：读取已有输出或列出任务，不执行新命令。 */
+    private val READ_ONLY_TERMINAL_ACTIONS = setOf(
+        "read_async_result", "tasks_list", "daemon_list", "daemon_logs",
+    )
+
     private val definitions = buildMap {
         /** 顺序通道：有写副作用、推进会话或任务状态、或依赖同批其它调用结果的工具。 */
         fun register(root: RootRequirement, vararg names: String) {
@@ -68,13 +77,13 @@ internal object AgentToolRequirements {
         )
         register(
             RootRequirement.PARTIAL,
-            "press_key", "terminal", "run_command", "write_file", "edit_file", "read_image",
+            "press_key", "run_command", "write_file", "edit_file", "read_image",
             "skills_run",
         )
         registerParallelSafe(
             RootRequirement.PARTIAL,
-            "network_info", "get_setting", "recent_notifications", "search_personal_orders",
-            "read_file", "search_code", "list_directory",
+            "terminal", "network_info", "get_setting", "recent_notifications",
+            "search_personal_orders", "read_file", "search_code", "list_directory", "find_files",
         )
         register(
             RootRequirement.REQUIRED,
@@ -126,7 +135,21 @@ internal object AgentToolRequirements {
 
     fun requiresAccessibility(name: String): Boolean = find(name)?.accessibility == true
 
-    fun isParallelSafe(name: String): Boolean = find(name)?.parallelSafe == true
+    /**
+     * 并发安全判定。注册表只声明工具级结论；像 `terminal` 这种同一入口下混有只读与写操作的
+     * 工具，还要看这次调用的 action 才能定。
+     */
+    fun isParallelSafe(name: String, argumentsJson: String = ""): Boolean {
+        val requirement = find(name) ?: return false
+        if (!requirement.parallelSafe) return false
+        if (name !in ACTION_SCOPED_TOOLS) return true
+        val action = runCatching { JSONObject(argumentsJson.ifBlank { "{}" }) }
+            .getOrNull()
+            ?.optString("action")
+            ?.lowercase(Locale.ROOT)
+            .orEmpty()
+        return action in READ_ONLY_TERMINAL_ACTIONS
+    }
 
     fun rootDenied(name: String, arguments: JSONObject, rootAvailable: Boolean): Boolean {
         if (rootAvailable) return false
@@ -183,6 +206,13 @@ internal object AgentToolRequirements {
                     put("description", "目录路径；未提供时使用 Eta 私有工作区。")
                     remove("default")
                 }
+            }
+            "find_files" -> {
+                function.put("description",
+                    "按文件名（glob）递归查找文件，只返回匹配的路径：适合先定位有哪些文件，" +
+                        "而不是先列目录再逐个看。")
+                properties?.optJSONObject("path")?.put("description",
+                    "起始目录；未提供时使用 Eta 私有工作区。")
             }
             "read_image" -> properties?.getJSONObject("path")?.put("description",
                 "当前应用有权读取的绝对图片路径、file URI 或已授权的 content URI。")

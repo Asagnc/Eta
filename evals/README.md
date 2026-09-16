@@ -47,6 +47,14 @@ python3 evals/run_eval.py --baseline evals/results/baseline.json --repeat 3
 来自 HTTP 与解析层；`no_tool_call`／`wrong_tool`／`unknown_tool`／`bad_arguments` 来自模型行为。
 后四类才是 harness 与提示词要修的对象，前三类属于 provider 或网络，换一个中转站再测。
 
+## 实验怎么跑
+
+- **命名空间（工具名前缀 vs 后缀）**：`--tool-name-style prefixed` 会把同一批工具改名成 `eta_<name>` 再发，
+  其他条件不变，对比两次的通过率与 `wrong_tool` 分布即可。这是纯测量，不改 App 行为。
+- **上下文策略**：`agent_context_notice_percent`（默认 60，设 0 关闭提示）与 `agent_tool_result_keep`
+  （默认 6，负数关闭清理）都是运行时可配项。跑 App 内任务时先取 `run_stats` 的 `context_notices`
+  与 `pruned_tool_results` 作为触发计数，再看轮次与 token：策略没触发过就不该留着。
+
 ## 现在还没做的
 
 模型输出被截断时的重试统计、真实设备侧的端到端任务（改代码 → 构建 → 取包）都还没有自动跑；

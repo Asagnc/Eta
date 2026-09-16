@@ -235,6 +235,22 @@ internal object AgentTerminalToolCatalog {
             )
             .put(
                 AgentToolSchema.function(
+                    name = "find_files",
+                    description = "按文件名（glob）递归查找文件，只返回匹配的路径：适合先定位有哪些文件，而不是先列目录再逐个看。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("path", JSONObject().put("type", "string").put("description", "起始目录，默认 /data/local/tmp/eta。"))
+                                .put("glob", JSONObject().put("type", "string").put("description", "文件名匹配，例如 *.kt 或 SKILL.md；不支持引号、分号、管道等 Shell 字符。"))
+                                .put("limit", JSONObject().put("type", "integer").put("description", "最多返回 1 到 200 条，默认 80。"))
+                        )
+                        .put("required", JSONArray().put("glob"))
+                )
+            )
+            .put(
+                AgentToolSchema.function(
                     name = "search_code",
                     description = "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。",
                     parameters = JSONObject()

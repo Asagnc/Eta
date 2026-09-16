@@ -89,14 +89,24 @@ class AgentToolRequirementsTest {
     fun concurrencyIsDeclaredPerToolInsteadOfDefaultingOn() {
         assertTrue(AgentToolRequirements.isParallelSafe("search_code"))
         assertTrue(AgentToolRequirements.isParallelSafe("read_file"))
+        assertTrue(AgentToolRequirements.isParallelSafe("find_files"))
         assertTrue(AgentToolRequirements.isParallelSafe("run_stats"))
         listOf(
-            "observe_screen", "terminal", "browser_use", "memory_write", "task_plan",
+            "observe_screen", "browser_use", "memory_write", "task_plan",
             "write_file", "edit_file", "skills_install_from_github", "read_image", "set_setting",
         ).forEach { name ->
             assertFalse("$name 不能进并发通道", AgentToolRequirements.isParallelSafe(name))
         }
         assertEquals(RootRequirement.NONE, AgentToolRequirements.rootRequirement("run_stats"))
+    }
+
+    @Test
+    fun terminalEntersTheParallelChannelOnlyForItsReadOnlyActions() {
+        assertFalse(AgentToolRequirements.isParallelSafe("terminal"))
+        assertFalse(AgentToolRequirements.isParallelSafe("terminal", """{"action":"open_and_exec","command":"ls"}"""))
+        assertFalse(AgentToolRequirements.isParallelSafe("terminal", """{"action":"exec","session_id":"s1"}"""))
+        assertTrue(AgentToolRequirements.isParallelSafe("terminal", """{"action":"tasks_list"}"""))
+        assertTrue(AgentToolRequirements.isParallelSafe("terminal", """{"action":"read_async_result","job_id":"j1"}"""))
     }
 
     private fun catalog(root: Boolean) = AgentToolCatalog.build(

@@ -375,7 +375,7 @@ internal class AgentLoop(
     ): List<ToolOutcome> {
         val parallel = stopReason == AssistantStopReason.TOOL_USE &&
             toolCalls.size > 1 &&
-            toolCalls.all { call -> AgentToolRequirements.isParallelSafe(call.name) } &&
+            toolCalls.all { call -> AgentToolRequirements.isParallelSafe(call.name, call.argumentsJson) } &&
             toolCalls.all { call -> toolCallValidator.validate(call) == null }
         if (parallel) return executeToolCallsInParallel(round, toolCalls)
         return toolCalls.map { call ->

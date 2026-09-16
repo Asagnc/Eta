@@ -110,7 +110,7 @@ MCP 地址由用户直接配置，HTTP、HTTPS、局域网与本机地址使用�
 
 `AgentToolRequirements` 为每个本地工具声明 `NONE / PARTIAL / REQUIRED` Root 要求与无障碍、普通系统授权、ROM 条件；工具未登记元数据时不能进入模型目录。`AgentToolCapabilities` 每轮捕获设备条件，同一份投影后的 Schema 同时用于 Provider 声明与参数校验。元数据属于 Eta 内部，不扩展 Provider 协议。UI 聚合卡关联真实工具 ID，“全部能力”只改变展示。
 
-并发执行只在显式声明时发生。`AgentToolRequirements` 用两个独立登记入口区分顺序通道与并发通道，没有"默认并发"的开关可漏改：新增工具登记到顺序入口时，它一定顺序执行。进入并发通道要求同时满足四条——调用是原子的、重复调用幂等、不与其他工具共享状态、不依赖同批其它调用的先后顺序；任一条不成立就留在顺序通道。同一批全部并发安全时才并发，参数校验失败或混有有状态工具时整批顺序执行。单批上限由运行时配置项 `agent_parallel_tool_limit` 决定，默认 4，实际执行时夹在 1–8。
+并发执行只在显式声明时发生。`AgentToolRequirements` 用两个独立登记入口区分顺序通道与并发通道，没有"默认并发"的开关可漏改：新增工具登记到顺序入口时，它一定顺序执行。进入并发通道要求同时满足四条——调用是原子的、重复调用幂等、不与其他工具共享状态、不依赖同批其它调用的先后顺序；任一条不成立就留在顺序通道。同一入口下混有只读与写操作的工具（`terminal`）还要看这次的 `action`：只有 `read_async_result`、`tasks_list`、`daemon_list`、`daemon_logs` 进并发通道。同一批全部并发安全时才并发，参数校验失败或混有有状态工具时整批顺序执行。单批上限由运行时配置项 `agent_parallel_tool_limit` 决定，默认 4，实际执行时夹在 1–8。
 
 没有 Root 时，专属工具彻底移除；混合终端仅公开 `identity=user`，设备默认路径与模型提示同步调整。执行器再次核查当前 Root 与参数，旧调用返回 `ROOT_REQUIRED`。普通前台 Intent 不要求无障碍；截图、节点、手势、输入和条件等待需要真实服务连接，已开启系统保护时保留有限修复链路。当前通知来自已连接的通知监听服务，断连返回明确错误，不以历史记录替代。用户选择保存在原有本地 Agent 配置与 RemotePreferences 协调链路中，能力变化不改写保存的开关。
 
@@ -125,6 +125,12 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 - **只回摘要**：子智能体的工具输出留在它自己的上下文里，只回一份上限 4000 字符的摘要，主 loop 必须自行校验。
 - **预算与失败隔离**：单个子智能体最多 6 轮、上下文估算上限 30000 token，超过即停止并回报 `SUB_AGENT_BUDGET_EXCEEDED`；某个角色失败不影响其它角色，失败原因随摘要一起回填。
 - **过程记录**：`SubAgentUpdated` 事件（started/finished/failed）与主 run 共用同一条事件流并进入归档，悬浮层用一句话状态显示当前在并行检索。
+
+## 凭据边界
+
+provider API key 以明文保存在 App 私有的 `databases/eta.db` 中，而 Agent 同时具备 Root 与网络工具。文件类工具（`read_file`、`read_image`、`list_directory`、`search_code`、`edit_file`、`write_file`）在调用前检查路径，命中 `databases/`、`shared_prefs/`、`files/datastore/` 或 `eta.db*` 时直接返回 `CREDENTIAL_PATH_BLOCKED`，不返回任何内容。所有本地工具结果出站前还会经过凭据形态过滤（`sk-*`、`sk-ant-*`、`AIza*`、`Authorization`／`Bearer`／`x-api-key`），命中处替换为占位文本。
+
+这两层都只是降低概率，不是安全边界：终端命令不受文件工具限制，形态过滤也拦不住拆分或转码后的输出。彻底的做法是把密钥移出可读文件（Keystore），尚未实施。
 
 ## 终端环境
 

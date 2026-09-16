@@ -171,12 +171,14 @@ def post_chat(provider_url: str, model: str, messages: list[dict], tools: list[d
         raise Failure("invalid_response", str(error))
 
 
-def dry_run_chat(task: dict, messages: list[dict], tools: list[dict]) -> dict:
+def dry_run_chat(task: dict, messages: list[dict], tools: list[dict], mapping: dict[str, str] | None = None) -> dict:
     """本地桩：第一轮按期望工具产出调用，第二轮给出结论，用来验证脚本本身。"""
+    reverse = {canonical: exposed for exposed, canonical in (mapping or {}).items()}
     offered = {tool["function"]["name"] for tool in tools}
     if sum(1 for message in messages if message["role"] == "tool") == 0:
-        name = task["expect_first_tool"][0]
-        assert name in offered, f"桩模型被要求调用未声明的工具 {name}"
+        canonical = task["expect_first_tool"][0]
+        exposed = reverse.get(canonical, canonical)
+        assert exposed in offered, f"桩模型被要求调用未声明的工具 {exposed}"
         arguments = task.get("expect_arguments", {})
         return {
             "choices": [
@@ -188,7 +190,7 @@ def dry_run_chat(task: dict, messages: list[dict], tools: list[dict]) -> dict:
                             {
                                 "id": "call-1",
                                 "type": "function",
-                                "function": {"name": name, "arguments": json.dumps(arguments)},
+                                "function": {"name": exposed, "arguments": json.dumps(arguments)},
                             }
                         ],
                     },
@@ -203,9 +205,28 @@ def dry_run_chat(task: dict, messages: list[dict], tools: list[dict]) -> dict:
     }
 
 
-def run_task(task: dict, tools: list[dict], client) -> dict:
+def apply_name_style(tools: list[dict], style: str) -> tuple[list[dict], dict[str, str]]:
+    """命名空间实验：同一批工具按前缀改名后再发，看模型选工具的准确率是否变化。"""
+    if style == "plain":
+        return tools, {}
+    mapping: dict[str, str] = {}
+    renamed = []
+    for tool in tools:
+        canonical = tool["function"]["name"]
+        exposed = f"eta_{canonical}"
+        mapping[exposed] = canonical
+        renamed.append({"type": "function", "function": {**tool["function"], "name": exposed}})
+    return renamed, mapping
+
+
+def run_task(task: dict, tools: list[dict], client, name_mapping: dict[str, str] | None = None) -> dict:
+    mapping = name_mapping or {}
     messages = build_messages(task)
-    offered = [tool["function"]["name"] for tool in tools]
+    offered = [mapping.get(tool["function"]["name"], tool["function"]["name"]) for tool in tools]
+    schema_by_name = {
+        mapping.get(tool["function"]["name"], tool["function"]["name"]): tool["function"]["parameters"]
+        for tool in tools
+    }
     expected = set(task["expect_first_tool"])
     record = {
         "id": task["id"],
@@ -241,18 +262,22 @@ def run_task(task: dict, tools: list[dict], client) -> dict:
             names = []
             for call in tool_calls:
                 function = call.get("function") or {}
-                name = function.get("name") or ""
+                exposed_name = function.get("name") or ""
+                name = mapping.get(exposed_name, exposed_name)
                 names.append(name)
                 raw_arguments = function.get("arguments") or "{}"
                 if name not in offered:
-                    record["unknown_tools"].append(name)
+                    record["unknown_tools"].append(exposed_name)
                     continue
                 try:
                     arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
                 except json.JSONDecodeError:
                     record["argument_problems"].append(f"{name}: arguments 不是合法 JSON")
                     continue
-                schema = next(tool["function"]["parameters"] for tool in tools if tool["function"]["name"] == name)
+                schema = schema_by_name.get(name)
+                if schema is None:
+                    record["unknown_tools"].append(exposed_name)
+                    continue
                 record["argument_problems"].extend(
                     f"{name}: {problem}" for problem in validate_arguments(schema, arguments)
                 )
@@ -331,6 +356,12 @@ def main() -> int:
     parser.add_argument("--baseline", default="")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument(
+        "--tool-name-style",
+        choices=("plain", "prefixed"),
+        default="plain",
+        help="prefixed 把工具名改成 eta_<name> 后再发，用于比较命名空间对选工具准确率的影响",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -348,13 +379,13 @@ def main() -> int:
 
     records: list[dict] = []
     for task in tasks:
-        selected = select_tools(tools_snapshot, task["tools"])
+        selected, mapping = apply_name_style(select_tools(tools_snapshot, task["tools"]), args.tool_name_style)
         for attempt in range(args.repeat):
             if args.dry_run:
-                client = lambda messages, tools, task=task: dry_run_chat(task, messages, tools)
+                client = lambda messages, tools, task=task: dry_run_chat(task, messages, tools, mapping)
             else:
                 client = lambda messages, tools: post_chat(args.provider_url, args.model, messages, tools, api_key)
-            record = run_task(task, selected, client)
+            record = run_task(task, selected, client, mapping)
             if args.repeat > 1:
                 record["attempt"] = attempt + 1
             records.append(record)
@@ -363,6 +394,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "provider_url": args.provider_url,
         "model": args.model,
+        "tool_name_style": args.tool_name_style,
         "dry_run": args.dry_run,
         "summary": summarize(records),
         "records": records,
