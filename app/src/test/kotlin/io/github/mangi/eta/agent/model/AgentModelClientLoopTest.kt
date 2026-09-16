@@ -17,7 +17,7 @@ class AgentModelClientLoopTest {
     fun eachRoundUsesOneCapabilitySnapshotForDeclarationValidationAndPrompt() {
         var root = true
         var captures = 0
-        val executed = mutableListOf<String>()
+        val executed = java.util.concurrent.CopyOnWriteArrayList<String>()
         val provider = ScriptedProvider(listOf(
             { request, _ ->
                 assertTrue(request.tools.toString().contains("set_setting"))
@@ -92,7 +92,7 @@ class AgentModelClientLoopTest {
             ),
             assistant(content = "已完成", finishReason = "stop"),
         )
-        val executed = mutableListOf<String>()
+        val executed = java.util.concurrent.CopyOnWriteArrayList<String>()
 
         val result = AgentModelClient.complete(
             config = modelConfig(),
@@ -109,7 +109,9 @@ class AgentModelClientLoopTest {
             provider = provider,
         )
 
-        assertEquals(listOf("call-1", "call-2"), executed)
+        // 只读工具并发后完成先后不固定，这里只确认两个调用都执行过；
+        // 结果按源码顺序回填由随后的 tool_call_id 断言保证。
+        assertEquals(setOf("call-1", "call-2"), executed.toSet())
         assertEquals("需要两个结果", result.reasoningContent)
         assertEquals(
             listOf("assistant", "tool", "tool", "assistant"),
@@ -138,7 +140,7 @@ class AgentModelClientLoopTest {
             ),
             assistant(content = "已按补充完成", finishReason = "stop"),
         )
-        val executed = mutableListOf<String>()
+        val executed = java.util.concurrent.CopyOnWriteArrayList<String>()
 
         val result = AgentModelClient.complete(
             config = modelConfig(),
@@ -152,7 +154,7 @@ class AgentModelClientLoopTest {
             runController = controller,
         )
 
-        assertEquals(listOf("call-1", "call-2"), executed)
+        assertEquals(setOf("call-1", "call-2"), executed.toSet())
         assertEquals(0, cancelledResources.get())
         assertFalse(controller.hasPendingSteering)
         assertEquals("已按补充完成", result.content)
@@ -622,6 +624,85 @@ class AgentModelClientLoopTest {
         assertEquals(listOf(1, 2, 3), events.filterIsInstance<AgentEvent.RoundStarted>().map { it.round })
         assertEquals(2, events.filterIsInstance<AgentEvent.ModelRetryScheduled>().single().round)
         assertEquals(1, events.filterIsInstance<AgentEvent.ToolStarted>().size)
+    }
+
+    @Test
+    fun readOnlyToolBatchRunsConcurrentlyAndKeepsSourceOrder() {
+        val bothStarted = java.util.concurrent.CountDownLatch(2)
+        val provider = ScriptedProvider(
+            listOf(
+                { _, _ ->
+                    assistant(
+                        finishReason = "tool_calls",
+                        toolCalls = listOf(
+                            toolCall("first", "device_status", "{}"),
+                            toolCall("second", "network_info", "{}"),
+                        ),
+                    )
+                },
+                { request, _ ->
+                    assertTrue(request.messages.toString().contains("mark-first"))
+                    assertTrue(request.messages.toString().contains("mark-second"))
+                    assistant(content = "完成", finishReason = "stop")
+                },
+            ),
+        )
+        val finished = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+        AgentModelClient.complete(
+            config = modelConfig(),
+            prompt = "开始",
+            provider = provider,
+            capabilitiesProvider = { AgentToolCapabilities(rootAvailable = true) },
+            toolExecutor = AgentModelClient.ToolExecutor { call ->
+                bothStarted.countDown()
+                // 两个调用必须同时在执行中；串行执行时第二个计数永远到不了，这里会超时失败。
+                assertTrue("同批只读工具没有并发执行", bothStarted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                finished += call.id
+                AgentModelClient.ToolResult("{\"ok\":true,\"mark\":\"mark-${call.id}\"}")
+            },
+        )
+
+        assertEquals(listOf("first", "second").sorted(), finished.sorted())
+        val lastRequest = provider.requests.last().toString()
+        assertTrue(lastRequest.indexOf("mark-first") < lastRequest.indexOf("mark-second"))
+    }
+
+    @Test
+    fun statefulToolBatchStaysSequential() {
+        val provider = ScriptedProvider(
+            listOf(
+                { _, _ ->
+                    assistant(
+                        finishReason = "tool_calls",
+                        toolCalls = listOf(
+                            toolCall("first", "device_status", "{}"),
+                            toolCall("second", "tap", "{\"x\":1,\"y\":2}"),
+                        ),
+                    )
+                },
+                { _, _ -> assistant(content = "完成", finishReason = "stop") },
+            ),
+        )
+        val inFlight = java.util.concurrent.atomic.AtomicInteger(0)
+        val maxInFlight = java.util.concurrent.atomic.AtomicInteger(0)
+
+        AgentModelClient.complete(
+            config = modelConfig(),
+            prompt = "开始",
+            provider = provider,
+            capabilitiesProvider = { AgentToolCapabilities(rootAvailable = true) },
+            toolExecutor = AgentModelClient.ToolExecutor {
+                val now = inFlight.incrementAndGet()
+                maxInFlight.updateAndGet { previous -> maxOf(previous, now) }
+                Thread.sleep(50)
+                inFlight.decrementAndGet()
+                AgentModelClient.ToolResult("{\"ok\":true}")
+            },
+        )
+
+        // 含屏幕操作等有状态工具时整批退化为顺序执行，同一时刻只会有一个调用在跑。
+        assertEquals(1, maxInFlight.get())
     }
 
     private class ScriptedProvider(

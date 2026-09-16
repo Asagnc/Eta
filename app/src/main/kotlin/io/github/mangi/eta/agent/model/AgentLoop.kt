@@ -1,9 +1,11 @@
 package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
+import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -45,6 +47,14 @@ internal class AgentLoop(
         val call: AgentModelClient.ToolCall,
         val result: AgentModelClient.ToolResult,
     )
+
+    private companion object {
+        /** 并发上限：只读查询大多落到进程外命令或 ContentProvider，再高的并发只会增加资源争用。 */
+        const val MAX_PARALLEL_TOOL_CALLS = 4
+
+        /** 上下文占用越过窗口该比例时开始提示，留出压缩与收尾的余量。 */
+        const val CONTEXT_NOTICE_RATIO = 0.6
+    }
 
     private var toolCallValidator = AgentToolCallValidator(tools)
     private val accumulatedReasoning = StringBuilder()
@@ -184,22 +194,17 @@ internal class AgentLoop(
             )
 
             if (toolCalls.isNotEmpty()) {
-                val outcomes = toolCalls.map { call ->
-                    val outcome = when (providerResponse.stopReason) {
-                        AssistantStopReason.TOOL_USE -> executeTool(round, call)
-                        AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
-                            round, call, "TRUNCATED_TOOL_CALL",
-                            "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
-                        )
-                        else -> rejectedToolOutcome(
-                            round, call, "UNEXPECTED_TOOL_CALL",
-                            "模型在 ${providerResponse.stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
-                        )
+                val outcomes = executeToolCalls(round, providerResponse.stopReason, toolCalls)
+                val notice = contextPressureNotice(roundTools)
+                outcomes.forEachIndexed { index, outcome ->
+                    val result = if (notice != null && index == outcomes.lastIndex) {
+                        outcome.result.withContextNotice(notice)
+                    } else {
+                        outcome.result
                     }
-                    appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
-                    publishTranscript()
-                    outcome
+                    appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, result))
                 }
+                publishTranscript()
                 appendToolImages(round, outcomes)
                 publishTranscript()
                 noticeRepeatedToolCalls(round, toolCalls)
@@ -311,6 +316,107 @@ internal class AgentLoop(
         emitToolFinished(round, toolCall, result)
         return ToolOutcome(toolCall, result)
     }
+
+    /**
+     * 执行一个工具批次。
+     *
+     * 批次内全部是只读且无副作用的工具时并发执行：这些调用互不共享状态、没有先后依赖，
+     * 并发只发生在工具实现内部，事件、消息与敏感标记仍按原顺序处理。
+     * 其余情况（含参数校验失败、有副作用工具、异常终止状态）保持逐个顺序执行。
+     */
+    /**
+     * 上下文接近窗口上限时返回一句提示，附在批次最后一条工具结果上。
+     * 只在越线时出现，平时不占用上下文。
+     */
+    private fun contextPressureNotice(roundTools: JSONArray): String? {
+        val window = context.budget.windowTokens?.takeIf { it > 0 } ?: return null
+        val used = context.budget.estimate(messages, roundTools)
+        if (used < window * CONTEXT_NOTICE_RATIO) return null
+        return "上下文已用约 ${used * 100 / window}%（$used/$window token），后续请精简输出与工具调用。"
+    }
+
+    private fun AgentModelClient.ToolResult.withContextNotice(notice: String): AgentModelClient.ToolResult {
+        val content = runCatching { JSONObject(this.content) }.getOrNull() ?: return this
+        content.put("context_notice", notice)
+        return copy(content = content.toString())
+    }
+
+    private fun executeToolCalls(
+        round: Int,
+        stopReason: AssistantStopReason,
+        toolCalls: List<AgentModelClient.ToolCall>,
+    ): List<ToolOutcome> {
+        val parallel = stopReason == AssistantStopReason.TOOL_USE &&
+            toolCalls.size > 1 &&
+            toolCalls.all { call -> AgentToolRequirements.isParallelSafe(call.name) } &&
+            toolCalls.all { call -> toolCallValidator.validate(call) == null }
+        if (parallel) return executeToolCallsInParallel(round, toolCalls)
+        return toolCalls.map { call ->
+            when (stopReason) {
+                AssistantStopReason.TOOL_USE -> executeTool(round, call)
+                AssistantStopReason.OUTPUT_LIMIT -> rejectedToolOutcome(
+                    round, call, "TRUNCATED_TOOL_CALL",
+                    "模型输出达到长度上限，工具参数可能不完整；本次调用未执行，请重新提交完整参数。",
+                )
+                else -> rejectedToolOutcome(
+                    round, call, "UNEXPECTED_TOOL_CALL",
+                    "模型在 ${stopReason.name} 终止状态下返回了工具调用；本批调用未执行，请重新规划。",
+                )
+            }
+        }
+    }
+
+    private fun executeToolCallsInParallel(
+        round: Int,
+        toolCalls: List<AgentModelClient.ToolCall>,
+    ): List<ToolOutcome> {
+        toolCalls.forEach { call ->
+            onEvent(
+                AgentEvent.ToolStarted(
+                    round = round,
+                    toolCallId = call.id,
+                    name = call.name,
+                    argsPreview = traceFormatter.summarizeArguments(call),
+                    command = traceFormatter.displayCommand(call),
+                )
+            )
+        }
+        val pool = Executors.newFixedThreadPool(minOf(toolCalls.size, MAX_PARALLEL_TOOL_CALLS))
+        val results = try {
+            val futures = toolCalls.map { call ->
+                pool.submit<AgentModelClient.ToolResult> { runToolCall(call) }
+            }
+            futures.map { future ->
+                runCatching { future.get() }.getOrElse { throwable -> toolFailureResult(throwable) }
+            }
+        } finally {
+            pool.shutdown()
+        }
+        runController.throwIfCancelled()
+        return toolCalls.mapIndexed { index, call ->
+            val result = results[index]
+            if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(call.name)) {
+                sensitiveToolCallIds += call.id
+            }
+            emitToolFinished(round, call, result)
+            ToolOutcome(call, result)
+        }
+    }
+
+    private fun runToolCall(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult = try {
+        toolExecutor.execute(call)
+    } catch (throwable: Exception) {
+        toolFailureResult(throwable)
+    }
+
+    private fun toolFailureResult(throwable: Throwable): AgentModelClient.ToolResult =
+        AgentModelClient.ToolResult(
+            content = JSONObject()
+                .put("ok", false)
+                .put("code", "TOOL_ERROR")
+                .put("message", throwable.message ?: throwable.javaClass.simpleName)
+                .toString(),
+        )
 
     private fun rejectedToolOutcome(
         round: Int,

@@ -18,6 +18,11 @@ data class SkillIndexEntry(
     val hasReferences: Boolean,
     val hasAssets: Boolean,
     val hasEvals: Boolean,
+    /**
+     * 技能目录里可直接读取的入口文件，形如 scripts/build.sh、references/guide.md。
+     * 只列一层文件名，让调用方知道有哪些现成脚本与引用，不必先展开目录。
+     */
+    val entrypoints: List<String> = emptyList(),
     val enabled: Boolean = true,
     val source: String = "user",
     val installed: Boolean = true,

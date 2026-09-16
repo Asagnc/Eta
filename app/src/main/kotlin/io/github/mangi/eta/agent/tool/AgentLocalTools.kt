@@ -32,6 +32,7 @@ import io.github.mangi.eta.agent.skill.GitHubSkillRepository
 import io.github.mangi.eta.agent.skill.GitHubSkillSourceException
 import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
 import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
+import io.github.mangi.eta.agent.terminal.FileTextOperations
 import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
@@ -207,6 +208,8 @@ internal class AgentLocalTools(
                 "run_command" -> textResult(terminalTool { runCommand(args) })
                 "read_file" -> textResult(terminalTool { readFile(args) })
                 "write_file" -> textResult(terminalTool { writeFile(args) })
+                "edit_file" -> textResult(terminalTool { editFile(args) })
+                "search_code" -> textResult(terminalTool { searchCode(args) })
                 "list_directory" -> textResult(terminalTool { listDirectory(args) })
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
@@ -950,11 +953,39 @@ internal class AgentLocalTools(
         )
     }
 
-    private fun readFile(args: JSONObject): String =
-        terminalController.readFile(
+    private fun readFile(args: JSONObject): String {
+        val startLine = args.optInt("start_line", 0)
+        val endLine = args.optInt("end_line", 0)
+        if (startLine > 0 || endLine > 0) {
+            return terminalController.readFileLines(
+                path = args.optString("path"),
+                startLine = startLine.coerceAtLeast(1),
+                endLine = endLine.takeIf { it > 0 },
+                maxChars = 16_000
+            )
+        }
+        return terminalController.readFile(
             path = args.optString("path"),
             offsetBytes = args.optInt("offset_bytes", 0),
             maxBytes = args.optInt("max_bytes", 65_536)
+        )
+    }
+
+    private fun editFile(args: JSONObject): String =
+        terminalController.editFile(
+            path = args.optString("path"),
+            oldText = args.optString("old_text"),
+            newText = args.optString("new_text"),
+            replaceAll = args.optBoolean("replace_all", false)
+        )
+
+    private fun searchCode(args: JSONObject): String =
+        terminalController.searchCode(
+            path = args.optString("path"),
+            pattern = args.optString("pattern"),
+            glob = args.optString("glob").ifBlank { null },
+            maxResults = args.optInt("max_results", FileTextOperations.DEFAULT_SEARCH_RESULTS),
+            contextLines = args.optInt("context_lines", 0)
         )
 
     private fun writeFile(args: JSONObject): String =
@@ -1155,6 +1186,7 @@ internal class AgentLocalTools(
                     .put("rootPath", entry.rootPath)
                     .put("skillFilePath", entry.skillFilePath)
                     .put("capabilities", capabilities)
+                    .put("entrypoints", JSONArray(entry.entrypoints))
             )
         }
         return JSONObject()

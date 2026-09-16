@@ -7,6 +7,10 @@ import kotlin.math.ceil
 
 /** usage 只校准同一模型的请求估算，不把累计计费用量当作窗口占用。 */
 internal class AgentContextBudget(private val window: Int?) {
+    /** 模型上下文窗口；为空表示当前 provider 没有声明窗口，此时不做占用提示。 */
+    val windowTokens: Int?
+        get() = window
+
     private var calibration = 1.0
 
     fun observe(usage: AgentTokenUsage?, requestEstimate: Int) {

@@ -104,7 +104,12 @@ internal object AgentPromptBuilder {
             messages.put(
                 systemMessage(
                     "任务需要在手机上执行命令、查看 Linux/Android 系统信息、读取/写入文件、查询包名或使用 shell 时，" +
-                        "必须调用 terminal 或 run_command/read_file/write_file/list_directory 工具。" +
+                        "必须调用 terminal 或 run_command/read_file/edit_file/search_code/write_file/list_directory 工具。" +
+                    "改动文件局部内容用 edit_file：old_text 必须唯一命中，未命中或多处命中都不会改动文件，成功时返回差异摘要；" +
+                    "查看大文件的指定行用 read_file 的 start_line/end_line（返回结果带真实行号），在目录里按正则找内容用 search_code；" +
+                    "需要管道、多步复用或超过 180 秒超时时才改用 terminal。" +
+                    "同一轮里互不依赖的只读查询（读取文件、检索、状态与设置查询）可以一次提交多个，它们会并发执行；" +
+                    "带副作用的调用仍按提交顺序逐个执行。" +
                         "Android 应用与当前身份可访问的设备文件使用 terminal 的 environment=android；" +
                         "Linux 工具环境默认使用 environment=linux（当前选中的发行版），需要指定发行版时改用 environment=debian、ubuntu 或 kali；" +
                         "各发行版的 rootfs 相互独立、分别按需安装，只能使用已经安装的发行版。" +
@@ -127,6 +132,8 @@ internal object AgentPromptBuilder {
                         "长时间命令使用 async=true 启动后用 read_async_result 轮询，完成后 close；" +
                         "需要长期驻留的后台服务（监听端口、Web 面板等）用 action=daemon_start 启动，daemon_list 查看状态、daemon_logs 读日志、daemon_stop 停止；" +
                         "守护任务不随 run 或会话结束回收，也不要用 nohup 或 & 手工后台化；" +
+                        "task 进度不明时先用 action=tasks_list 一次取回全部会话、异步任务与守护任务及其最近输出，" +
+                        "再决定读哪一个，不要按 id 逐个试；" +
                         "async 后台命令是独立 shell，不要和 session_id 混用。不要调用 search_apps 查询“终端”或“Termux”。" +
                         "Eta 已内置终端，不要回答‘没有终端应用’或要求另装终端 App。" +
                         "读取图片内容必须调用 read_image。单张用 path，多张用 paths（一次最多 4 张）；" +
@@ -200,6 +207,9 @@ internal object AgentPromptBuilder {
                     "- id=${skill.id} | name=${skill.name} | path=${skill.skillFilePath} | " +
                         "capabilities=$capabilities | description=$description"
                 )
+                if (skill.entrypoints.isNotEmpty()) {
+                    appendLine("  entrypoints=${skill.entrypoints.joinToString(", ")}")
+                }
             }
             appendLine()
             append(

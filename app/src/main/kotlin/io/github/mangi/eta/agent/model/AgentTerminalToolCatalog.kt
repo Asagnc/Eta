@@ -31,8 +31,9 @@ internal object AgentTerminalToolCatalog {
                                                 .put("daemon_list")
                                                 .put("daemon_logs")
                                                 .put("daemon_stop")
+                                                .put("tasks_list")
                                         )
-                                        .put("description", "open creates a session. exec runs command in a session or cwd. open_and_exec runs a one-shot command. read_async_result reads async output by job_id. close closes a session_id or job_id. daemon_start launches a detached long-lived service and returns task_id. daemon_list lists daemon tasks with liveness. daemon_logs tails a task log. daemon_stop terminates and removes a task.")
+                                        .put("description", "open creates a session. exec runs command in a session or cwd. open_and_exec runs a one-shot command. read_async_result reads async output by job_id. close closes a session_id or job_id. daemon_start launches a detached long-lived service and returns task_id. daemon_list lists daemon tasks with liveness. daemon_logs tails a task log. daemon_stop terminates and removes a task. tasks_list lists every live session, async job and daemon task in one call.")
                                 )
                                 .put(
                                     "identity",
@@ -125,7 +126,7 @@ internal object AgentTerminalToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "run_command",
-                    description = "在 Android 设备上用非交互 Root Shell 执行命令。适合系统信息、包管理、文件检查、Linux 命令流水线。每次调用都是新 shell；不要运行交互式或长期驻留命令。",
+                    description = "在 Android 设备上用非交互 Root Shell 执行单条命令，每次调用都是新 shell，超时上限 180 秒。需要会话复用、异步任务、后台服务或更长超时时改用 terminal。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -156,7 +157,7 @@ internal object AgentTerminalToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "read_file",
-                    description = "读取 Android 文件内容。适合读取配置、日志、小文本文件；大文件用 offset_bytes/max_bytes 分段读取。",
+                    description = "读取文件内容。给定 start_line/end_line 时按行返回并带真实行号，适合定点查看大文件；否则按 offset_bytes/max_bytes 读取字节。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -174,6 +175,18 @@ internal object AgentTerminalToolCatalog {
                                     JSONObject()
                                         .put("type", "integer")
                                         .put("description", "最多读取字节数，1 到 262144，默认 65536。")
+                                )
+                                .put(
+                                    "start_line",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("description", "按行读取的起始行号，从 1 开始；给定后忽略 offset_bytes。")
+                                )
+                                .put(
+                                    "end_line",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("description", "按行读取的结束行号；省略表示读到文件末尾。")
                                 )
                         )
                         .put("required", JSONArray().put("path"))
@@ -218,6 +231,41 @@ internal object AgentTerminalToolCatalog {
                                         .put("description", "最多返回 1 到 200 行，默认 80。")
                                 )
                         )
+                )
+            )
+            .put(
+                AgentToolSchema.function(
+                    name = "search_code",
+                    description = "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("path", JSONObject().put("type", "string").put("description", "文件或目录路径，默认 /data/local/tmp/eta。"))
+                                .put("pattern", JSONObject().put("type", "string").put("description", "扩展正则表达式（grep -E 语法），按单行内容匹配。"))
+                                .put("glob", JSONObject().put("type", "string").put("description", "文件名过滤，例如 *.kt；省略表示不过滤。"))
+                                .put("max_results", JSONObject().put("type", "integer").put("description", "最多返回的匹配行数，1 到 500，默认 50。"))
+                                .put("context_lines", JSONObject().put("type", "integer").put("description", "每条匹配附带的上下文行数，0 到 5，默认 0。"))
+                        )
+                        .put("required", JSONArray().put("pattern"))
+                )
+            )
+            .put(
+                AgentToolSchema.function(
+                    name = "edit_file",
+                    description = "用 old_text 精确替换文件内容，成功后返回改动差异。old_text 必须在文件中唯一命中，否则不修改文件并回报命中行号；改动局部内容时用它代替整文件重写。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("path", JSONObject().put("type", "string"))
+                                .put("old_text", JSONObject().put("type", "string").put("description", "待替换的原文，需与文件中文本完全一致，含缩进。"))
+                                .put("new_text", JSONObject().put("type", "string").put("description", "替换后的文本；传空字符串表示删除该段。"))
+                                .put("replace_all", JSONObject().put("type", "boolean").put("description", "true 时替换全部命中；默认 false，只允许唯一命中。"))
+                        )
+                        .put("required", JSONArray().put("path").put("old_text").put("new_text"))
                 )
             )
     }

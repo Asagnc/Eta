@@ -237,6 +237,8 @@ class AgentToolCatalogTest {
             "terminal",
             "run_command",
             "read_file",
+            "edit_file",
+            "search_code",
             "write_file",
             "list_directory",
         )

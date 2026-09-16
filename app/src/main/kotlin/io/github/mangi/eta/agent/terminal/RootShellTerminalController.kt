@@ -128,6 +128,7 @@ internal class RootShellTerminalController(
             "daemon_list" -> daemonList()
             "daemon_logs" -> daemonLogs(taskId = taskId.orEmpty())
             "daemon_stop" -> daemonStop(taskId = taskId.orEmpty())
+            "tasks_list" -> taskList()
             else -> errorJson(
                 "UNSUPPORTED_TERMINAL_ACTION",
                 "terminal action 仅支持 open/exec/open_and_exec/read_async_result/close/daemon_start/daemon_list/daemon_logs/daemon_stop"
@@ -416,6 +417,62 @@ internal class RootShellTerminalController(
                 .toString()
             is DaemonStartResult.Failed -> errorJson(result.code, result.message)
         }
+    }
+
+    /** 一次列出会话、异步任务与守护任务，省去按 id 逐个查询的往返。 */
+    private fun taskList(): String {
+        val sessionItems = JSONArray()
+        val jobItems = JSONArray()
+        synchronized(sessions) {
+            sessions.values.forEach { session ->
+                sessionItems.put(
+                    JSONObject()
+                        .put("session_id", session.id)
+                        .put("identity", session.identity)
+                        .put("environment", session.environment.wireName)
+                        .put("cwd", session.cwd)
+                        .put("started_at", session.createdAt)
+                )
+            }
+        }
+        synchronized(asyncJobs) {
+            asyncJobs.values.forEach { job ->
+                jobItems.put(
+                    JSONObject()
+                        .put("job_id", job.id)
+                        .put("session_id", job.sessionId ?: JSONObject.NULL)
+                        .put("environment", job.environment.wireName)
+                        .put("running", job.exitCode == null)
+                        .put("exit_code", job.exitCode ?: JSONObject.NULL)
+                        .put("timed_out", job.timedOut)
+                        .put("stdout_chars", job.stdout.text().length)
+                        .put("stdout_tail", job.stdout.text().takeLast(200))
+                        .put("started_at", job.startedAt)
+                )
+            }
+        }
+        val daemonItems = JSONArray()
+        detachedSupervisor?.list()?.forEach { status ->
+            daemonItems.put(
+                JSONObject()
+                    .put("task_id", status.task.id)
+                    .put("running", status.running)
+                    .put("command", status.task.command)
+                    .put("environment", status.task.environment.wireName)
+                    .put("started_at", status.task.startedAt)
+            )
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "terminal")
+            .put("action", "tasks_list")
+            .put("session_count", sessionItems.length())
+            .put("async_count", jobItems.length())
+            .put("daemon_count", daemonItems.length())
+            .put("sessions", sessionItems)
+            .put("async_jobs", jobItems)
+            .put("daemons", daemonItems)
+            .toString()
     }
 
     private fun daemonList(): String {
@@ -769,6 +826,174 @@ internal class RootShellTerminalController(
             .put("stderr", stderr)
             .put("stdout_truncated", rawStdout.length > stdout.length)
             .put("stderr_truncated", !mergeStderr && result.stderr.length > stderr.length)
+            .toString()
+    }
+
+    /**
+     * 按行读取文本：行号从 1 开始，[endLine] 为空表示读到文件末尾。
+     * 行号在 Kotlin 侧补，命令里不需要嵌套 awk 之类的引号。
+     */
+    fun readFileLines(path: String, startLine: Int, endLine: Int?, maxChars: Int): String {
+        if (!rootAvailable()) return UserFileAccess.readLines(path, startLine, endLine, maxChars)
+        val safePath = normalizePath(path)
+        val limit = maxChars.coerceIn(1, MAX_OUTPUT_CHARS)
+        val start = startLine.coerceAtLeast(1)
+        // sed 的 $= 输出最后一行行号，空文件无输出；与按读取器逐行计数一致（末尾换行不计一空行）。
+        val countResult = runSuText("sed -n '\$=' ${shellQuote(safePath)}", timeoutSeconds = 15)
+        if (countResult.exitCode != 0) {
+            return errorJson("READ_FAILED", countResult.stderr.ifBlank { "exit=${countResult.exitCode}" })
+        }
+        val totalLines = countResult.output.trim().toIntOrNull() ?: 0
+        if (totalLines == 0) {
+            logger.info("Agent terminal action=read_file mode=lines outcome=succeeded totalLines=0")
+            return JSONObject()
+                .put("ok", true)
+                .put("tool", "read_file")
+                .put("path", safePath)
+                .put("start_line", start)
+                .put("total_lines", 0)
+                .put("content", "")
+                .put("truncated", false)
+                .put("message", "文件为空或不存在文本行")
+                .toString()
+        }
+        if (start > totalLines) {
+            return errorJson("LINE_OUT_OF_RANGE", "起始行 $start 超出文件总行数 $totalLines")
+        }
+        val end = (endLine ?: totalLines).coerceAtLeast(start).coerceAtMost(totalLines)
+        val readResult = runSuBytes("sed -n \"$start,${end}p\" ${shellQuote(safePath)}", timeoutSeconds = 20)
+        if (readResult.exitCode != 0) {
+            return errorJson("READ_FAILED", readResult.stderr.ifBlank { "exit=${readResult.exitCode}" })
+        }
+        val rawLines = FileTextOperations.linesOf(readResult.output.decodeToString())
+        val builder = StringBuilder()
+        var emitted = 0
+        var truncated = false
+        for (offset in rawLines.indices) {
+            val rendered = "${start + offset}\t${rawLines[offset]}\n"
+            if (builder.length + rendered.length > limit) {
+                truncated = true
+                break
+            }
+            builder.append(rendered)
+            emitted++
+        }
+        logger.info(
+            "Agent terminal action=read_file mode=lines outcome=succeeded startLine=$start " +
+                "endLine=$end totalLines=$totalLines emitted=$emitted"
+        )
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "read_file")
+            .put("path", safePath)
+            .put("start_line", start)
+            .put("end_line", start + emitted - 1)
+            .put("total_lines", totalLines)
+            .put("content", builder.toString().trimEnd('\n'))
+            .put("truncated", truncated || end < totalLines)
+            .toString()
+    }
+
+    /**
+     * 定点替换：old_text 必须在文件中唯一命中，除非 replace_all 为 true；不满足条件时文件保持不变。
+     */
+    fun editFile(path: String, oldText: String, newText: String, replaceAll: Boolean): String {
+        if (!rootAvailable()) return UserFileAccess.editFile(path, oldText, newText, replaceAll)
+        val safePath = normalizePath(path)
+        if (oldText.isEmpty()) return errorJson("INVALID_ARGUMENT", "old_text 不能为空")
+        val sizeResult = runSuText("wc -c < ${shellQuote(safePath)}", timeoutSeconds = 15)
+        if (sizeResult.exitCode != 0) {
+            return errorJson("EDIT_FAILED", sizeResult.stderr.ifBlank { "exit=${sizeResult.exitCode}" })
+        }
+        val size = sizeResult.output.trim().toLongOrNull()
+            ?: return errorJson("EDIT_FAILED", "无法读取文件大小")
+        if (size > FileTextOperations.MAX_EDIT_BYTES) {
+            return errorJson(
+                "FILE_TOO_LARGE",
+                "文件 $size 字节，超过定点替换上限 ${FileTextOperations.MAX_EDIT_BYTES} 字节；请改用 terminal 通道处理",
+            )
+        }
+        val readResult = runSuBytes("cat ${shellQuote(safePath)}", timeoutSeconds = 20)
+        if (readResult.exitCode != 0) {
+            return errorJson("EDIT_FAILED", readResult.stderr.ifBlank { "exit=${readResult.exitCode}" })
+        }
+        val original = readResult.output.decodeToString()
+        return when (val outcome = FileTextOperations.replace(original, oldText, newText, replaceAll)) {
+            is FileTextOperations.ReplaceOutcome.NotFound -> errorJson(
+                "EDIT_NOT_FOUND",
+                "没有匹配 old_text 的文本（文件共 ${outcome.totalLines} 行）；请先用 read_file 核对原文",
+            )
+            is FileTextOperations.ReplaceOutcome.Ambiguous -> errorJson(
+                "EDIT_NOT_UNIQUE",
+                "old_text 命中 ${outcome.lines.size} 处（行 ${outcome.lines.joinToString("、")}）；" +
+                    "请补足上下文使其唯一，或设置 replace_all=true",
+            )
+            is FileTextOperations.ReplaceOutcome.Applied -> {
+                val bytes = outcome.content.toByteArray(Charsets.UTF_8)
+                if (bytes.size > MAX_WRITE_BYTES) {
+                    return errorJson("FILE_TOO_LARGE", "替换后内容 ${bytes.size} 字节，超过写入上限 $MAX_WRITE_BYTES 字节")
+                }
+                val writeResult = runSuTextWithStdin("cat > ${shellQuote(safePath)}", bytes, timeoutSeconds = 20)
+                if (writeResult.exitCode != 0) {
+                    logger.warn(
+                        "Agent terminal action=edit_file outcome=failed exitCode=${writeResult.exitCode} " +
+                            "errorChars=${writeResult.stderr.length}"
+                    )
+                    errorJson("EDIT_WRITE_FAILED", writeResult.stderr.ifBlank { "exit=${writeResult.exitCode}" })
+                } else {
+                    logger.info(
+                        "Agent terminal action=edit_file outcome=succeeded replacements=${outcome.occurrences} " +
+                            "firstLine=${outcome.firstLine} bytesWritten=${bytes.size}"
+                    )
+                    JSONObject()
+                        .put("ok", true)
+                        .put("tool", "edit_file")
+                        .put("path", safePath)
+                        .put("replacements", outcome.occurrences)
+                        .put("first_line", outcome.firstLine)
+                        .put("bytes_written", bytes.size)
+                        .put("diff", FileTextOperations.diffPreview(original, outcome.content).truncateForJson())
+                        .toString()
+                }
+            }
+        }
+    }
+
+    /**
+     * 按内容检索：递归目录，返回 文件:行号:内容。路径前缀按检索根目录缩写，便于阅读。
+     */
+    fun searchCode(path: String, pattern: String, glob: String?, maxResults: Int, contextLines: Int): String {
+        if (!rootAvailable()) return UserFileAccess.searchCode(path, pattern, glob, maxResults, contextLines)
+        val safePath = normalizePath(path.ifBlank { DEFAULT_CWD })
+        if (pattern.isEmpty()) return errorJson("INVALID_ARGUMENT", "pattern 不能为空")
+        val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
+        val include = glob?.takeIf { it.isNotBlank() }?.let { " --include=${shellQuote(it)}" }.orEmpty()
+        val context = contextLines.coerceIn(0, 5).let { if (it > 0) " -C $it" else "" }
+        val command = "grep -rn -I -E$context$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+            " | head -n ${limit + 1}"
+        val result = runSuText(command, timeoutSeconds = 30)
+        if (result.output.isBlank() && result.stderr.isNotBlank()) {
+            logger.warn("Agent terminal action=search_code outcome=failed errorChars=${result.stderr.length}")
+            return errorJson("SEARCH_FAILED", result.stderr)
+        }
+        val base = safePath.trimEnd('/')
+        val lines = result.output.removeSuffix("\n")
+            .let { if (it.isEmpty()) emptyList() else it.split("\n") }
+            .map { line -> line.removePrefix("$base/").removePrefix("$base:") }
+        val selected = lines.take(limit)
+        logger.info(
+            "Agent terminal action=search_code outcome=succeeded patternChars=${pattern.length} " +
+                "matches=${selected.size} truncated=${lines.size > limit}"
+        )
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "search_code")
+            .put("path", safePath)
+            .put("pattern", pattern)
+            .put("glob", glob?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put("match_lines", selected.size)
+            .put("results", selected.joinToString("\n").truncateForJson())
+            .put("truncated", lines.size > limit)
             .toString()
     }
 

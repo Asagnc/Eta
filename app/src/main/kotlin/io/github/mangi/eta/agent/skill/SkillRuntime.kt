@@ -497,6 +497,21 @@ class SkillIndexService(
             .toList()
     }
 
+    /** 技能入口清单：只取 scripts 与 references 下一层的文件名，按名称排序并限制条数。 */
+    private fun entrypointNames(skillDir: File): List<String> {
+        val names = mutableListOf<String>()
+        listOf("scripts", "references").forEach { folder ->
+            val dir = File(skillDir, folder)
+            if (!dir.isDirectory) return@forEach
+            dir.listFiles()
+                ?.sortedBy { it.name }
+                ?.forEach { file ->
+                    if (file.isFile && names.size < MAX_SKILL_ENTRYPOINTS) names += "$folder/${file.name}"
+                }
+        }
+        return names
+    }
+
     private fun buildInstalledEntry(
         skillDir: File,
         registry: Map<String, SkillRegistryEntry>,
@@ -526,6 +541,7 @@ class SkillIndexService(
             hasReferences = File(canonicalDir, "references").isDirectory,
             hasAssets = File(canonicalDir, "assets").isDirectory,
             hasEvals = File(canonicalDir, "evals").isDirectory,
+            entrypoints = entrypointNames(canonicalDir),
             enabled = registryState?.enabled ?: true,
             source = registryState?.source?.ifBlank { null }
                 ?: if (builtinAsset != null) BUILTIN_SOURCE else USER_SOURCE,
@@ -553,6 +569,10 @@ class SkillIndexService(
             source = BUILTIN_SOURCE,
             installed = false,
         )
+    }
+
+    private companion object {
+        const val MAX_SKILL_ENTRYPOINTS = 12
     }
 
     private fun sourceRank(source: String): Int = when (source) {

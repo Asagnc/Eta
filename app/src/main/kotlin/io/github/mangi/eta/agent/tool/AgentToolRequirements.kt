@@ -14,6 +14,11 @@ internal data class LocalToolRequirement(
     val accessibility: Boolean = false,
     val systemAccess: ToolSystemAccess = ToolSystemAccess.NONE,
     val colorOs: Boolean = false,
+    /**
+     * 只读、幂等、不与其他调用共享状态或先后依赖的工具可以同批并发执行。
+     * 判断依据见 [AgentToolRequirements.isParallelSafe] 的登记清单。
+     */
+    val parallelSafe: Boolean = false,
 )
 
 /** 展示、模型目录与执行边界共同使用的本地工具能力合同。未登记的工具不能发布。 */
@@ -43,7 +48,7 @@ internal object AgentToolRequirements {
             RootRequirement.PARTIAL,
             "press_key", "network_info", "get_setting", "recent_notifications",
             "search_personal_orders", "terminal", "run_command", "read_file",
-            "write_file", "list_directory", "read_image",
+            "write_file", "edit_file", "search_code", "list_directory", "read_image",
         )
         register(
             RootRequirement.REQUIRED,
@@ -75,6 +80,30 @@ internal object AgentToolRequirements {
             "search_coloros_notes", "search_coloros_recordings", "search_recording_summaries",
             "search_coloros_memories", "search_saved_places",
         ).forEach { name -> put(name, getValue(name).copy(colorOs = true)) }
+        // 并发执行只覆盖"读取即返回"的工具：没有写操作、不推进会话或任务状态、
+        // 也不依赖同批其它调用的结果。屏幕观察与手势、terminal 会话、browser_use、
+        // memory_write、skills_install 等有状态或写副作用的能力一律留在顺序通道。
+        listOf(
+            "get_current_context", "device_status", "network_info", "get_setting",
+            "get_device_environment", "get_current_location", "get_clipboard",
+            "top_memory_apps", "top_storage_apps", "get_logcat", "get_health_summary",
+            "list_alarms", "list_active_timers", "wifi_credentials",
+            "read_file", "list_directory", "search_code", "read_image",
+            "search_apps", "search_clipboard_history", "recent_notifications",
+            "search_notification_history", "recent_app_activity", "app_usage_summary",
+            "search_media", "search_audio", "search_recordings", "search_files",
+            "search_downloads", "search_calendar_events", "search_contacts",
+            "search_call_history", "search_messages", "search_coloros_notes",
+            "search_coloros_recordings", "search_recording_summaries",
+            "search_coloros_memories", "search_saved_places", "search_personal_orders",
+            "search_qq_chat_images", "search_wechat_chat_images",
+            "memory_get", "character_memory_get",
+            "skills_list", "skills_read", "skills_read_resource",
+            "skills_list_curated", "skills_inspect_github",
+        ).forEach { name ->
+            val requirement = this[name] ?: return@forEach
+            put(name, requirement.copy(parallelSafe = true))
+        }
         // 系统记忆优先使用 Hook 桥接，框架失联时仍有独立的 Root 快照来源。
         listOf("search_coloros_memories", "search_saved_places", "search_personal_orders").forEach { name ->
             put(name, getValue(name).copy(lsposedRequirement = LsposedRequirement.OPTIONAL))
@@ -89,6 +118,8 @@ internal object AgentToolRequirements {
         requireNotNull(find(name)) { "Missing tool requirements: $name" }.rootRequirement
 
     fun requiresAccessibility(name: String): Boolean = find(name)?.accessibility == true
+
+    fun isParallelSafe(name: String): Boolean = find(name)?.parallelSafe == true
 
     fun rootDenied(name: String, arguments: JSONObject, rootAvailable: Boolean): Boolean {
         if (rootAvailable) return false
@@ -132,6 +163,12 @@ internal object AgentToolRequirements {
                 function.put("description",
                     "通过普通 Android Shell 执行单次非交互命令，以 App UID 运行；只能访问当前应用有权访问的资源。")
                 properties?.getJSONObject("cwd")?.put("description", "工作目录，默认使用 Eta 私有工作区。")
+            }
+            "search_code" -> {
+                function.put("description",
+                    "在当前应用有权访问的文件或目录里按正则检索内容，返回 文件:行号:内容。")
+                properties?.optJSONObject("path")?.put("description",
+                    "文件或目录路径；未提供时使用 Eta 私有工作区。")
             }
             "list_directory" -> {
                 function.put("description", "列出当前应用有权访问的目录，默认使用 Eta 私有工作区。")
