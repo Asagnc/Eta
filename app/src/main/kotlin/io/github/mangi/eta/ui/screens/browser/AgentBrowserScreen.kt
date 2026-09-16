@@ -387,6 +387,14 @@ private fun BrowserToolbar(
                     maxLines = 1,
                 )
             }
+            snapshot.proxy?.let { proxy ->
+                Text(
+                    text = stringResource(R.string.browser_proxy_chip, proxy),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                )
+            }
         }
 
         BrowserControlButton(

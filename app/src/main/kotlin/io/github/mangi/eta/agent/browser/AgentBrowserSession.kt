@@ -64,6 +64,7 @@ internal data class BrowserSessionSnapshot(
     val isUserControlling: Boolean = false,
     val lastAgentRunId: String? = null,
     val lastAgentToolCallId: String? = null,
+    val proxy: String? = null,
 )
 
 internal data class BrowserImage(
@@ -176,6 +177,9 @@ internal object AgentBrowserSession {
 
     @Volatile
     private var pendingDownload: BrowserDownloadRequest? = null
+
+    @Volatile
+    private var activeProxy: String? = null
 
     fun initialize(context: Context) {
         if (appContext == null) {
@@ -786,9 +790,8 @@ internal object AgentBrowserSession {
         awaitProxyChange { executor, listener ->
             ProxyController.getInstance().setProxyOverride(config, executor, listener)
         }
-        return toolResult(
-            baseEnvelope("set_proxy", ok = true, status = "ok").put("proxy", rule)
-        )
+        activeProxy = rule
+        return toolResult(baseEnvelope("set_proxy", ok = true, status = "ok"))
     }
 
     private fun clearProxy(): BrowserToolResult {
@@ -798,6 +801,7 @@ internal object AgentBrowserSession {
         awaitProxyChange { executor, listener ->
             ProxyController.getInstance().clearProxyOverride(executor, listener)
         }
+        activeProxy = null
         return toolResult(baseEnvelope("clear_proxy", ok = true, status = "ok"))
     }
 
@@ -972,6 +976,8 @@ internal object AgentBrowserSession {
                             mimeType = mimeType.orEmpty(),
                             contentLength = contentLength,
                         )
+                        // 下载会接管这次导航，页面不会再走到 onPageFinished：直接结束等待，别让 navigate 白等到超时。
+                        currentLoadWaiter?.complete(LoadOutcome(true, "DOWNLOAD_STARTED", ""))
                     }
                 }
                 CookieManager.getInstance().setAcceptCookie(true)
@@ -1156,6 +1162,8 @@ internal object AgentBrowserSession {
                 currentHttpStatus?.let { json.put("http_status", it) }
                 // 页面自己触发的下载（例如点了带 Content-Disposition 的链接）在这里报一次，
                 // 由调用方决定要不要用 download 动作把它取回来。
+                // 代理是进程级状态，跟每个动作的结果一起报出来，避免"以为在抓包其实没抓"。
+                activeProxy?.let { json.put("proxy", it) }
                 pendingDownload?.let { request ->
                     json.put("download_requested", request.toJson())
                     pendingDownload = null
@@ -1226,6 +1234,7 @@ internal object AgentBrowserSession {
             isUserControlling = userControlActive,
             lastAgentRunId = lastAgentRunId,
             lastAgentToolCallId = lastAgentToolCallId,
+            proxy = activeProxy,
         )
     }
 

@@ -1092,6 +1092,7 @@
   <string name="browser_user_controlling">You are controlling this session. Agent web actions are paused; return to let the Agent continue.</string>
   <string name="browser_opening">Opening webpage</string>
   <string name="browser_opening_host">Opening %1$s</string>
+  <string name="browser_proxy_chip">Proxy %1$s</string>
   <string name="model_not_selected">Not selected</string>
   <string name="model_switch_current">Switch model. Current: %1$s</string>
   <string name="model_collapse_provider">Collapse %1$s</string>
