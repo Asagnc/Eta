@@ -474,6 +474,8 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
             // 任务清单只在会话页展示，语音悬浮窗不展示该进度。
             is AgentEvent.TaskPlanUpdated -> Unit
             is AgentEvent.RunStatsReported -> Unit
+            // 语音浮窗只报当前状态，子智能体的过程细节留给会话页事件流。
+            is AgentEvent.SubAgentUpdated -> status = EtaVoiceStatus.Reasoning
 
             is AgentEvent.AssistantBlockStart -> {
                 messages = runMessageProjector.startAssistantBlock(runId, event, messages)

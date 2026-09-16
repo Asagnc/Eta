@@ -31,6 +31,12 @@ internal fun AgentOverlayState.applyEvent(event: AgentEvent): AgentOverlayState 
     // 任务清单与运行度量只作为记录流入归档与会话页，悬浮层的一句话状态不受影响。
     is AgentEvent.TaskPlanUpdated -> this
     is AgentEvent.RunStatsReported -> this
+    // 子智能体的启动与回收属于过程信息，用一句话状态说明当前在并行检索。
+    is AgentEvent.SubAgentUpdated -> copy(
+        phase = AgentOverlayPhase.RUNNING,
+        status = AgentOverlayStatus.RequestingModel,
+        detailText = event.displayMessage,
+    )
     is AgentEvent.ContextCompaction -> copy(status = AgentOverlayStatus.RequestingModel, detailText = event.displayMessage)
     is AgentEvent.RunStarted -> copy(
         phase = AgentOverlayPhase.RUNNING,

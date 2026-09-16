@@ -752,6 +752,15 @@ internal object AgentRuntimeWire {
                 putString("stats_json", event.statsJson)
             }
 
+            is AgentEvent.SubAgentUpdated -> {
+                putString(KEY_TYPE, "sub_agent_updated")
+                putString("id", event.id)
+                putString("role", event.role)
+                putString("phase", event.phase)
+                putInt("summary_chars", event.summaryChars)
+                putString("error_code", event.errorCode)
+            }
+
             is AgentEvent.RunFinished -> {
                 putString(KEY_TYPE, "run_finished")
                 putInt("round", event.round)
@@ -897,6 +906,14 @@ internal object AgentRuntimeWire {
 
         "run_stats_reported" -> AgentEvent.RunStatsReported(
             statsJson = bundle.getString("stats_json").orEmpty(),
+        )
+
+        "sub_agent_updated" -> AgentEvent.SubAgentUpdated(
+            id = bundle.getString("id").orEmpty(),
+            role = bundle.getString("role").orEmpty(),
+            phase = bundle.getString("phase").orEmpty(),
+            summaryChars = bundle.getInt("summary_chars"),
+            errorCode = bundle.getString("error_code").orEmpty(),
         )
 
         "run_finished" -> AgentEvent.RunFinished(

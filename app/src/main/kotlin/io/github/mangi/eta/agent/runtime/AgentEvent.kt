@@ -220,6 +220,31 @@ internal sealed interface AgentEvent {
             "run_stats_reported chars=${statsJson.length}"
     }
 
+    data class SubAgentUpdated(
+        val id: String,
+        val role: String,
+        /** started / finished / failed。 */
+        val phase: String,
+        val summaryChars: Int,
+        val errorCode: String = "",
+    ) : AgentEvent {
+        val displayMessage: String
+            get() = when (phase) {
+                PHASE_STARTED -> "子智能体「$role」已启动"
+                PHASE_FINISHED -> "子智能体「$role」已返回摘要"
+                else -> "子智能体「$role」未完成${errorCode.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}"
+            }
+
+        override fun toLogLine(): String =
+            "sub_agent_updated id=${id.toSafeLogToken()}, role=${role.toSafeLogToken()}, " +
+                "phase=${phase.toSafeLogToken()}, chars=$summaryChars, code=${errorCode.toSafeLogToken()}"
+
+        companion object {
+            const val PHASE_STARTED = "started"
+            const val PHASE_FINISHED = "finished"
+        }
+    }
+
     data class RunFinished(
         val round: Int,
         val contentChars: Int

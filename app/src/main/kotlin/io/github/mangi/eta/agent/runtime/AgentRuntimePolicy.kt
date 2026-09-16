@@ -18,6 +18,8 @@ internal object AgentRuntimePolicy {
         val deviceSensitiveReadTools: Boolean = false,
         val deviceSensitiveActionTools: Boolean = false,
         val thinking: Boolean,
+        /** 子智能体开关；关闭时不向模型暴露 delegate 与 multi_perspective。 */
+        val subAgents: Boolean = false,
         /** 同批只读工具的并发上限，取值由偏好决定，实际执行时仍会夹到允许区间。 */
         val maxParallelToolCalls: Int = Prefs.Keys.INT_DEFAULTS.getValue(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT),
     )
@@ -32,6 +34,7 @@ internal object AgentRuntimePolicy {
             deviceSensitiveActionTools =
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             thinking = preferences.allowed(Prefs.Keys.AGENT_THINKING_ENABLED),
+            subAgents = preferences.allowed(Prefs.Keys.AGENT_SUBAGENTS_ENABLED),
             maxParallelToolCalls = preferences.intValue(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT),
         )
 
@@ -51,6 +54,7 @@ internal object AgentRuntimePolicy {
             deviceSensitiveActionTools =
                 config.deviceSensitiveActionTools && permissions.deviceSensitiveActionTools,
             maxParallelToolCalls = permissions.maxParallelToolCalls,
+            subAgentTools = config.subAgentTools && permissions.subAgents,
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
         )

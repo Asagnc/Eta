@@ -15,6 +15,8 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentRunStatsToolCatalog
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
+import io.github.mangi.eta.agent.model.AgentSubAgentRunner
+import io.github.mangi.eta.agent.model.AgentSubAgentToolCatalog
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
@@ -87,6 +89,8 @@ internal class AgentLocalTools(
     private val onTaskPlanUpdated: ((String) -> Unit)? = null,
     /** 本次 run 的度量摘要，由 Runtime 侧的执行循环提供；缺失时工具回报自己不可用。 */
     private val runStatsSummary: (() -> String)? = null,
+    /** 受限子智能体；未开启时工具回报自己未启用。 */
+    private val subAgentRunner: AgentSubAgentRunner? = null,
     private val beforeToolExecution: (String) -> ToolExecutionDecision = {
         ToolExecutionDecision.Allow
     },
@@ -231,6 +235,8 @@ internal class AgentLocalTools(
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
                 "skills_run" -> textResult(terminalTool { skillsRun(args) })
+                AgentSubAgentToolCatalog.DELEGATE -> textResult(delegate(args))
+                AgentSubAgentToolCatalog.MULTI_PERSPECTIVE -> textResult(multiPerspective(args))
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",
@@ -1696,6 +1702,75 @@ internal class AgentLocalTools(
             .toString()
     }
 
+    /**
+     * 把一个检索型子任务交给受限子智能体，只取回摘要。
+     *
+     * 子智能体的上下文与工具输出都不进入当前 run，所以这里的返回值就是它交给主 loop 的全部信息；
+     * 主 loop 需要自己校验摘要，不能直接把它当结论。
+     */
+    private fun delegate(args: JSONObject): String {
+        val runner = subAgentRunner ?: return errorResult("SUB_AGENT_DISABLED", "子智能体未开启")
+        val task = args.optString("task").trim()
+        if (task.isBlank()) return errorResult("MISSING_PARAM", "缺少 task")
+        val role = args.optString("role").trim().ifBlank { DEFAULT_SUB_AGENT_ROLE }
+        val outcome = runner.run(
+            AgentSubAgentRunner.Request(
+                role = role,
+                brief = task.take(MAX_SUB_AGENT_TASK_CHARS),
+                context = args.optString("context").trim().take(MAX_SUB_AGENT_CONTEXT_CHARS),
+            ),
+        )
+        return subAgentResult(listOf(outcome))
+    }
+
+    private fun multiPerspective(args: JSONObject): String {
+        val runner = subAgentRunner ?: return errorResult("SUB_AGENT_DISABLED", "子智能体未开启")
+        val topic = args.optString("topic").trim()
+        if (topic.isBlank()) return errorResult("MISSING_PARAM", "缺少 topic")
+        val rolesJson = args.optJSONArray("roles") ?: return errorResult("MISSING_PARAM", "缺少 roles")
+        val roles = (0 until rolesJson.length())
+            .mapNotNull { index -> rolesJson.optString(index).trim().takeIf { it.isNotBlank() } }
+            .distinct()
+        if (roles.size < MIN_SUB_AGENT_ROLES) {
+            return errorResult("INVALID_ARGUMENT", "至少需要 $MIN_SUB_AGENT_ROLES 个互不相同的角色")
+        }
+        if (roles.size > MAX_SUB_AGENT_ROLES) {
+            return errorResult("INVALID_ARGUMENT", "角色最多 $MAX_SUB_AGENT_ROLES 个")
+        }
+        val brief = args.optString("brief").trim()
+        val outcomes = runner.runAll(
+            roles.map { role ->
+                AgentSubAgentRunner.Request(
+                    role = role,
+                    brief = topic.take(MAX_SUB_AGENT_TASK_CHARS),
+                    context = brief.take(MAX_SUB_AGENT_CONTEXT_CHARS),
+                )
+            },
+        )
+        return subAgentResult(outcomes)
+    }
+
+    /** 摘要与失败原因一起交回模型，让主 loop 能判断要不要自己补做。 */
+    private fun subAgentResult(outcomes: List<AgentSubAgentRunner.Outcome>): String {
+        val results = JSONArray()
+        outcomes.forEach { outcome ->
+            results.put(
+                JSONObject()
+                    .put("role", outcome.role)
+                    .put("ok", outcome.ok)
+                    .put("rounds", outcome.rounds)
+                    .put("summary", outcome.summary)
+                    .put("error", outcome.errorCode.ifBlank { JSONObject.NULL as Any })
+                    .put("message", outcome.errorMessage),
+            )
+        }
+        return JSONObject()
+            .put("ok", outcomes.any { outcome -> outcome.ok })
+            .put("results", results)
+            .put("note", "子智能体的工具输出没有进入当前上下文；请校验摘要后再下结论")
+            .toString()
+    }
+
     private fun isVisibleInCurrentRun(skillId: String): Boolean {
         val normalized = SkillParser.normalizeSkillLookup(skillId)
         return normalized in runAvailableSkillIds && normalized !in mutatedSkillIds
@@ -1912,3 +1987,10 @@ private const val MAX_SKILL_COMMAND_ARGUMENTS = 1_000
 
 /** SKILL.md 正文超过该长度时提示拆分为按需读取的 references 文件。 */
 private const val SKILL_BODY_SPLIT_HINT_CHARS = 12_000
+
+/** 子智能体入口的取值范围，与 AgentSubAgentToolCatalog 的 schema 保持一致。 */
+private const val MAX_SUB_AGENT_TASK_CHARS = 2_000
+private const val MAX_SUB_AGENT_CONTEXT_CHARS = 4_000
+private const val MIN_SUB_AGENT_ROLES = 2
+private const val MAX_SUB_AGENT_ROLES = 4
+private const val DEFAULT_SUB_AGENT_ROLE = "检索"

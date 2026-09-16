@@ -142,6 +142,7 @@ internal object AgentModelClient {
                 deviceSensitiveActionTools = config.deviceSensitiveActionTools,
                 skillGitHubDiscovery = true,
                 skillGitHubInstall = true,
+                subAgentTools = config.subAgentTools,
                 memoryTools = memoryContext.enabled,
                 memoryWritable = roleplayContext == null,
                 capabilities = capabilities,
@@ -276,6 +277,8 @@ internal object AgentModelClient {
         val deviceSensitiveActionTools: Boolean = false,
         /** 同批只读工具的并发上限；调整它需要用 eval 扫 2/4/8 找性价比拐点，而不是凭感觉改。 */
         val maxParallelToolCalls: Int = 4,
+        /** 子智能体默认关闭：它会引入额外的模型开销，只在需要并行检索时开启。 */
+        val subAgentTools: Boolean = false,
         val thinkingEnabled: Boolean = false,
         val reasoningEffort: ReasoningEffort? = null,
         val reasoningCapabilities: ModelReasoningCapabilities? = null,

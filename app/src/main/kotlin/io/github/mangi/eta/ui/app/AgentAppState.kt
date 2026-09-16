@@ -2057,6 +2057,9 @@ internal class AgentAppState(
             // 运行度量随事件流进入归档，会话页不单独渲染。
             is AgentEvent.RunStatsReported -> Unit
 
+            // 子智能体的启动与回收保留在归档事件里，用于事后核查并行检索的过程。
+            is AgentEvent.SubAgentUpdated -> Unit
+
             is AgentEvent.AssistantBlockStart -> {
                 updateRunTrace(runId) { messages ->
                     runMessageProjector.startAssistantBlock(runId, event, messages)

@@ -9,6 +9,9 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentRunStats
+import io.github.mangi.eta.agent.model.AgentSubAgentRunner
+import io.github.mangi.eta.agent.model.AgentToolCatalog
+import io.github.mangi.eta.agent.model.ProviderClientFactory
 import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
@@ -34,6 +37,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 单次 Runtime run 的阻塞执行器。
@@ -145,6 +149,48 @@ internal class AgentRuntimeRunExecutor(
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
             val runStats = AgentRunStats()
+            // 子智能体只拿到文件检索类工具，且不允许递归派生；它复用主 run 的工具执行器，
+            // 所以这里用可空引用延迟绑定，避免与 AgentLocalTools 构造顺序互相依赖。
+            var toolExecutorRef: AgentModelClient.ToolExecutor? = null
+            val subAgentRunner = AgentSubAgentRunner(
+                config = request.config,
+                provider = ProviderClientFactory.getClient(request.config),
+                runController = runController,
+                onEvent = { event ->
+                    acceptEvent(
+                        session,
+                        event,
+                        archivedEvents,
+                        entrySurfaceGuard,
+                        checkpointRecorder,
+                    )
+                },
+                parentTools = AgentToolCatalog.build(
+                    terminalTools = request.config.terminalTools,
+                    browserTools = false,
+                    deviceDirectTools = false,
+                    deviceSensitiveReadTools = false,
+                    deviceSensitiveActionTools = false,
+                    memoryTools = false,
+                    capabilities = AgentToolCapabilities.capture(appContext),
+                ),
+                toolExecutorFor = { allowed ->
+                    AgentModelClient.ToolExecutor { call ->
+                        val delegate = toolExecutorRef
+                        if (delegate == null || call.name !in allowed) {
+                            AgentModelClient.ToolResult(
+                                JSONObject()
+                                    .put("ok", false)
+                                    .put("code", "SUB_AGENT_TOOL_FORBIDDEN")
+                                    .put("message", "子智能体不能使用 ${call.name}")
+                                    .toString(),
+                            )
+                        } else {
+                            delegate.execute(call)
+                        }
+                    }
+                },
+            )
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -210,6 +256,7 @@ internal class AgentRuntimeRunExecutor(
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
                 runStatsSummary = { runStats.summaryText() },
+                subAgentRunner = subAgentRunner,
                 onTaskPlanUpdated = { planJson ->
                     acceptEvent(
                         session,
@@ -225,6 +272,7 @@ internal class AgentRuntimeRunExecutor(
                 mcp = McpToolExecutor(mcpSnapshot),
             )
             toolExecutor = routingExecutor
+            toolExecutorRef = routingExecutor
             toolsBinding = runController.register(routingExecutor::close)
             timing.preparationFinished(skillContext.installedSkills.size)
             val historyTool = conversationId?.let { id ->

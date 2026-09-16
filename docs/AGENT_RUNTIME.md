@@ -116,6 +116,16 @@ MCP 地址由用户直接配置，HTTP、HTTPS、局域网与本机地址使用�
 
 Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最多等待 30 秒，仅 UID 0 视为可用；拒绝和超时不会反复弹出请求，用户可在“系统增强”手动重试。LSPosed 连接独立判断，不代替 Root 授权。
 
+## 子智能体
+
+`delegate` 与 `multi_perspective` 默认关闭（配置项 `agent_subagents_enabled`，由 Runtime 最终裁决），开启后模型才会看到它们。两者是同一套受限子 loop 的入口。
+
+- **集中式编排**：主 loop 是唯一编排者。子智能体不能派生新的子智能体，也不能写文件、跑命令或操作设备，只拿到 `read_file`、`search_code`、`list_directory`。
+- **独立上下文**：每个角色有自己的消息与系统提示，互相看不到对方的中间推理；`multi_perspective` 并行派生多个角色，再由主 loop 汇总对照。角色之间共享推理会让多个视角退化成同一份意见的不同措辞。
+- **只回摘要**：子智能体的工具输出留在它自己的上下文里，只回一份上限 4000 字符的摘要，主 loop 必须自行校验。
+- **预算与失败隔离**：单个子智能体最多 6 轮、上下文估算上限 30000 token，超过即停止并回报 `SUB_AGENT_BUDGET_EXCEEDED`；某个角色失败不影响其它角色，失败原因随摘要一起回填。
+- **过程记录**：`SubAgentUpdated` 事件（started/finished/failed）与主 run 共用同一条事件流并进入归档，悬浮层用一句话状态显示当前在并行检索。
+
 ## 终端环境
 
 `terminal` 的 `environment` 明确区分设备控制与通用 Linux 工具，默认值为 `android`：
