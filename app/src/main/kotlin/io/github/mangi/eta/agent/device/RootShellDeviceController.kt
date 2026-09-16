@@ -111,7 +111,19 @@ internal class RootShellDeviceController(
             }
             ?: focusedWindow()
         val elementObservation = if (includeUiTree) {
-            val accessibilitySnapshot = accessibility?.captureNodeSnapshot(nodeLimit)
+            val accessibilitySnapshot = accessibility?.let { service ->
+                val reused = reusableTreeSnapshot(service, nodeLimit)
+                if (reused != null) {
+                    reused
+                } else {
+                    val sequenceBefore = service.contentChangeSequence()
+                    val captured = service.captureNodeSnapshot(nodeLimit)
+                    if (captured != null && sequenceBefore == service.contentChangeSequence()) {
+                        rememberReusableTree(service, captured, nodeLimit)
+                    }
+                    captured
+                }
+            }
             if (accessibilitySnapshot != null) {
                 ElementObservation(
                     id = accessibilitySnapshot.id,
@@ -1162,12 +1174,16 @@ internal class RootShellDeviceController(
             .put("bounds", bounds.toShortString())
             .put("center", JSONObject().put("x", centerX).put("y", centerY))
             .put("clickable", clickable)
-            .put("long_clickable", longClickable)
-            .put("scrollable", scrollable)
-            .put("focused", focused)
             .put("editable", editable)
-            .put("password", password)
-            .put("enabled", enabled)
+            .apply {
+                // 只保留非默认取值：false 的 long_clickable/scrollable/focused/password
+                // 与 true 的 enabled 不带信息量，逐节点省略可显著压缩观察体积。
+                if (longClickable) put("long_clickable", true)
+                if (scrollable) put("scrollable", true)
+                if (focused) put("focused", true)
+                if (password) put("password", true)
+                if (!enabled) put("enabled", false)
+            }
 
     private fun XmlPullParser.attr(name: String): String =
         getAttributeValue(null, name).orEmpty()
@@ -1338,6 +1354,49 @@ internal class RootShellDeviceController(
             else -> value.contains(needle, ignoreCase = true)
         }
 
+    private var reusableTree: ReusableTree? = null
+    private val reusableTreeLock = Any()
+
+    private data class ReusableTree(
+        val snapshot: AgentAccessibilityService.NodeSnapshot,
+        val contentSequence: Long,
+        val nodeLimit: Int,
+    )
+
+    /**
+     * 上次采集后界面内容没有变化时复用同一份快照，省掉一次节点树遍历。
+     *
+     * 复用不会改变节点下标、observation_id 与快照之间的对应关系，因此 tap_element、
+     * replace_text 这类按快照定位的动作依旧指向同一批节点；内容一旦变化，无障碍服务的
+     * 变更序号就会前进，缓存随即失效，不会让动作落在过期的快照上。
+     */
+    private fun reusableTreeSnapshot(
+        service: AgentAccessibilityService,
+        nodeLimit: Int,
+    ): AgentAccessibilityService.NodeSnapshot? {
+        val cached = synchronized(reusableTreeLock) { reusableTree } ?: return null
+        if (cached.nodeLimit != nodeLimit) return null
+        if (cached.snapshot.truncated) return null
+        val ageMs = SystemClock.elapsedRealtime() - cached.snapshot.capturedAtElapsedMs
+        if (ageMs > TREE_REUSE_WINDOW_MS) return null
+        if (service.contentChangeSequence() != cached.contentSequence) return null
+        return cached.snapshot
+    }
+
+    private fun rememberReusableTree(
+        service: AgentAccessibilityService,
+        snapshot: AgentAccessibilityService.NodeSnapshot,
+        nodeLimit: Int,
+    ) {
+        synchronized(reusableTreeLock) {
+            reusableTree = ReusableTree(
+                snapshot = snapshot,
+                contentSequence = service.contentChangeSequence(),
+                nodeLimit = nodeLimit,
+            )
+        }
+    }
+
     private fun AgentAccessibilityService.UiNode.toUiNode(): UiNode =
         UiNode(
             index = index,
@@ -1469,3 +1528,5 @@ internal class RootShellDeviceController(
         private val ROOT_OBSERVATION_IDS = AtomicLong(0)
     }
 }
+
+private const val TREE_REUSE_WINDOW_MS = 1_500L
