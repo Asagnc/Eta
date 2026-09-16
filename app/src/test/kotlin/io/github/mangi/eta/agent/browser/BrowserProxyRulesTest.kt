@@ -16,6 +16,24 @@ class BrowserProxyRulesTest {
     }
 
     @Test
+    fun `parsed targets carry host and port for plain http clients`() {
+        val direct = BrowserProxyRules.parse("127.0.0.1:8080")
+        assertEquals("http", direct?.scheme)
+        assertEquals("127.0.0.1", direct?.host)
+        assertEquals(8080, direct?.port)
+
+        val socks = BrowserProxyRules.parse("socks5://10.0.2.2")
+        assertEquals("socks", socks?.scheme)
+        assertEquals(1080, socks?.port)
+
+        val ipv6 = BrowserProxyRules.parse("socks://[fe80::1]:1080")
+        assertEquals("fe80::1", ipv6?.host)
+        assertEquals(1080, ipv6?.port)
+
+        assertNull(BrowserProxyRules.parse("http://127.0.0.1:8080/proxy"))
+    }
+
+    @Test
     fun `paths, unknown schemes and malformed ports are rejected`() {
         assertNull(BrowserProxyRules.normalize(""))
         assertNull(BrowserProxyRules.normalize("http://127.0.0.1:8080/proxy"))

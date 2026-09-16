@@ -849,6 +849,7 @@ internal object AgentBrowserSession {
                 cookieHeader = CookieManager.getInstance().getCookie(rawUrl),
                 userAgent = callOnMain { view.settings.userAgentString },
                 referer = currentUrl.takeIf { it.isNotBlank() && it != rawUrl },
+                proxyRule = activeProxy,
             )
         } catch (failure: IOException) {
             throw BrowserFailure("DOWNLOAD_FAILED", failure.message ?: "下载失败")

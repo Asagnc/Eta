@@ -5,6 +5,8 @@ import android.media.MediaScannerConnection
 import android.os.Environment
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,6 +47,7 @@ internal object BrowserDownloader {
         cookieHeader: String?,
         userAgent: String?,
         referer: String?,
+        proxyRule: String?,
     ): BrowserDownloadOutcome {
         val directory = File(
             Environment.getExternalStorageDirectory(),
@@ -63,7 +66,7 @@ internal object BrowserDownloader {
             }
             .build()
 
-        client.newCall(request).execute().use { response ->
+        clientWithProxy(proxyRule).newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("下载失败：服务端返回 HTTP ${response.code}")
             }
@@ -89,5 +92,17 @@ internal object BrowserDownloader {
                 httpStatus = response.code,
             )
         }
+    }
+
+    /**
+     * 代理是浏览器会话级状态：设置后下载与 WebView 走同一条网络路径，
+     * 避免出现"浏览器能打开、下载却直连失败"的分叉。
+     */
+    private fun clientWithProxy(proxyRule: String?): OkHttpClient {
+        val target = proxyRule?.let(BrowserProxyRules::parse) ?: return client
+        val type = if (target.scheme == "socks") Proxy.Type.SOCKS else Proxy.Type.HTTP
+        return client.newBuilder()
+            .proxy(Proxy(type, InetSocketAddress(target.host, target.port)))
+            .build()
     }
 }

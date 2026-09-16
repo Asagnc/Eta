@@ -10,8 +10,30 @@ import java.util.Locale
  * 带 scheme 的规范形式。
  */
 internal object BrowserProxyRules {
+    /** 供 OkHttp 使用的主机与端口；IPv6 在这里不带方括号，其余场景与规范化规则一致。 */
+    internal data class ProxyTarget(
+        val scheme: String,
+        val host: String,
+        val port: Int,
+    )
+
     private val HOST = Regex("[A-Za-z0-9._-]+")
     private val IPV6 = Regex("[0-9A-Fa-f:.]+")
+
+    fun parse(rule: String): ProxyTarget? {
+        val normalized = normalize(rule) ?: return null
+        val scheme = normalized.substringBefore("://")
+        val authority = normalized.substringAfter("://")
+        val host = authority.substringBeforeLast(':', authority).removeSurrounding("[", "]")
+        val port = authority.substringAfterLast(':', "").toIntOrNull() ?: defaultPort(scheme)
+        return ProxyTarget(scheme = scheme, host = host, port = port)
+    }
+
+    private fun defaultPort(scheme: String): Int = when (scheme) {
+        "https" -> 443
+        "socks" -> 1080
+        else -> 80
+    }
 
     fun normalize(raw: String): String? {
         val trimmed = raw.trim()
