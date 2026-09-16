@@ -137,7 +137,8 @@ internal object AgentPromptBuilder {
                         "async 后台命令是独立 shell，不要和 session_id 混用。不要调用 search_apps 查询“终端”或“Termux”。" +
                         "Eta 已内置终端，不要回答‘没有终端应用’或要求另装终端 App。" +
                         "读取图片内容必须调用 read_image。单张用 path，多张用 paths（一次最多 4 张）；" +
-                        "不要在同一个回合里并行发起多个 read_image 调用，需要更多图片时再发起下一次调用。"
+                        "read_image 不参与并发通道（一次解码多张大图的内存峰值高），同批多个调用会按顺序执行；" +
+                        "需要更多图片时再发起下一次调用。"
                 )
             )
         }

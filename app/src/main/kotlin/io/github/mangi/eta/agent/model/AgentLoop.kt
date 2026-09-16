@@ -468,7 +468,7 @@ internal class AgentLoop(
         round: Int,
         outcomes: List<ToolOutcome>,
     ) {
-        // 每个已完成结果立即落盘；图片观察仍统一放在完整工具批次之后。
+        // 工具结果消息按源码顺序统一追加；图片观察排在完整批次之后。
         val imageOutcomes = outcomes.filter { outcome -> outcome.result.images.isNotEmpty() }
         if (imageOutcomes.isEmpty()) {
             return
