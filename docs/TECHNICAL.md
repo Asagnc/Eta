@@ -163,7 +163,17 @@ Runtime 提示要求模型在用户目标会明显受益于本机上下文时主
 
 `browser_use` 是运行在 Eta 内的 Agent 浏览器，基于共享离屏 WebView，不是简单调用系统 `ACTION_VIEW`。它可以在不抢占前台的情况下加载 JavaScript 网页、提取保留标题/段落/列表/链接等结构的正文、查找并操作页面元素、提交表单、滚动和截图；用户想查看过程时，可在 App 中挂载同一个 WebView 直接接管。外部打开链接仍由独立的 `open_uri` 工具负责，两种能力不会混淆。
 
-Eta 不对浏览器请求执行额外的 URL、DNS、IP、主机数量、请求方法、重定向或 Service Worker 拦截，页面直接交给系统 WebView 加载。浏览器允许本地内容、混合内容、第三方 Cookie、自动媒体播放和表单提交；系统 WebView 与 Android 平台自身的协议支持、TLS 校验和权限行为保持不变。网页工具可在设置中关闭。
+Eta 不对浏览器请求执行额外的 URL、DNS、IP、主机数量、请求方法、重定向或 Service Worker 拦截，页面直接交给系统 WebView 加载。浏览器允许本地内容、混合内容、第三方 Cookie、自动媒体播放和表单提交；系统 WebView 与 Android 平台自身的协议支持与权限行为保持不变。网页工具可在设置中关闭。
+
+TLS 校验使用系统信任锚，并额外信任用户证书库里的 CA：抓包工具（如 mitmproxy）的证书只能装进用户证书库，不这样放宽就无法解密 HTTPS。这是浏览器相关改动里唯一一处信任边界放宽，且对 Eta 的全部 HTTPS 流量生效（不只是浏览器）；要恢复默认，删掉 `network_security_config.xml` 里 `<trust-anchors>` 的 `certificates src="user"` 即可。
+
+除读取与交互类动作外，`browser_use` 还提供：
+
+- `evaluate_js`：在页面里执行表达式并取回结果。表达式包在 async 函数里，因此可以写 `await`；结果经 JSON 序列化后按上限截断（默认 2000 字符，上限 2500）。结果先写到页面上的临时键、再由宿主轮询取回——`evaluateJavascript` 的返回值只覆盖同步结果，而页面跳转会让结果连同 JS 上下文一起失效（这种情况返回 `SCRIPT_RESULT_LOST`）。
+- 自定义 `user_agent` 与 `headers`：User-Agent 走 `WebSettings`（`loadUrl` 的附加请求头会被 WebView 自身的默认值覆盖），附加请求头只作用于本次导航的主文档请求，页面内的 XHR/fetch 不会带上。
+- `get_cookies` / `set_cookie`：基于 `CookieManager`。写入采用无回调形式再回读确认，因为写入回调投递到调用线程的 Looper，而工具线程没有 Looper。
+- `set_proxy` / `clear_proxy`：基于 `androidx.webkit` 的 `ProxyController`，是**进程级**设置，作用于 Eta 内所有 WebView，不改动系统代理；只在 Eta 进程存活期间有效，进程重启即失效。浏览器页有对应开关，当前规则显示在地址栏下方，也会出现在每次工具结果里。
+- `download`：用 OkHttp 取回文件，复用当前页面的 Cookie / User-Agent / Referer，并跟随当前代理；保存到公共下载目录的 `Download/Eta`，重名时追加序号而不覆盖。页面自己触发的下载（`Content-Disposition`）不会被静默丢弃，而是在工具结果里报一次 `download_requested`，由调用方决定是否取回。`blob:` / `data:` 地址需要先用 `evaluate_js` 取内容；写入公共下载目录依赖已授予的「所有文件访问」权限。
 
 ## 终端与文件
 

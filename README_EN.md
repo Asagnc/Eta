@@ -43,7 +43,7 @@ More screenshots: chat, system tools, and settings
 
 - **Direct system API calls:** use Android APIs and system intents to set alarms, control media, adjust volume, and read device status without navigating through app screens.
 - **GUI Agent:** combine the accessibility UI tree, element targeting, and screenshots taken as needed to tap, scroll, and type. An overlay shows execution status, and you can stop or take over.
-- **Built-in browser:** load JavaScript pages in a WebView, extract readable content, interact with the DOM, and capture screenshots. You can open the same browser session to take control.
+- **Built-in browser:** load JavaScript pages in a WebView, extract readable content, interact with the DOM, and capture screenshots. It can run custom JS expressions (async supported), override the User-Agent and request headers, and read or write cookies. The browser page has a proxy switch for handing traffic to a local capture tool, and downloads are saved to `Download/Eta` in the public Downloads folder. You can open the same browser session to take control.
 - **Terminal and files:** use Android `user`/`root` shells, Debian Linux, file operations, and scripts, with support for persistent sessions, asynchronous commands, and daemon tasks.
 
 A task can combine these tools: read web sources and then organize files with a script, or find order details in notifications and open the relevant app to check their status.
