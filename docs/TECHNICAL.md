@@ -212,6 +212,17 @@ rootfs 内文件归 root 所有，Linux 工具环境页还提供只读的文件�
 
 能力解析依次采用远端精确元数据、内置模型目录、Provider 与模型家族规则，最后安全降级。`Default` 保留供应商或高级自定义请求体的默认行为；显式档位在请求体合并完成后应用，因此会话选择是最终覆盖。Room、Runtime Bundle、RemotePreferences JSON 和外部归档同时保留旧 `thinkingEnabled` 布尔投影，旧 `true/false` 分别解释为 `Default/Off`；强制推理模型收到 `Off` 时直接报告配置错误。
 
+## 提示缓存与服务端上下文清理
+
+Anthropic Messages 请求按 Provider 开关附加两项服务端能力，都默认关闭：网关不认识这些字段时会直接返回 HTTP 400，而每轮请求先失败再重试的代价高于省下的成本。
+
+- **缓存提示**：开启后在请求体顶层写 `cache_control: {type: "ephemeral"}`，由服务端把缓存断点自动落在最后一个可缓存块上，并随对话增长自行前移，客户端不需要维护断点位置。默认 TTL 5 分钟；短于模型的最小可缓存长度（按模型在 512 到 4096 token 之间）时静默不缓存，也不报错。Anthropic 之外的通道不需要这个开关：OpenAI、DeepSeek、Gemini 都是服务端自动缓存，命中量分别经 `prompt_tokens_details.cached_tokens`、`prompt_cache_hit_tokens`、`total_cached_tokens` 回报，Eta 解析后写入会话记录。
+- **服务端上下文清理**：开启后在请求头合并 `anthropic-beta: context-management-2025-06-27`，与自定义的 `anthropic-beta` 合成单个值（重复的同名头会被部分网关丢弃）；请求体写 `context_management.edits` 的 `clear_tool_uses_20250919` 策略，输入超过 10 万 token 后服务端按时间顺序清理较早的工具结果、保留最近三次，客户端持有的历史不变。
+- 两项都不接入“上游点名拒收就自动去掉重试”的回退：省掉它们会改变模型看到的历史，不属于只影响优化的字段，被拒收时把服务端原文交给用户处理。
+- 与提示缓存的交互：thinking 块留在上下文里时缓存前缀可复用；清理工具结果或清 thinking 会使缓存前缀失效，官方建议用 `clear_at_least` 保证单次清理足够抵消失效成本。Eta 使用官方默认阈值，没有启用 thinking 清理。
+
+服务端上下文还有更新的一档能力：`compact-2026-01-12` 的阈值压缩与 `compact-2026-09-04` 的按需压缩。两者都要求把服务端返回的签名压缩块原样回传，前者在请求带工具时摘要步骤可能被工具调用打断，后者只支持 Claude API 上的新一代模型。Eta 已有客户端摘要，因此没有接入。
+
 ## 聊天流式渲染
 
 模型的 SSE 正文和思考增量先在 App 状态层按 50 ms 合并，减少高频列表状态写入；块边界和工具事件到达时先刷新待处理增量，事件顺序不变。Markdown 在后台串行解析，尚未开始的目标合并到最新全文；解析期间收到后续追加时，已完成的有效前缀快照仍会发布，避免高速输出持续挤掉显示更新。上游纠正全文时才丢弃不再适用的旧快照。输入器使用 state-based `TextFieldState` 在组件内持有编辑缓冲区，逐字编辑不会回写聊天页面状态，也不经过旧版 `CoreTextField` 管线。
