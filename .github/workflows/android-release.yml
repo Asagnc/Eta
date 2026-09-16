@@ -79,6 +79,10 @@ jobs:
             --tests "*OpenAiChatCompletionsProviderTest*" \
             --tests "*AgentToolRequirementsTest*" \
             --tests "*AgentToolCatalogTest*" \
+            --tests "*AgentToolSchemaContractTest*" \
+            --tests "*AgentRunStatsTest*" \
+            --tests "*SkillContentAuditTest*" \
+            --tests "*EvalToolSnapshotTest*" \
             --tests "*AgentTraceFormatterTest*" \
             --tests "*BrowserDomScriptsTest*" \
             --tests "*ProviderComponentsTest*"

@@ -1,0 +1,547 @@
+{
+  "generated_by": "EvalToolSnapshotTest：外部评测只使用这份快照，改动工具 Schema 时必须同步",
+  "version": 1,
+  "tools": [
+    {
+      "name": "get_current_context",
+      "description": "获取手机当前时间、时区和最近系统位置；涉及现在、今天、明天或所在位置时调用。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_current_location",
+      "description": "读取系统已有的最近位置，不持续监听或主动唤醒 GPS。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_health_summary",
+      "description": "汇总系统健康数据中的步数、睡眠、运动、心率、体重和血氧；不返回原始测量序列。",
+      "parameters": {
+        "type": "object",
+        "properties": {"days": {
+          "maximum": 30,
+          "description": "汇总最近天数，默认 7",
+          "type": "integer",
+          "minimum": 1
+        }}
+      }
+    },
+    {
+      "name": "get_logcat",
+      "description": "读取最近系统日志。query 只在已读取日志中做文本过滤，不会进入 Shell。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_lines": {
+            "maximum": 500,
+            "description": "最多日志行数，默认 200",
+            "type": "integer",
+            "minimum": 20
+          },
+          "query": {
+            "description": "可选过滤文本",
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    {
+      "name": "device_status",
+      "description": "读取电池、内存、存储、系统版本与开机时长。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "top_storage_apps",
+      "description": "按应用、数据与缓存合计列出存储占用最高的应用。",
+      "parameters": {
+        "type": "object",
+        "properties": {"limit": {
+          "maximum": 30,
+          "description": "最多返回数量，默认 10",
+          "type": "integer",
+          "minimum": 1
+        }}
+      }
+    },
+    {
+      "name": "search_apps",
+      "description": "搜索手机上已安装的 Android 应用，返回应用名和包名。打开应用前如果不确定包名，先调用这个工具。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_system": {
+            "description": "是否包含系统应用，默认 false",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "应用名或包名片段，例如 QQ、微信、com.tencent",
+            "type": "string"
+          },
+          "limit": {
+            "description": "最多返回 1 到 20 个结果，默认 10",
+            "type": "integer"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "launch_app",
+      "description": "启动一个已安装 Android 应用。优先提供 package_name；只有应用名时允许模糊匹配，匹配多个会返回候选而不会启动。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_name": {
+            "description": "应用显示名，例如 QQ",
+            "type": "string"
+          },
+          "package_name": {
+            "description": "精确 Android 包名，例如 com.tencent.mobileqq",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "读取文件内容。给定 start_line/end_line 时按行返回并带真实行号，适合定点查看大文件；否则按 offset_bytes/max_bytes 读取字节。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "offset_bytes": {
+            "description": "从第几个字节开始，默认 0。",
+            "type": "integer"
+          },
+          "start_line": {
+            "description": "按行读取的起始行号，从 1 开始；给定后忽略 offset_bytes。",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "description": "最多读取字节数，1 到 262144，默认 65536。",
+            "type": "integer"
+          },
+          "end_line": {
+            "description": "按行读取的结束行号；省略表示读到文件末尾。",
+            "type": "integer"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "edit_file",
+      "description": "用 old_text 精确替换文件内容，成功后返回改动差异。old_text 必须在文件中唯一命中，否则不修改文件并回报命中行号；改动局部内容时用它代替整文件重写。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "new_text": {
+            "description": "替换后的文本；传空字符串表示删除该段。",
+            "type": "string"
+          },
+          "old_text": {
+            "description": "待替换的原文，需与文件中文本完全一致，含缩进。",
+            "type": "string"
+          },
+          "replace_all": {
+            "description": "true 时替换全部命中；默认 false，只允许唯一命中。",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "old_text",
+          "new_text"
+        ]
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "文件或目录路径，默认 /data/local/tmp/eta。",
+            "type": "string"
+          },
+          "context_lines": {
+            "description": "每条匹配附带的上下文行数，0 到 5，默认 0。",
+            "type": "integer"
+          },
+          "pattern": {
+            "description": "扩展正则表达式（grep -E 语法），按单行内容匹配。",
+            "type": "string"
+          },
+          "glob": {
+            "description": "文件名过滤，例如 *.kt；省略表示不过滤。",
+            "type": "string"
+          },
+          "max_results": {
+            "description": "最多返回的匹配行数，1 到 500，默认 50。",
+            "type": "integer"
+          }
+        },
+        "required": ["pattern"]
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "列出 Android 目录内容。默认 /data/local/tmp/eta，输出类似 ls -l。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "show_hidden": {"type": "boolean"},
+          "limit": {
+            "description": "最多返回 1 到 200 行，默认 80。",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "terminal",
+      "description": "Manage terminal sessions on the current device. environment=android runs Android system commands and root operations; environment=linux runs the distribution selected in Eta settings, and environment=debian, ubuntu or kali runs that installed distribution directly. Apktool build is unavailable until an ARM64 AAPT2 runtime is installed. Use open_and_exec for one-shot commands. Use open to create a persistent shell session and exec with session_id for multi-step work. Use async=true without session_id for long-running independent commands, then read_async_result with job_id to stream output chunks. Use daemon_start for services that must keep running after the Agent run (listening ports, web panels, watchers): the process detaches from any command shell, logs to a file, and survives until daemon_stop or device reboot. Manage daemons with daemon_list, daemon_logs and daemon_stop by task_id. Use close to stop jobs or close sessions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset_chars": {
+            "description": "For read_async_result, read stdout from this character offset. Default 0.",
+            "type": "integer"
+          },
+          "max_chars": {
+            "description": "For read_async_result, maximum stdout characters to return. Default 8000, max 16000.",
+            "type": "integer"
+          },
+          "close_if_done": {
+            "description": "For read_async_result, remove the async job when it has completed.",
+            "type": "boolean"
+          },
+          "session_id": {
+            "description": "Session id returned by action=open. Use with exec or close.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Daemon task id returned by daemon_start. Use with daemon_logs or daemon_stop.",
+            "type": "string"
+          },
+          "command": {
+            "description": "Android shell command to execute. Required for exec/open_and_exec.",
+            "type": "string"
+          },
+          "cwd": {
+            "description": "Working directory. Defaults to /data/local/tmp/eta for android and /workspace for linux. Relative paths use the environment default. ~/ means /storage/emulated/0.",
+            "type": "string"
+          },
+          "async": {
+            "description": "Start command in a separate background shell and return immediately with job_id. Do not combine with session_id. Use read_async_result to stream output.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "android uses the native Android shell with BusyBox applets when available. linux uses the distribution selected in Eta settings; debian, ubuntu and kali target that distribution, which must be installed first. Default android.",
+            "type": "string",
+            "enum": [
+              "android",
+              "linux",
+              "debian",
+              "ubuntu",
+              "kali"
+            ]
+          },
+          "identity": {
+            "description": "宿主执行身份。Android 默认使用当前可用身份；Linux 根据已选择的后端使用 user 或 root。PRoot 内模拟 root 不授予 Android 特权。",
+            "type": "string",
+            "enum": [
+              "user",
+              "root"
+            ]
+          },
+          "job_id": {
+            "description": "Async job id returned when async=true. Use with read_async_result or close.",
+            "type": "string"
+          },
+          "action": {
+            "description": "open creates a session. exec runs command in a session or cwd. open_and_exec runs a one-shot command. read_async_result reads async output by job_id. close closes a session_id or job_id. daemon_start launches a detached long-lived service and returns task_id. daemon_list lists daemon tasks with liveness. daemon_logs tails a task log. daemon_stop terminates and removes a task. tasks_list lists every live session, async job and daemon task in one call.",
+            "type": "string",
+            "enum": [
+              "open",
+              "exec",
+              "open_and_exec",
+              "read_async_result",
+              "close",
+              "daemon_start",
+              "daemon_list",
+              "daemon_logs",
+              "daemon_stop",
+              "tasks_list"
+            ]
+          },
+          "merge_stderr": {
+            "description": "Whether stderr should be appended to stdout in command responses.",
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "description": "Command timeout in milliseconds. Default 30000, max 600000. The command is terminated once it expires; use a daemon task for long-running services.",
+            "type": "integer"
+          }
+        },
+        "required": ["action"]
+      }
+    },
+    {
+      "name": "observe_screen",
+      "description": "观察当前手机屏幕，默认只返回前台应用、屏幕尺寸、observation_id 与可见 UI 节点，不附截图。节点为空、目标无法唯一识别、界面以 Canvas/地图/图片/二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，显式设置 include_screenshot=true；补截图时保持 include_ui_tree=true，以同一次新观察刷新节点和 observation_id，禁止把新截图与旧节点混用。节点动作必须原样携带同一次观察的 observation_id；树被截断但节点语义仍有效时，优先把 max_nodes 提高到 120 后重试，不要仅因截断请求截图。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_ui_tree": {
+            "default": true,
+            "description": "是否返回 UI 节点列表，默认 true",
+            "type": "boolean"
+          },
+          "include_screenshot": {
+            "default": false,
+            "description": "是否附加当前屏幕原图给模型，默认 false；仅在 UI 节点不足以完成任务时显式开启",
+            "type": "boolean"
+          },
+          "max_nodes": {
+            "default": 60,
+            "maximum": 120,
+            "description": "最多返回 1 到 120 个 UI 节点，默认 60",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "tap_element",
+      "description": "点击指定观察快照中的 UI 节点。index 与 observation_id 必须来自同一次最近的 observe_screen；若观察已过期，先重新观察。Runtime 会在执行前确认 Eta 无障碍服务已经连接。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "observation_id": {
+            "description": "与 index 来自同一次最近 observe_screen 的 observation_id。",
+            "type": "string"
+          },
+          "index": {
+            "description": "同一次 observe_screen 返回的 UI 节点 index。",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index",
+          "observation_id"
+        ]
+      }
+    },
+    {
+      "name": "read_image",
+      "description": "读取用户指定路径或系统相册 URI 中的图片，并作为视觉输入提供给模型。单张用 path，多张用 paths（一次最多 4 张）；需要更多时再发起下一次调用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "任意绝对图片路径、file URI 或系统相册 content URI；本机路径由 Root 读取",
+            "type": "string",
+            "maxLength": 1024
+          },
+          "paths": {
+            "maxItems": 4,
+            "description": "一次读取多张图片时使用，按顺序读取；与 path 同时给出时以 paths 为准。",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "wait_for_text",
+      "description": "等待当前屏幕出现指定文本或描述，适合点击后确认页面已到达、列表加载完成、弹窗出现。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match": {
+            "description": "匹配方式，默认 contains。",
+            "type": "string",
+            "enum": [
+              "contains",
+              "exact",
+              "prefix",
+              "regex"
+            ]
+          },
+          "text": {"type": "string"},
+          "timeout_ms": {
+            "description": "最长等待时间，500 到 60000，默认 10000。",
+            "type": "integer"
+          },
+          "include_desc": {
+            "description": "是否匹配 content-desc，默认 true。",
+            "type": "boolean"
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "open_uri",
+      "description": "把一个确定有效的 URI 显式交给 Android 外部应用处理，例如 https、tel、geo 或应用 deep link。它不用于读取网页或网页交互。不要编造 URI。",
+      "parameters": {
+        "type": "object",
+        "properties": {"uri": {
+          "description": "确定有效、可由系统处理的 URI",
+          "type": "string"
+        }},
+        "required": ["uri"]
+      }
+    },
+    {
+      "name": "memory_get",
+      "description": "Read persistent cross-conversation memory from MEMORY.md. Core memory and the heading index are already provided at run start, so call this only to inspect details, answer what is remembered, or refresh after a conflict. Use query for just-in-time retrieval instead of reading the whole file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_chars": {
+            "maximum": 32000,
+            "description": "Maximum returned characters; default 12000, maximum 32000.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "query": {
+            "description": "Optional case-insensitive text to search for in the full memory file.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "start_line": {
+            "description": "1-based first line for paged reading when query is omitted; default 1.",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "skills_list",
+      "description": "List installed skills with their id, name, description, and capabilities. Use when the user asks what skills are available or whether a certain type of skill is installed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Optional keyword to filter by skill id, name, or description.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max results to return, 1-200, default 50.",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "skills_read",
+      "description": "Read the full SKILL.md body of an installed skill by id, name, or path. Use when you know a skill might be relevant but its full body was not injected this turn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "description": "The skill's id, name, or SKILL.md path. Use skills_list first if unsure.",
+            "type": "string"
+          },
+          "maxChars": {
+            "description": "Max characters of body to return, 512-64000, default 16000.",
+            "type": "integer"
+          }
+        },
+        "required": ["skillId"]
+      }
+    },
+    {
+      "name": "skills_run",
+      "description": "执行 Skill 在 SKILL.md frontmatter 里声明的 command（例如 command: bash scripts/build.sh）。脚本与 SKILL.md 正文都不会进入上下文，只返回命令输出；执行前按 requires 预检环境。需要已启用终端工具；未声明 command 的 Skill 改用 skills_read 按文档手工执行。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "description": "Installed Skill id, name, or SKILL.md path.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "arguments": {
+            "description": "附加到声明命令末尾的参数串，由该环境的 Shell 解析；默认空。",
+            "type": "string",
+            "maxLength": 1000
+          },
+          "timeout_seconds": {
+            "maximum": 600,
+            "description": "命令超时秒数，1-600；未提供时用 frontmatter 的 timeout_seconds，仍缺省为 300。",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": ["skillId"]
+      }
+    },
+    {
+      "name": "task_plan",
+      "description": "维护当前任务清单。需要多个步骤才能完成的任务先用它列出计划，每开始一步把它标为 in_progress、确认完成后标为 completed；简单的一两步任务不需要清单。每次调用提交完整清单，不是增量修改。同一时间只能有一项 in_progress。",
+      "parameters": {
+        "type": "object",
+        "properties": {"todos": {
+          "description": "当前完整任务清单；传空数组表示清空。",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "description": "稳定标识，例如 inspect-project；同一任务复用同一 id。",
+                "type": "string"
+              },
+              "content": {
+                "description": "可执行、可验证的具体步骤，不要写成空泛目标。",
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "content",
+              "status"
+            ]
+          }
+        }},
+        "required": ["todos"]
+      }
+    },
+    {
+      "name": "run_stats",
+      "description": "读取本次 run 的度量汇总：轮次数、按工具分类的调用次数与失败数、耗时、并发批次数与 token 用量。用于自查这次任务是否低效（例如同一工具反复调用）。没有参数。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}
