@@ -601,6 +601,81 @@ internal object BrowserDomScripts {
         return { done: true, payload: String(payload) };
         """.trimIndent()
 
+    /**
+     * 文档开始即执行的脚本：给页面自己发出的 fetch/XHR 加上同一批请求头。
+     *
+     * 只处理与文档同源的请求：自定义头会让跨源请求从简单请求变成需要预检，硬加容易把页面弄坏。
+     * 这是独立注入的脚本（不经 wrap），返回值为空。
+     */
+    fun documentStartHeaders(headers: Map<String, String>): String {
+        val encoded = buildString {
+            append('{')
+            headers.entries.forEachIndexed { index, entry ->
+                if (index > 0) append(',')
+                append(JSONObject.quote(entry.key)).append(':').append(JSONObject.quote(entry.value))
+            }
+            append('}')
+        }
+        return """
+        (function() {
+          var HEADERS = $encoded;
+          var NAMES = Object.keys(HEADERS);
+          if (NAMES.length === 0) return;
+
+          function sameOrigin(url) {
+            try {
+              return new URL(String(url), document.baseURI).origin === window.location.origin;
+            } catch (error) {
+              return false;
+            }
+          }
+
+          function applyTo(headers) {
+            for (var index = 0; index < NAMES.length; index++) {
+              try {
+                headers.set(NAMES[index], HEADERS[NAMES[index]]);
+              } catch (error) {
+              }
+            }
+          }
+
+          var originalFetch = window.fetch;
+          if (typeof originalFetch === 'function') {
+            window.fetch = function(input, init) {
+              var url = typeof input === 'string' ? input : (input && input.url) || '';
+              if (sameOrigin(url)) {
+                var next = init ? Object.assign({}, init) : {};
+                var source = next.headers || (input && input.headers) || undefined;
+                var headers = new Headers(source);
+                applyTo(headers);
+                next.headers = headers;
+                return originalFetch.call(this, input, next);
+              }
+              return originalFetch.call(this, input, init);
+            };
+          }
+
+          var originalOpen = XMLHttpRequest.prototype.open;
+          var originalSend = XMLHttpRequest.prototype.send;
+          XMLHttpRequest.prototype.open = function(method, url) {
+            this.__etaHeaderUrl = url;
+            return originalOpen.apply(this, arguments);
+          };
+          XMLHttpRequest.prototype.send = function() {
+            if (sameOrigin(this.__etaHeaderUrl || '')) {
+              for (var index = 0; index < NAMES.length; index++) {
+                try {
+                  this.setRequestHeader(NAMES[index], HEADERS[NAMES[index]]);
+                } catch (error) {
+                }
+              }
+            }
+            return originalSend.apply(this, arguments);
+          };
+        })();
+        """.trimIndent()
+    }
+
     private fun targeted(selector: String?, x: Int?, y: Int?): String {
         val selectorLiteral = selector?.let(JSONObject::quote) ?: "null"
         val xLiteral = x?.toString() ?: "null"

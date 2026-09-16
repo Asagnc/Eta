@@ -60,7 +60,7 @@ internal object AgentBrowserToolCatalog {
                                 JSONObject()
                                     .put("type", "object")
                                     .put("additionalProperties", JSONObject().put("type", "string"))
-                                    .put("description", "navigate 时附加的请求头，只作用于本次导航的主文档请求，页面内的 XHR/fetch 不会带上。")
+                                    .put("description", "navigate 时附加的请求头：本次导航的主文档请求一定带上；WebView 支持文档开始注入时，页面自己发出的同源 fetch/XHR 也会带上（跨源不加，自定义头会触发预检）。")
                             )
                             .put(
                                 "cookie",

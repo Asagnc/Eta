@@ -26,6 +26,8 @@ import android.webkit.WebViewClient
 import androidx.core.graphics.createBitmap
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
+import androidx.webkit.ScriptHandler
+import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -184,6 +186,9 @@ internal object AgentBrowserSession {
 
     @Volatile
     private var lastReadMark: BrowserReadMark? = null
+
+    @Volatile
+    private var headerScript: ScriptHandler? = null
 
     fun initialize(context: Context) {
         if (appContext == null) {
@@ -476,6 +481,7 @@ internal object AgentBrowserSession {
                     WebSettings.getDefaultUserAgent(view.context)
                 }
             }
+            applyHeaderScriptOnMain(view, headers)
             if (headers == null) view.loadUrl(rawUrl) else view.loadUrl(rawUrl, headers)
         }
 
@@ -952,6 +958,25 @@ internal object AgentBrowserSession {
         return selector
     }
 
+    /**
+     * 把这一批请求头装进文档开始脚本，让页面自己发出的同源 fetch/XHR 也带上；没有请求头时移除，
+     * 保持“请求头只对本次导航生效”的语义。WebView 不支持文档开始注入时静默跳过，此时只有主文档请求带请求头。
+     */
+    private fun applyHeaderScriptOnMain(view: WebView, headers: Map<String, String>?) {
+        val previous = headerScript
+        headerScript = null
+        if (previous != null) runCatching { previous.remove() }
+        if (headers.isNullOrEmpty()) return
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        headerScript = runCatching {
+            WebViewCompat.addDocumentStartJavaScript(
+                view,
+                BrowserDomScripts.documentStartHeaders(headers),
+                setOf("*"),
+            )
+        }.getOrNull()
+    }
+
     private fun customHeaders(args: JSONObject): Map<String, String>? {
         val raw = args.optJSONObject("headers") ?: return null
         if (raw.length() == 0) return null
@@ -1078,6 +1103,8 @@ internal object AgentBrowserSession {
     }
 
     private fun destroyWebViewOnMain() {
+        headerScript?.let { handler -> runCatching { handler.remove() } }
+        headerScript = null
         val view = webView ?: return
         (view.parent as? ViewGroup)?.removeView(view)
         runCatching { view.stopLoading() }
