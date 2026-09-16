@@ -528,7 +528,12 @@ internal class AgentLocalTools(
         if (node == null) {
             return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
         }
-        val result = deviceController.tapElement(observation, index)
+        var result = deviceController.tapElement(observation, index)
+        if (result.isStaleContent()) {
+            retryStaleElementAction(node) { refreshed, retryIndex ->
+                deviceController.tapElement(refreshed, retryIndex)
+            }?.let { retried -> result = retried }
+        }
         if (result.isOkJson()) {
             AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.TAP)
             showTap(node.centerX, node.centerY)
@@ -544,7 +549,12 @@ internal class AgentLocalTools(
         if (node == null) {
             return errorResult("INVALID_NODE_INDEX", "观察快照中不存在节点 index=$index")
         }
-        val result = deviceController.longPressElement(observation, index, durationMs)
+        var result = deviceController.longPressElement(observation, index, durationMs)
+        if (result.isStaleContent()) {
+            retryStaleElementAction(node) { refreshed, retryIndex ->
+                deviceController.longPressElement(refreshed, retryIndex, durationMs)
+            }?.let { retried -> result = retried }
+        }
         if (result.isOkJson()) {
             AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.LONG_PRESS)
             showLongPress(node.centerX, node.centerY, durationMs)
@@ -614,11 +624,26 @@ internal class AgentLocalTools(
 
     private fun scrollElement(args: JSONObject): String {
         val observation = requireElementObservation(args) ?: return observationError(args)
-        return deviceController.scrollElement(
+        val index = args.optInt("index", -1)
+        val direction = args.optString("direction")
+        val result = deviceController.scrollElement(
             observation = observation,
-            index = args.optInt("index", -1),
-            direction = args.optString("direction")
+            index = index,
+            direction = direction
         )
+        if (result.isStaleContent()) {
+            val node = observation.nodes.firstOrNull { it.index == index }
+            if (node != null) {
+                retryStaleElementAction(node) { refreshed, retryIndex ->
+                    deviceController.scrollElement(
+                        observation = refreshed,
+                        index = retryIndex,
+                        direction = direction
+                    )
+                }?.let { return it }
+            }
+        }
+        return result
     }
 
     private fun inputText(args: JSONObject): String {
@@ -922,6 +947,41 @@ internal class AgentLocalTools(
 
     private fun String.normalized(): String =
         trim().lowercase(Locale.ROOT)
+
+    private fun String.isStaleContent(): Boolean =
+        !isOkJson() && jsonErrorCode() == STALE_CONTENT_CODE
+
+    private fun String.jsonErrorCode(): String? = runCatching {
+        JSONObject(this).optString("code").ifBlank { null }
+    }.getOrNull()
+
+    /**
+     * 节点动作因窗口内容变化被拒时，用原节点的 viewId / 文本 / 描述在新快照里找回同一个
+     * 控件并重试一次。被拒表示动作没有执行，重试不会造成重复操作；找不到等价节点或重试仍
+     * 失败时不返回结果，交给调用方把原始错误报给模型。
+     */
+    private fun retryStaleElementAction(
+        staleNode: RootShellDeviceController.UiNode,
+        action: (observation: RootShellDeviceController.ElementObservation, index: Int) -> String,
+    ): String? {
+        if (staleNode.viewId.isBlank() && staleNode.text.isBlank() && staleNode.desc.isBlank()) return null
+        val refreshed = runCatching {
+            deviceController.observe(includeScreenshot = false, includeUiTree = true, maxNodes = 120)
+                .elementObservation
+        }.getOrNull() ?: return null
+        val candidate = refreshed.nodes.firstOrNull { it.matchesSemanticsOf(staleNode) } ?: return null
+        val retried = runCatching { action(refreshed, candidate.index) }.getOrNull() ?: return null
+        return retried.takeIf { it.isOkJson() }
+    }
+
+    private fun RootShellDeviceController.UiNode.matchesSemanticsOf(
+        other: RootShellDeviceController.UiNode,
+    ): Boolean {
+        if (viewId.isNotBlank() && viewId == other.viewId) return true
+        if (text.isNotBlank() && text == other.text && className == other.className) return true
+        if (desc.isNotBlank() && desc == other.desc) return true
+        return false
+    }
 
     private fun String.isOkJson(): Boolean =
         runCatching { JSONObject(this).optBoolean("ok", false) }.getOrDefault(false)
@@ -1499,3 +1559,5 @@ internal class AgentLocalTools(
 
 private const val MAX_SEQUENCE_STEPS = 12
 private const val SEQUENCE_RESULT_CHARS = 200
+
+private const val STALE_CONTENT_CODE = "STALE_CONTENT"
