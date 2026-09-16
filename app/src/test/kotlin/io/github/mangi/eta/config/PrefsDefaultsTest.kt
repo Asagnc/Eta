@@ -40,6 +40,7 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 4,
                 Prefs.Keys.AGENT_TOOL_RESULT_KEEP to 6,
                 Prefs.Keys.AGENT_CONTEXT_NOTICE_PERCENT to 60,
+                Prefs.Keys.AGENT_PERMISSION_MODE to 0,
             ),
             Prefs.Keys.INT_DEFAULTS,
         )

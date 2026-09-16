@@ -92,7 +92,6 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
             AGENT_THINKING_ENABLED,
             AGENT_SUBAGENTS_ENABLED,
-            AGENT_PERMISSION_MODE,
         )
     }
 

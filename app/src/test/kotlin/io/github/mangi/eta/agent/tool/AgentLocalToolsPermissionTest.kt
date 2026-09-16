@@ -24,7 +24,7 @@ class AgentLocalToolsPermissionTest {
         val root = AtomicBoolean(true)
         val tools = tools(
             rootAvailable = root::get,
-            beforeToolExecution = { error("缺少 Root 的旧调用不应进入执行阶段") },
+            beforeToolExecution = { _, _ -> error("缺少 Root 的旧调用不应进入执行阶段") },
         )
         root.set(false)
         listOf(
@@ -108,7 +108,7 @@ class AgentLocalToolsPermissionTest {
     @Test
     fun foregroundToolIsRejectedWhenEntrySurfaceIsNotReady() {
         val tools = tools(
-            beforeToolExecution = {
+            beforeToolExecution = { _, _ ->
                 ToolExecutionDecision.Reject(
                     code = "ENTRY_SURFACE_NOT_READY",
                     message = "入口窗口尚未确认关闭",
@@ -131,7 +131,7 @@ class AgentLocalToolsPermissionTest {
     @Test
     fun foregroundToolPropagatesAccessibilityGateFailure() {
         val tools = tools(
-            beforeToolExecution = {
+            beforeToolExecution = { _, _ ->
                 ToolExecutionDecision.Reject(
                     code = "ACCESSIBILITY_PROTECTION_UNAVAILABLE",
                     message = "无障碍保护后端不可用",
@@ -262,7 +262,7 @@ class AgentLocalToolsPermissionTest {
         screenObservationProvider: (
             (AgentScreenObservationContract.Options) -> RootShellDeviceController.Observation
         )? = null,
-        beforeToolExecution: (String) -> ToolExecutionDecision = {
+        beforeToolExecution: (String, JSONObject) -> ToolExecutionDecision = { _, _ ->
             ToolExecutionDecision.Allow
         },
     ): AgentLocalTools =
