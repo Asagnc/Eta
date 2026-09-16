@@ -22,13 +22,14 @@ internal class AgentModelRetry(
     ): Result {
         var round = initialRound
         var retries = 0
+        var activeRequest = request
         while (true) {
             controller.throwIfCancelled()
             onEvent(AgentEvent.RoundStarted(round, request.messages.length()))
             var hostedToolStarted = false
             var callbackFailed = false
             try {
-                val response = provider.complete(request, controller) { event ->
+                val response = provider.complete(activeRequest, controller) { event ->
                     if (event is ProviderEvent.HostedToolStarted) hostedToolStarted = true
                     try {
                         onProviderEvent(round, event)
@@ -45,6 +46,15 @@ internal class AgentModelRetry(
                 if (hostedToolStarted) throw AgentModelFailure(
                     classified.code, false, classified.message.orEmpty(), classified, recoveryAllowed = false,
                 )
+                val droppable = classified.droppableField()
+                if (droppable != null && droppable !in activeRequest.dropFields) {
+                    // 上游点名拒收某个语义冗余的字段：去掉它再试一次，不占用瞬时错误的重试预算。
+                    onEvent(AgentEvent.ModelRetryScheduled(round, retries + 1, MAX_RETRIES, 0, classified.code))
+                    activeRequest = activeRequest.copy(dropFields = activeRequest.dropFields + droppable)
+                    discardAttemptReasoning()
+                    round += 1
+                    continue
+                }
                 if (!classified.retryable) throw classified
                 if (retries == MAX_RETRIES) {
                     throw AgentModelFailure(

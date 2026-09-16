@@ -38,12 +38,20 @@ internal enum class ProviderRequestPurpose {
     val allowsTools: Boolean get() = this == CHAT
 }
 
+/** 去掉上游点名拒收的字段；返回自身以便串在构建链上。 */
+internal fun JSONObject.dropRejectedFields(fields: Set<String>): JSONObject {
+    fields.forEach { name -> if (name.isNotBlank()) remove(name) }
+    return this
+}
+
 internal data class ProviderRequest(
     val config: AgentModelClient.ModelConfig,
     val messages: JSONArray,
     val tools: JSONArray,
     val sessionId: String = java.util.UUID.randomUUID().toString(),
     val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
+    /** 上游点名拒收、且省略后不改变模型行为的字段；重试时从请求体里去掉。 */
+    val dropFields: Set<String> = emptySet(),
 ) {
     val effectiveConfig: AgentModelClient.ModelConfig get() = if (!purpose.allowsTools) {
         config.copy(hostedWebSearchEnabled = false, extraBodyJson = "", customBody = emptyList())

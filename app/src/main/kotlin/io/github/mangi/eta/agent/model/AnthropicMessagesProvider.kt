@@ -48,6 +48,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .headers(headers)
             .post(
                 buildRequestJson(config, request.messages, request.effectiveTools)
+                    .dropRejectedFields(request.dropFields)
                     .toString()
                     .toRequestBody(JSON_MEDIA_TYPE)
             )

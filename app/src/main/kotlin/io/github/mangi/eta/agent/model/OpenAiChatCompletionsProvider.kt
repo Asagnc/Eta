@@ -54,6 +54,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
                 remove("tools")
                 remove("tool_choice")
             }
+            dropRejectedFields(request.dropFields)
         }
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)

@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ProtocolException
+import java.util.Locale
 import javax.net.ssl.SSLException
 
 /** Provider 边界只分类失败；重试预算与上下文由 Loop 持有。 */
@@ -14,8 +15,39 @@ internal class AgentModelFailure(
     cause: Throwable? = null,
     val recoveryAllowed: Boolean = true,
 ) : IllegalStateException(message, cause) {
+    /**
+     * 上游点名拒收、且省略后不改变模型行为的字段。只认这些：省略它们只影响优化或统计，
+     * 不会改变推理深度、工具集合或用户自定义内容，所以可以自动重试；其它字段一律交回用户处理。
+     */
+    fun droppableField(): String? {
+        val text = message.orEmpty()
+        if (code.uppercase(Locale.ROOT) in TOOL_CHOICE_CODES) return "tool_choice"
+        val named = REJECTED_FIELD_PATTERNS.firstNotNullOfOrNull { pattern ->
+            pattern.find(text)?.groupValues?.getOrNull(1)
+        } ?: return null
+        val normalized = named.lowercase(Locale.ROOT)
+        return normalized.takeIf { it in DROPPABLE_FIELDS }
+    }
+
     companion object {
         private val transientStatus = setOf(408, 429, 500, 502, 503, 504, 524, 529)
+        private val TOOL_CHOICE_CODES = setOf(
+            "TOOL_CHOICE_NOT_SUPPORTED",
+            "MODEL_TOOL_CHOICE_NOT_SUPPORTED",
+        )
+        private val DROPPABLE_FIELDS = setOf(
+            "tool_choice",
+            "stream_options",
+            "parallel_tool_calls",
+            "prompt_cache_key",
+        )
+        private val REJECTED_FIELD_PATTERNS = listOf(
+            Regex("""未知(?:请求)?字段[：:\s]+([A-Za-z0-9_.-]+)"""),
+            Regex("""不支持(?:的)?(?:参数|字段)[：:\s]+([A-Za-z0-9_.-]+)"""),
+            Regex("""unknown field[：:\s]+["']?([A-Za-z0-9_.-]+)""", RegexOption.IGNORE_CASE),
+            Regex("""unrecognized (?:request )?(?:argument|field)[^:：]*[：:]\s*["']?([A-Za-z0-9_.-]+)""", RegexOption.IGNORE_CASE),
+            Regex("""unsupported (?:parameter|field)[^:：]*[：:]\s*["']?([A-Za-z0-9_.-]+)""", RegexOption.IGNORE_CASE),
+        )
         private val permanentCodes = setOf(
             "insufficient_quota", "quota_exceeded", "billing_error", "usage_limit_reached",
         )
