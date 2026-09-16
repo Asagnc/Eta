@@ -27,7 +27,7 @@ internal object AgentToolRequirements {
         register(
             RootRequirement.NONE,
             "get_current_context", "search_apps", "launch_app", "open_uri", "browser_use",
-            "run_sequence",
+            "run_sequence", "save_flow", "use_flow",
             "observe_screen", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "drag", "scroll", "scroll_element", "input_text",
             "replace_text", "clear_text", "set_clipboard", "get_clipboard", "paste_text",
@@ -57,7 +57,7 @@ internal object AgentToolRequirements {
             "search_qq_chat_images", "search_wechat_chat_images",
         )
         listOf(
-            "run_sequence",
+            "run_sequence", "use_flow",
             "observe_screen", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "drag", "scroll", "scroll_element", "input_text",
             "replace_text", "clear_text", "paste_text", "press_key", "open_system_panel",

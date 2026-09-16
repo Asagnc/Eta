@@ -227,7 +227,7 @@ internal object AgentGestureToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "run_sequence",
-                    description = "按顺序执行一组屏幕操作，一次调用覆盖多步、减少模型往返。每个 step 用对应工具的入参表达：{action: 'tap_element', index, observation_id}、{action: 'input', text}、{action: 'replace', text}、{action: 'press', button}、{action: 'wait', duration_ms}、{action: 'wait_text', text, timeout_ms}、{action: 'swipe', x1, y1, x2, y2}、{action: 'scroll', direction}。任何一步失败立即停止，返回 failed_step、已执行步骤与当前屏幕摘要；只放确定性步骤，需要现场判断的分支操作不要放进序列。",
+                    description = "按顺序执行一组屏幕操作，一次调用覆盖多步、减少模型往返。每个 step 用对应工具的入参表达：{action: 'tap_element', index, observation_id}、{action: 'tap_text', text}（按可见文本点击，适合流程复用）、{action: 'input', text}、{action: 'replace', text}、{action: 'press', button}、{action: 'wait', duration_ms}、{action: 'wait_text', text, timeout_ms}、{action: 'swipe', x1, y1, x2, y2}、{action: 'scroll', direction}。任何一步失败立即停止，返回 failed_step、已执行步骤与当前屏幕摘要；只放确定性步骤，需要现场判断的分支操作不要放进序列。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -268,6 +268,36 @@ internal object AgentGestureToolCatalog {
                                 )
                         )
                         .put("required", JSONArray().put("steps"))
+                )
+            )
+            .put(
+                AgentToolSchema.function(
+                    name = "save_flow",
+                    description = "把一组稳定的屏幕操作保存为流程，供以后同类任务直接复用。steps 只允许语义化动作（tap_text/input/replace/clear/press/wait/wait_text/wait_package/swipe/scroll），不允许带 index/observation_id。只有确定会重复的操作才保存。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("name", JSONObject().put("type", "string").put("description", "流程名，仅字母数字 _-，不超过 80 字符"))
+                                .put("description", JSONObject().put("type", "string").put("description", "用途说明，帮助下次匹配"))
+                                .put("steps", JSONObject().put("type", "array").put("description", "语义化步骤数组，与 run_sequence 的 steps 相同但只允许语义动作"))
+                        )
+                        .put("required", JSONArray().put("name").put("steps"))
+                )
+            )
+            .put(
+                AgentToolSchema.function(
+                    name = "use_flow",
+                    description = "按名称执行已保存的流程，一次完成整段操作；找不到流程或执行失败时返回错误并附当前屏幕。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("name", JSONObject().put("type", "string").put("description", "已保存的流程名"))
+                        )
+                        .put("required", JSONArray().put("name"))
                 )
             )
     }

@@ -177,6 +177,8 @@ internal class AgentLocalTools(
                 "browser_use" -> browserUse(args, toolCall.id)
                 "observe_screen" -> observeScreen(args)
                 "run_sequence" -> textResult(runSequence(args))
+                "save_flow" -> textResult(saveFlow(args))
+                "use_flow" -> textResult(useFlow(args))
                 "tap" -> textResult(tap(args))
                 "tap_area" -> textResult(tapArea(args))
                 "tap_element" -> textResult(tapElement(args))
@@ -443,10 +445,84 @@ internal class AgentLocalTools(
             .toString()
     }
 
+    private fun sequenceTapText(args: JSONObject): String {
+        val text = args.optString("text")
+        if (text.isBlank()) return errorResult("INVALID_ARGUMENT", "tap_text 需要 text 参数")
+        val observation = runCatching {
+            deviceController.observe(includeScreenshot = false, includeUiTree = true, maxNodes = 120)
+        }.getOrElse { return errorResult("OBSERVATION_UNAVAILABLE", "无法获取当前屏幕") }
+        val element = observation.elementObservation
+            ?: return errorResult("OBSERVATION_UNAVAILABLE", "无法获取当前屏幕节点")
+        val match = element.nodes.firstOrNull { it.text == text }
+            ?: element.nodes.firstOrNull { it.desc == text }
+            ?: element.nodes.firstOrNull { it.text.isNotBlank() && it.text.contains(text) }
+            ?: return errorResult("NODE_NOT_FOUND", "屏幕中没有找到文本「$text」")
+        publishedObservation.set(
+            PublishedObservation(elements = element, coordinateSpace = observation.coordinateSpace)
+        )
+        return tapElement(
+            JSONObject()
+                .put("index", match.index)
+                .put("observation_id", element.id)
+        )
+    }
+
+    private fun flowsDir(): java.io.File =
+        java.io.File(context.filesDir, "agent_flows").apply { mkdirs() }
+
+    private fun saveFlow(args: JSONObject): String {
+        val name = args.optString("name").trim()
+        if (name.isBlank() || name.length > 80 || !name.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+            return errorResult("INVALID_ARGUMENT", "name 必填，仅允许字母数字 _-，不超过 80 字符")
+        }
+        val steps = args.optJSONArray("steps") ?: return errorResult("INVALID_ARGUMENT", "steps 不能为空")
+        if (steps.length() == 0 || steps.length() > MAX_SEQUENCE_STEPS) {
+            return errorResult("INVALID_ARGUMENT", "steps 数量需在 1..$MAX_SEQUENCE_STEPS 之间")
+        }
+        for (i in 0 until steps.length()) {
+            val step = steps.optJSONObject(i) ?: return errorResult("INVALID_ARGUMENT", "steps[$i] 必须是对象")
+            val action = step.optString("action")
+            if (action !in FLOW_SAFE_ACTIONS) {
+                return errorResult(
+                    "INVALID_ARGUMENT",
+                    "流程只允许语义化动作：tap_text/input/replace/clear/press/wait/wait_text/wait_package/swipe/scroll",
+                )
+            }
+            if (step.has("index") || step.has("observation_id")) {
+                return errorResult(
+                    "INVALID_ARGUMENT",
+                    "steps[$i] 不能包含 index/observation_id，流程里请用 tap_text 按文本点击",
+                )
+            }
+        }
+        val flow = JSONObject()
+            .put("name", name)
+            .put("description", args.optString("description"))
+            .put("created_at", System.currentTimeMillis())
+            .put("steps", steps)
+        runCatching { java.io.File(flowsDir(), "$name.json").writeText(flow.toString()) }
+            .onFailure { throwable ->
+                return errorResult("FLOW_SAVE_FAILED", "保存流程失败：${throwable.javaClass.simpleName}")
+            }
+        return "已保存流程 $name（${steps.length()} 步）"
+    }
+
+    private fun useFlow(args: JSONObject): String {
+        val name = args.optString("name").trim()
+        if (name.isBlank()) return errorResult("INVALID_ARGUMENT", "name 不能为空")
+        val file = java.io.File(flowsDir(), "$name.json")
+        if (!file.exists()) return errorResult("FLOW_NOT_FOUND", "未找到流程 $name，可先用 save_flow 保存")
+        val flow = runCatching { JSONObject(file.readText()) }
+            .getOrElse { return errorResult("FLOW_LOAD_FAILED", "流程文件损坏") }
+        val steps = flow.optJSONArray("steps") ?: return errorResult("FLOW_LOAD_FAILED", "流程缺少 steps")
+        return runSequence(JSONObject().put("steps", steps))
+    }
+
     private fun dispatchSequenceStep(action: String, args: JSONObject): String = when (action) {
         "tap" -> tap(args)
         "tap_area" -> tapArea(args)
         "tap_element" -> tapElement(args)
+        "tap_text" -> sequenceTapText(args)
         "long_press" -> longPress(args)
         "swipe" -> swipe(args)
         "drag" -> drag(args)
@@ -1561,3 +1637,8 @@ private const val MAX_SEQUENCE_STEPS = 12
 private const val SEQUENCE_RESULT_CHARS = 200
 
 private const val STALE_CONTENT_CODE = "STALE_CONTENT"
+
+private val FLOW_SAFE_ACTIONS = setOf(
+    "tap_text", "input", "replace", "clear", "press", "wait",
+    "wait_text", "wait_package", "swipe", "scroll",
+)

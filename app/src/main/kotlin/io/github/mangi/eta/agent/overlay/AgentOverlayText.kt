@@ -86,6 +86,8 @@ internal fun toolDisplayName(name: String): String {
 @StringRes
 internal fun toolDisplayNameResource(name: String): Int? = when (name) {
     "run_sequence" -> R.string.tool_run_sequence
+    "save_flow" -> R.string.tool_save_flow
+    "use_flow" -> R.string.tool_use_flow
     "observe_screen" -> R.string.tool_observe_screen
     "tap" -> R.string.tool_tap
     "tap_element" -> R.string.tool_tap_element
