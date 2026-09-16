@@ -66,13 +66,22 @@ jobs:
             > "$RUNNER_TEMP/eta-release.jks"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
-      - name: 运行会话清理相关单测
+      - name: 运行关键单测
         run: |
           ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" \
             :app:testDebugUnitTest \
             --tests "*ConversationRunPurgeTest*" \
             --tests "*AgentUiHandoffPayloadMatchTest*" \
-            --tests "*AptEnvironmentInstallerTest*"
+            --tests "*AptEnvironmentInstallerTest*" \
+            --tests "*AgentModelFailureTest*" \
+            --tests "*AgentModelRetryTest*" \
+            --tests "*AnthropicMessagesProviderTest*" \
+            --tests "*OpenAiChatCompletionsProviderTest*" \
+            --tests "*AgentToolRequirementsTest*" \
+            --tests "*AgentToolCatalogTest*" \
+            --tests "*AgentTraceFormatterTest*" \
+            --tests "*BrowserDomScriptsTest*" \
+            --tests "*ProviderComponentsTest*"
 
       - name: 构建 APK
         env:
