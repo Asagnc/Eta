@@ -8,7 +8,7 @@ internal object AgentBrowserToolCatalog {
         tools.put(
             AgentToolSchema.function(
                 name = "browser_use",
-                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。一次调用只执行一个 action；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。evaluate_js 可在页面里执行 JS 表达式（支持 await），get_cookies 与 set_cookie 读写该浏览器的 Cookie。需要把 URI 显式交给外部应用时使用 open_uri。",
+                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。一次调用只执行一个 action；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。evaluate_js 可在页面里执行 JS 表达式（支持 await），get_cookies 与 set_cookie 读写该浏览器的 Cookie，set_proxy 与 clear_proxy 控制该进程内所有 WebView 的代理（例如指向本机抓包工具），download 把 http(s) 文件保存到公共下载目录并返回路径。需要把 URI 显式交给外部应用时使用 open_uri。",
                 parameters = JSONObject()
                     .put("type", "object")
                     .put(
@@ -38,13 +38,16 @@ internal object AgentBrowserToolCatalog {
                                             .put("evaluate_js")
                                             .put("get_cookies")
                                             .put("set_cookie")
+                                            .put("set_proxy")
+                                            .put("clear_proxy")
+                                            .put("download")
                                     )
                             )
                             .put(
                                 "url",
                                 JSONObject()
                                     .put("type", "string")
-                                    .put("description", "navigate、get_cookies 或 set_cookie 要访问的 URL；后两者省略时使用当前页面地址。")
+                                    .put("description", "navigate、get_cookies、set_cookie 或 download 要访问的 URL；后三者省略时使用当前页面地址；download 只支持 http/https，blob:/data: 需要先用 evaluate_js 取内容。")
                             )
                             .put(
                                 "user_agent",
@@ -64,6 +67,18 @@ internal object AgentBrowserToolCatalog {
                                 JSONObject()
                                     .put("type", "string")
                                     .put("description", "set_cookie 要写入的 cookie，格式与 Set-Cookie 响应头一致，例如 session=abc; Domain=.example.com; Path=/。")
+                            )
+                            .put(
+                                "file_name",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "download 保存的文件名，省略时按 Content-Disposition 或 URL 末段命名，落盘目录固定为 Download/Eta。")
+                            )
+                            .put(
+                                "proxy",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "set_proxy 的代理地址，格式 [scheme://]host[:port]，例如 127.0.0.1:8080；scheme 支持 http、https、socks。")
                             )
                             .put(
                                 "expression",

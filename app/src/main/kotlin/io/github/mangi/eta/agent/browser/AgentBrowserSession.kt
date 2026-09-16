@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -23,10 +24,15 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.graphics.createBitmap
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
+import androidx.webkit.WebViewFeature
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -167,6 +173,9 @@ internal object AgentBrowserSession {
 
     @Volatile
     private var activeAgentRunId: String? = null
+
+    @Volatile
+    private var pendingDownload: BrowserDownloadRequest? = null
 
     fun initialize(context: Context) {
         if (appContext == null) {
@@ -385,6 +394,9 @@ internal object AgentBrowserSession {
                         "evaluate_js" -> evaluateScript(args)
                         "get_cookies" -> getCookies(args)
                         "set_cookie" -> setCookie(args)
+                        "set_proxy" -> setProxy(args)
+                        "clear_proxy" -> clearProxy()
+                        "download" -> download(args)
                         else -> throw BrowserFailure("INVALID_ACTION", "浏览器 action 无效")
                     }
                 }.getOrElse { throwable -> failureResult(action, throwable) }
@@ -758,6 +770,97 @@ internal object AgentBrowserSession {
         return url
     }
 
+    private fun setProxy(args: JSONObject): BrowserToolResult {
+        val raw = args.optString("proxy").trim()
+        if (raw.isEmpty()) throw BrowserFailure("INVALID_ARGUMENT", "set_proxy 缺少 proxy")
+        val rule = BrowserProxyRules.normalize(raw) ?: throw BrowserFailure(
+            "INVALID_ARGUMENT",
+            "proxy 需要写成 [scheme://]host[:port]，scheme 只支持 http、https、socks",
+        )
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            throw BrowserFailure("PROXY_UNSUPPORTED", "当前 WebView 不支持进程级代理覆盖")
+        }
+        // ProxyController 由 WebView provider 提供，先让 WebView 完成初始化再取实例。
+        ensureWebView()
+        val config = ProxyConfig.Builder().addProxyRule(rule).build()
+        awaitProxyChange { executor, listener ->
+            ProxyController.getInstance().setProxyOverride(config, executor, listener)
+        }
+        return toolResult(
+            baseEnvelope("set_proxy", ok = true, status = "ok").put("proxy", rule)
+        )
+    }
+
+    private fun clearProxy(): BrowserToolResult {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            throw BrowserFailure("PROXY_UNSUPPORTED", "当前 WebView 不支持进程级代理覆盖")
+        }
+        awaitProxyChange { executor, listener ->
+            ProxyController.getInstance().clearProxyOverride(executor, listener)
+        }
+        return toolResult(baseEnvelope("clear_proxy", ok = true, status = "ok"))
+    }
+
+    /**
+     * 代理覆盖是进程级设置，作用于 Eta 内所有 WebView；官方要求等 listener 回调后才算生效，
+     * 这里用 latch 等待，超时按失败处理而不是继续往下走。
+     */
+    private fun awaitProxyChange(apply: (Executor, Runnable) -> Unit) {
+        val latch = CountDownLatch(1)
+        val executor = Executor { command -> command.run() }
+        val listener = Runnable { latch.countDown() }
+        callOnMain { apply(executor, listener) }
+        if (!latch.await(JAVASCRIPT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            throw BrowserFailure("PROXY_TIMEOUT", "代理设置没有在超时前生效", "timeout")
+        }
+    }
+
+    private fun download(args: JSONObject): BrowserToolResult {
+        val rawUrl = args.optString("url").trim().ifEmpty { currentUrl }
+        if (rawUrl.isBlank()) throw BrowserFailure("INVALID_ARGUMENT", "download 缺少 url，且当前没有已打开的网页")
+        val scheme = runCatching { Uri.parse(rawUrl).scheme.orEmpty().lowercase(Locale.ROOT) }.getOrDefault("")
+        if (scheme != "http" && scheme != "https") {
+            throw BrowserFailure("INVALID_ARGUMENT", "url 需要是 http 或 https 地址")
+        }
+        val context = appContext
+            ?: throw BrowserFailure("BROWSER_NOT_INITIALIZED", "浏览器尚未初始化")
+        if (!Environment.isExternalStorageManager()) {
+            throw BrowserFailure(
+                "DOWNLOAD_PERMISSION_REQUIRED",
+                "缺少「所有文件访问」权限，无法写入公共下载目录",
+            )
+        }
+        val fileName = if (args.has("file_name") && !args.isNull("file_name")) {
+            args.optString("file_name").trim().takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
+        val view = ensureWebView()
+        val outcome = try {
+            BrowserDownloader.download(
+                context = context,
+                url = rawUrl,
+                fileName = fileName,
+                // 下载走 OkHttp：必须自己带上当前 WebView 的 Cookie 与 User-Agent，否则会掉登录态
+                cookieHeader = CookieManager.getInstance().getCookie(rawUrl),
+                userAgent = callOnMain { view.settings.userAgentString },
+                referer = currentUrl.takeIf { it.isNotBlank() && it != rawUrl },
+            )
+        } catch (failure: IOException) {
+            throw BrowserFailure("DOWNLOAD_FAILED", failure.message ?: "下载失败")
+        }
+        return toolResult(
+            baseEnvelope("download", ok = true, status = "ok")
+                .put("file_name", outcome.file.name)
+                .put("file_path", outcome.file.absolutePath)
+                .put("size_bytes", outcome.bytes)
+                .put("mime_type", outcome.mimeType)
+                .put("http_status", outcome.httpStatus)
+                .put("source_url", outcome.sourceUrl)
+                .put("final_url", outcome.finalUrl)
+        )
+    }
+
     private fun targetFrom(args: JSONObject): BrowserTarget {
         val selector = validatedSelector(args, required = false)
         val hasX = args.has("coordinate_x") && !args.isNull("coordinate_x")
@@ -862,6 +965,14 @@ internal object AgentBrowserSession {
                     settings.displayZoomControls = false
                     webViewClient = BrowserClient()
                     webChromeClient = BrowserChrome()
+                    setDownloadListener { url, _, contentDisposition, mimeType, contentLength ->
+                        pendingDownload = BrowserDownloadRequest(
+                            url = url.orEmpty(),
+                            fileName = BrowserDownloadNaming.contentDispositionFileName(contentDisposition),
+                            mimeType = mimeType.orEmpty(),
+                            contentLength = contentLength,
+                        )
+                    }
                 }
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
@@ -1043,6 +1154,12 @@ internal object AgentBrowserSession {
             .put("can_go_forward", snapshot.canGoForward)
             .also { json ->
                 currentHttpStatus?.let { json.put("http_status", it) }
+                // 页面自己触发的下载（例如点了带 Content-Disposition 的链接）在这里报一次，
+                // 由调用方决定要不要用 download 动作把它取回来。
+                pendingDownload?.let { request ->
+                    json.put("download_requested", request.toJson())
+                    pendingDownload = null
+                }
             }
     }
 
@@ -1237,6 +1354,19 @@ internal object AgentBrowserSession {
         }
     }
 
+    private data class BrowserDownloadRequest(
+        val url: String,
+        val fileName: String?,
+        val mimeType: String,
+        val contentLength: Long,
+    ) {
+        fun toJson(): JSONObject = JSONObject()
+            .put("url", url)
+            .put("file_name", fileName ?: JSONObject.NULL)
+            .put("mime_type", mimeType)
+            .put("content_length", contentLength)
+    }
+
     private data class BrowserTarget(
         val selector: String?,
         val x: Int?,
@@ -1298,6 +1428,9 @@ internal object AgentBrowserSession {
         "evaluate_js",
         "get_cookies",
         "set_cookie",
+        "set_proxy",
+        "clear_proxy",
+        "download",
     )
 
 }

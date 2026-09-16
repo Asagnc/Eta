@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- 抓包工具（如 mitmproxy）的 CA 只能装进用户证书库，默认不被信任 -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

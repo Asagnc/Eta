@@ -449,6 +449,9 @@ internal class AgentTraceFormatter {
         "evaluate_js" -> "执行网页脚本"
         "get_cookies" -> "读取 Cookie"
         "set_cookie" -> "写入 Cookie"
+        "set_proxy" -> "设置浏览器代理"
+        "clear_proxy" -> "清除浏览器代理"
+        "download" -> "下载文件"
         else -> "浏览器操作"
     }
 
@@ -469,6 +472,9 @@ internal class AgentTraceFormatter {
         "evaluate_js" -> "已执行网页脚本"
         "get_cookies" -> "已读取 Cookie"
         "set_cookie" -> "已写入 Cookie"
+        "set_proxy" -> "已设置浏览器代理"
+        "clear_proxy" -> "已清除浏览器代理"
+        "download" -> "已下载文件"
         else -> "浏览器操作完成"
     }
 
@@ -545,6 +551,9 @@ internal class AgentTraceFormatter {
             "evaluate_js",
             "get_cookies",
             "set_cookie",
+            "set_proxy",
+            "clear_proxy",
+            "download",
         )
         val BROWSER_TEXT_ACTIONS = setOf("get_readable", "get_text")
 
