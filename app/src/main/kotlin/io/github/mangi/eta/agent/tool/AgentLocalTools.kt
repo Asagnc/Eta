@@ -184,6 +184,7 @@ internal class AgentLocalTools(
                 "long_press" -> textResult(longPress(args))
                 "long_press_element" -> textResult(longPressElement(args))
                 "swipe" -> textResult(swipe(args))
+                "drag" -> textResult(drag(args))
                 "scroll" -> textResult(deviceController.scroll(args.optString("direction")))
                 "scroll_element" -> textResult(scrollElement(args))
                 "input_text" -> textResult(inputText(args))
@@ -489,6 +490,31 @@ internal class AgentLocalTools(
             start.y,
             end.x,
             end.y,
+            durationMs
+        )
+    }
+
+    private fun drag(args: JSONObject): String {
+        val start = convertPoint(
+            x = args.optInt("x1"),
+            y = args.optInt("y1"),
+            coordinateSpace = args.optString("coordinate_space")
+        )
+        val end = convertPoint(
+            x = args.optInt("x2"),
+            y = args.optInt("y2"),
+            coordinateSpace = args.optString("coordinate_space")
+        )
+        val holdMs = args.optInt("hold_ms", 500)
+        val durationMs = args.optInt("duration_ms", 600)
+        AgentHapticFeedback.perform(context, AgentHapticFeedback.Type.SWIPE)
+        showSwipe(start.x, start.y, end.x, end.y, holdMs + durationMs)
+        return deviceController.drag(
+            start.x,
+            start.y,
+            end.x,
+            end.y,
+            holdMs,
             durationMs
         )
     }

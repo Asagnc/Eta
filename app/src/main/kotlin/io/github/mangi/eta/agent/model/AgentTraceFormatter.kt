@@ -31,6 +31,7 @@ internal class AgentTraceFormatter {
             "tap_element" -> summarizeElementArguments("点击元素", toolCall.argumentsJson)
             "long_press_element" -> summarizeElementArguments("长按元素", toolCall.argumentsJson)
             "swipe" -> "滑动屏幕"
+            "drag" -> "拖动屏幕"
             "scroll" -> summarizeScrollArguments("滚动屏幕", toolCall.argumentsJson)
             "scroll_element" ->
                 summarizeScrollArguments("滚动元素", toolCall.argumentsJson, withIndex = true)
@@ -496,6 +497,12 @@ internal class AgentTraceFormatter {
         "volume_up" -> "音量加"
         "volume_down" -> "音量减"
         "mute" -> "静音"
+        "menu" -> "菜单"
+        "dpad_up" -> "方向上"
+        "dpad_down" -> "方向下"
+        "dpad_left" -> "方向左"
+        "dpad_right" -> "方向右"
+        "dpad_center" -> "方向中"
         else -> null
     }
 

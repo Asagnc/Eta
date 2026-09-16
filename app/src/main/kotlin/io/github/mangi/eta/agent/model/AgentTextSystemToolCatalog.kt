@@ -145,7 +145,7 @@ internal object AgentTextSystemToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "press_key",
-                    description = "按系统按键或全局动作。BACK/HOME/RECENTS/NOTIFICATIONS/QUICK_SETTINGS 优先走无障碍全局动作；ENTER 优先走输入法回车。",
+                    description = "按系统按键或全局动作。BACK/HOME/RECENTS/NOTIFICATIONS/QUICK_SETTINGS/MENU/DPAD_UP/DPAD_DOWN/DPAD_LEFT/DPAD_RIGHT/DPAD_CENTER 优先走无障碍全局动作；ENTER 优先走输入法回车。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -165,6 +165,12 @@ internal object AgentTextSystemToolCatalog {
                                                 .put("PASTE")
                                                 .put("NOTIFICATIONS")
                                                 .put("QUICK_SETTINGS")
+                                                .put("MENU")
+                                                .put("DPAD_UP")
+                                                .put("DPAD_DOWN")
+                                                .put("DPAD_LEFT")
+                                                .put("DPAD_RIGHT")
+                                                .put("DPAD_CENTER")
                                         )
                                 )
                         )

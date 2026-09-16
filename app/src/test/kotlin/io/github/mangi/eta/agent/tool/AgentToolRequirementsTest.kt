@@ -63,6 +63,8 @@ class AgentToolRequirementsTest {
         assertEquals(null, restricted.copy(rootAvailable = true, colorOs = true).unavailableCode("search_personal_orders"))
         assertEquals(null, restricted.copy(accessibilityAvailable = true).unavailableCode("observe_screen"))
         assertEquals(null, restricted.copy(accessibilityRecoveryAvailable = true).unavailableCode("observe_screen"))
+        assertEquals("ACCESSIBILITY_UNAVAILABLE", restricted.unavailableCode("drag"))
+        assertEquals(null, restricted.copy(rootAvailable = true).unavailableCode("drag"))
     }
 
     @Test

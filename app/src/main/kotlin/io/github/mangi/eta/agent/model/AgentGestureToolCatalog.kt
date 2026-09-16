@@ -145,6 +145,36 @@ internal object AgentGestureToolCatalog {
             )
             .put(
                 AgentToolSchema.function(
+                    name = "drag",
+                    description = "长按起点后拖到终点，用于拖动排序、滑块和拖放。默认使用最近一次 observe_screen 截图里的像素坐标。只是滑动、不需要先按住的场景用 swipe。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put("x1", JSONObject().put("type", "integer"))
+                                .put("y1", JSONObject().put("type", "integer"))
+                                .put("x2", JSONObject().put("type", "integer"))
+                                .put("y2", JSONObject().put("type", "integer"))
+                                .put(
+                                    "hold_ms",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("description", "按住起点的时长，100 到 2000，默认 500")
+                                )
+                                .put(
+                                    "duration_ms",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("description", "拖动时长，100 到 3000，默认 600")
+                                )
+                                .put("coordinate_space", AgentToolSchema.coordinateSpace())
+                        )
+                        .put("required", JSONArray().put("x1").put("y1").put("x2").put("y2"))
+                )
+            )
+            .put(
+                AgentToolSchema.function(
                     name = "scroll",
                     description = "按内容浏览方向滚动当前屏幕：down 显示下方内容，up 显示上方内容，left 显示左侧内容，right 显示右侧内容。",
                     parameters = JSONObject()

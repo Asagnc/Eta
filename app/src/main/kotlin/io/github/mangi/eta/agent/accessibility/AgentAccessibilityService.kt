@@ -15,6 +15,7 @@ import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -69,6 +70,9 @@ class AgentAccessibilityService : AccessibilityService() {
     private val screenshotExecutor: ExecutorService = SCREENSHOT_EXECUTOR
     private val windowChangeLock = ReentrantLock()
     private val windowChanged = windowChangeLock.newCondition()
+    private val contentChangeLock = ReentrantLock()
+    private val contentChanged = contentChangeLock.newCondition()
+    private var contentChangeEventSequence = 0L
     private val scrollEventLock = ReentrantLock()
     private val scrollEventArrived = scrollEventLock.newCondition()
     private val scrollActionLock = ReentrantLock()
@@ -119,15 +123,19 @@ class AgentAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 pruneWindowContentGenerations()
                 signalWindowChanged()
+                signalContentChanged()
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 bumpWindowContentGeneration(event.windowId)
                 observeScrollEvent(event)
+                signalContentChanged()
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
-            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ->
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 bumpWindowContentGeneration(event.windowId)
+                signalContentChanged()
+            }
         }
     }
 
@@ -264,6 +272,50 @@ class AgentAccessibilityService : AccessibilityService() {
             windowChanged.signalAll()
         } finally {
             windowChangeLock.unlock()
+        }
+    }
+
+    /**
+     * 界面内容变化事件的累计序号。调用方先取值、再查询界面，之后用 awaitContentChangeAfter
+     * 等待更大的序号，查询期间到达的事件因此不会漏掉。
+     */
+    internal fun contentChangeSequence(): Long {
+        contentChangeLock.lock()
+        try {
+            return contentChangeEventSequence
+        } finally {
+            contentChangeLock.unlock()
+        }
+    }
+
+    /** 等待序号超过 [since] 的内容变化事件；超时返回 false。 */
+    internal fun awaitContentChangeAfter(since: Long, timeoutMillis: Long): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis.coerceAtLeast(1L)
+        contentChangeLock.lock()
+        try {
+            while (contentChangeEventSequence <= since) {
+                val remaining = deadline - SystemClock.elapsedRealtime()
+                if (remaining <= 0L) return false
+                try {
+                    contentChanged.await(remaining, TimeUnit.MILLISECONDS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+            return true
+        } finally {
+            contentChangeLock.unlock()
+        }
+    }
+
+    private fun signalContentChanged() {
+        contentChangeLock.lock()
+        try {
+            contentChangeEventSequence++
+            contentChanged.signalAll()
+        } finally {
+            contentChangeLock.unlock()
         }
     }
 
@@ -899,6 +951,46 @@ class AgentAccessibilityService : AccessibilityService() {
             successMethod = "GESTURE_SWIPE",
         )
 
+    /**
+     * 长按起点后拖到终点。两条 stroke 用 continueStroke 串成一次手势：
+     * 第一条原地按住，第二条把手指从起点移到终点。
+     */
+    fun gestureDrag(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        holdMs: Long,
+        durationMs: Long,
+    ): NodeActionResult {
+        val hold = holdMs.coerceIn(100L, 2_000L)
+        val duration = durationMs.coerceIn(100L, 3_000L)
+        val press = GestureDescription.StrokeDescription(
+            Path().apply {
+                moveTo(x1, y1)
+                lineTo(x1, y1)
+            },
+            0L,
+            hold,
+            true,
+        )
+        val drag = runCatching {
+            press.continueStroke(
+                Path().apply {
+                    moveTo(x1, y1)
+                    lineTo(x2, y2)
+                },
+                0L,
+                duration,
+                false,
+            )
+        }.getOrNull() ?: return NodeActionResult.failure(
+            "GESTURE_NOT_DISPATCHED",
+            "无法构造拖拽手势",
+        )
+        return dispatchGestureResult(listOf(press, drag), successMethod = "GESTURE_DRAG")
+    }
+
     fun globalActionResult(name: String): NodeActionResult {
         val action = when (name.uppercase()) {
             "BACK" -> GLOBAL_ACTION_BACK
@@ -906,7 +998,17 @@ class AgentAccessibilityService : AccessibilityService() {
             "RECENTS" -> GLOBAL_ACTION_RECENTS
             "NOTIFICATIONS" -> GLOBAL_ACTION_NOTIFICATIONS
             "QUICK_SETTINGS" -> GLOBAL_ACTION_QUICK_SETTINGS
+            // DPAD 全局动作是 API 33、MENU 是 API 36 引入的常量；低版本上取不到，按不支持处理。
+            "MENU" -> if (Build.VERSION.SDK_INT >= 36) GLOBAL_ACTION_MENU else -1
+            "DPAD_UP" -> if (Build.VERSION.SDK_INT >= 33) GLOBAL_ACTION_DPAD_UP else -1
+            "DPAD_DOWN" -> if (Build.VERSION.SDK_INT >= 33) GLOBAL_ACTION_DPAD_DOWN else -1
+            "DPAD_LEFT" -> if (Build.VERSION.SDK_INT >= 33) GLOBAL_ACTION_DPAD_LEFT else -1
+            "DPAD_RIGHT" -> if (Build.VERSION.SDK_INT >= 33) GLOBAL_ACTION_DPAD_RIGHT else -1
+            "DPAD_CENTER" -> if (Build.VERSION.SDK_INT >= 33) GLOBAL_ACTION_DPAD_CENTER else -1
             else -> return NodeActionResult.failure("INVALID_ARGUMENT", "不支持的系统动作")
+        }
+        if (action < 0) {
+            return NodeActionResult.failure("ACTION_UNAVAILABLE", "当前系统版本不支持该系统动作")
         }
         return runNodeActionOnMainSync {
             if (performGlobalAction(action)) {
@@ -1771,6 +1873,14 @@ class AgentAccessibilityService : AccessibilityService() {
         path: Path,
         durationMs: Long,
         successMethod: String,
+    ): NodeActionResult = dispatchGestureResult(
+        strokes = listOf(GestureDescription.StrokeDescription(path, 0L, durationMs)),
+        successMethod = successMethod,
+    )
+
+    private fun dispatchGestureResult(
+        strokes: List<GestureDescription.StrokeDescription>,
+        successMethod: String,
     ): NodeActionResult {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return NodeActionResult.failure(
@@ -1788,7 +1898,7 @@ class AgentAccessibilityService : AccessibilityService() {
             }
             val gesture = runCatching {
                 GestureDescription.Builder()
-                    .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+                    .also { builder -> strokes.forEach(builder::addStroke) }
                     .build()
             }.getOrElse {
                 outcome.set(GestureDispatch.NOT_DISPATCHED)
@@ -1830,8 +1940,10 @@ class AgentAccessibilityService : AccessibilityService() {
         if (!posted) {
             return NodeActionResult.failure("GESTURE_NOT_DISPATCHED", "无障碍主线程拒绝手势任务")
         }
+        // 多段手势的总时长按各段起始与时长之和对齐，只用于限定回调等待，多等无害。
+        val gestureDurationMs = strokes.sumOf { it.startTime + it.duration }
         val finishedInTime = try {
-            latch.await(durationMs + GESTURE_CALLBACK_GRACE_MS, TimeUnit.MILLISECONDS)
+            latch.await(gestureDurationMs + GESTURE_CALLBACK_GRACE_MS, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             false

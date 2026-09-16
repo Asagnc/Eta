@@ -285,6 +285,34 @@ internal class RootShellDeviceController(
         return inputCommand("input swipe $x1 $y1 $x2 $y2 $duration", "swipe")
     }
 
+    fun drag(x1: Int, y1: Int, x2: Int, y2: Int, holdMs: Int, durationMs: Int): String {
+        if (AgentAccessibilityService.current() == null && !rootAvailable()) return accessibilityUnavailable()
+        validatePoint(x1, y1)
+        validatePoint(x2, y2)
+        val hold = holdMs.coerceIn(100, 2_000)
+        val duration = durationMs.coerceIn(100, 3_000)
+        AgentAccessibilityService.current()?.let { service ->
+            val result = service.gestureDrag(
+                x1.toFloat(),
+                y1.toFloat(),
+                x2.toFloat(),
+                y2.toFloat(),
+                hold.toLong(),
+                duration.toLong(),
+            )
+            if (result.ok) {
+                waitForUiSettle("drag")
+                return nodeActionJson("drag", result)
+            }
+            if (!GestureFallbackPolicy.mayFallbackToRoot(result.code)) {
+                return nodeActionJson("drag", result)
+            }
+            if (!rootAvailable()) return nodeActionJson("drag", result)
+        }
+        // input draganddrop 自带起步长按，按住时长由系统在给定 duration 内分配。
+        return inputCommand("input draganddrop $x1 $y1 $x2 $y2 $duration", "drag")
+    }
+
     fun scroll(direction: String): String {
         val parsed = ScrollDirection.parse(direction)
             ?: return scrollErrorJson(
@@ -459,7 +487,8 @@ internal class RootShellDeviceController(
         if (normalized == "PASTE" && !rootAvailable()) return rootRequired()
         AgentAccessibilityService.current()?.let { service ->
             when (normalized) {
-                "BACK", "HOME", "RECENTS", "NOTIFICATIONS", "QUICK_SETTINGS" -> {
+                "BACK", "HOME", "RECENTS", "NOTIFICATIONS", "QUICK_SETTINGS",
+                "MENU", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT", "DPAD_CENTER" -> {
                     val actionResult = service.globalActionResult(normalized)
                     if (actionResult.ok) {
                         waitForUiSettle("press_key")
@@ -495,6 +524,12 @@ internal class RootShellDeviceController(
             "ENTER" -> 66
             "RECENTS" -> 187
             "PASTE" -> 279
+            "MENU" -> 82
+            "DPAD_UP" -> 19
+            "DPAD_DOWN" -> 20
+            "DPAD_LEFT" -> 21
+            "DPAD_RIGHT" -> 22
+            "DPAD_CENTER" -> 23
             "NOTIFICATIONS" -> return inputCommand(
                 "cmd statusbar expand-notifications",
                 "press_key",
@@ -503,7 +538,11 @@ internal class RootShellDeviceController(
                 "cmd statusbar expand-settings",
                 "press_key",
             ).let { JSONObject(it).put("button", normalized).toString() }
-            else -> return errorJson("INVALID_ARGUMENT", "button 仅支持 BACK/HOME/ENTER/RECENTS/PASTE/NOTIFICATIONS/QUICK_SETTINGS")
+            else -> return errorJson(
+                "INVALID_ARGUMENT",
+                "button 仅支持 BACK/HOME/ENTER/RECENTS/PASTE/NOTIFICATIONS/QUICK_SETTINGS" +
+                    "/MENU/DPAD_UP/DPAD_DOWN/DPAD_LEFT/DPAD_RIGHT/DPAD_CENTER",
+            )
         }
         return inputCommand("input keyevent $keyCode", "press_key")
     }
@@ -528,6 +567,8 @@ internal class RootShellDeviceController(
             attempts++
             val service = AgentAccessibilityService.current()
             if (service == null && !rootAvailable()) return accessibilityUnavailable()
+            // 先取内容变化序号再查询：查询期间到达的事件会让下面的等待立即返回，唤醒不会丢。
+            val contentSequence = service?.contentChangeSequence()
             val nodes = service
                 ?.queryNodes(120)
                 ?.map { it.toUiNode() }
@@ -549,7 +590,12 @@ internal class RootShellDeviceController(
                     .put("note", "等待查询不会发布元素快照；如需节点动作，请重新调用 observe_screen")
                     .toString()
             }
-            Thread.sleep(350)
+            if (service != null && contentSequence != null) {
+                service.awaitContentChangeAfter(contentSequence, UI_CONTENT_EVENT_WAIT_MS)
+            } else {
+                // 无无障碍时每次查询都要启动一次 uiautomator，采样间隔取长一些。
+                Thread.sleep(UI_CONTENT_ROOT_POLL_MS)
+            }
         }
         return JSONObject()
             .put("ok", false)
@@ -1086,7 +1132,7 @@ internal class RootShellDeviceController(
     private fun waitForUiSettle(tool: String) {
         val delayMs = when (tool) {
             "tap", "long_press", "press_key" -> 350L
-            "swipe" -> 650L
+            "swipe", "drag" -> 650L
             "input_text" -> 500L
             else -> 250L
         }
@@ -1413,6 +1459,10 @@ internal class RootShellDeviceController(
     }
 
     companion object {
+        /** 无障碍可用时等待界面内容变化事件的最长时间；事件到达会提前结束等待。 */
+        private const val UI_CONTENT_EVENT_WAIT_MS = 800L
+        /** 无障碍不可用时两次界面查询之间的固定间隔。 */
+        private const val UI_CONTENT_ROOT_POLL_MS = 1_200L
         private const val MAX_INPUT_TEXT_CHARS = 1_000
         private const val MAX_REPLACE_TEXT_CHARS = 4_000
         private const val MAX_CLIPBOARD_TEXT_CHARS = 20_000
