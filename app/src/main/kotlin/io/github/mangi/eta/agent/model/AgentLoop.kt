@@ -56,6 +56,7 @@ internal class AgentLoop(
         roleplay = roleplayContext != null,
     )
     private var supplementIndex = initialSupplementIndex
+    private val repeatGuard = AgentRepeatGuard()
 
     fun contextSnapshot(): AgentContextSnapshot? = context.snapshot()
 
@@ -201,6 +202,7 @@ internal class AgentLoop(
                 }
                 appendToolImages(round, outcomes)
                 publishTranscript()
+                noticeRepeatedToolCalls(round, toolCalls)
                 round += 1
                 continue
             }
@@ -228,6 +230,22 @@ internal class AgentLoop(
                 sensitiveToolCallIds = sensitiveToolCallIds.toSet(),
             )
         }
+    }
+
+    /**
+     * 连续重复的同一批调用不会带来新信息，只会把上下文越堆越高。这里补一句提醒让模型换策略，
+     * 但不阻止执行：轮询类工具（等待、观察）本来就可能被连续调用。
+     */
+    private fun noticeRepeatedToolCalls(round: Int, toolCalls: List<AgentModelClient.ToolCall>) {
+        val signature = toolCalls.joinToString("|") { call ->
+            call.name + ":" + call.argumentsJson.trim()
+        }
+        if (!repeatGuard.observe(signature)) return
+        val names = toolCalls.joinToString("、") { it.name }
+        runController.steer(
+            "注意：第 $round 轮的这次工具调用与前几轮完全相同（$names），再调用一次也不会得到新信息。" +
+                "请改参数、换工具，或直接根据已有信息给出结论。",
+        )
     }
 
     private fun appendPendingSteeringMessage(): Boolean {
