@@ -212,6 +212,14 @@ internal sealed interface AgentEvent {
             "task_plan_updated chars=${planJson.length}"
     }
 
+    data class RunStatsReported(
+        /** 本次 run 的度量快照 JSON，字段见 AgentRunStats.snapshot()。 */
+        val statsJson: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "run_stats_reported chars=${statsJson.length}"
+    }
+
     data class RunFinished(
         val round: Int,
         val contentChars: Int

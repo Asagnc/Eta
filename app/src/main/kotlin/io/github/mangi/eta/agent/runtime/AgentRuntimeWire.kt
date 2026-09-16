@@ -747,6 +747,11 @@ internal object AgentRuntimeWire {
                 putString("plan_json", event.planJson)
             }
 
+            is AgentEvent.RunStatsReported -> {
+                putString(KEY_TYPE, "run_stats_reported")
+                putString("stats_json", event.statsJson)
+            }
+
             is AgentEvent.RunFinished -> {
                 putString(KEY_TYPE, "run_finished")
                 putInt("round", event.round)
@@ -888,6 +893,10 @@ internal object AgentRuntimeWire {
 
         "task_plan_updated" -> AgentEvent.TaskPlanUpdated(
             planJson = bundle.getString("plan_json").orEmpty(),
+        )
+
+        "run_stats_reported" -> AgentEvent.RunStatsReported(
+            statsJson = bundle.getString("stats_json").orEmpty(),
         )
 
         "run_finished" -> AgentEvent.RunFinished(

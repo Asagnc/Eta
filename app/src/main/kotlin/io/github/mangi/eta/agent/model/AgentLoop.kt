@@ -27,6 +27,8 @@ internal class AgentLoop(
     private val onEvent: (AgentEvent) -> Unit,
     private val toolsForRound: (() -> JSONArray)? = null,
     private val modelRetry: AgentModelRetry = AgentModelRetry(),
+    private val runStats: AgentRunStats? = null,
+    private val maxParallelToolCalls: Int = DEFAULT_MAX_PARALLEL_TOOL_CALLS,
     private val sessionId: String = java.util.UUID.randomUUID().toString(),
     private val transcript: JSONArray = JSONArray(),
     private val systemCount: Int = 0,
@@ -49,8 +51,10 @@ internal class AgentLoop(
     )
 
     private companion object {
-        /** 并发上限：只读查询大多落到进程外命令或 ContentProvider，再高的并发只会增加资源争用。 */
-        const val MAX_PARALLEL_TOOL_CALLS = 4
+        /** 并发上限默认值：只读查询大多落到进程外命令或 ContentProvider，再高的并发只会增加资源争用。 */
+        const val DEFAULT_MAX_PARALLEL_TOOL_CALLS = 4
+
+        const val MAX_PARALLEL_TOOL_CALLS_LIMIT = 8
 
         /** 上下文占用越过窗口该比例时开始提示，留出压缩与收尾的余量。 */
         const val CONTEXT_NOTICE_RATIO = 0.6
@@ -97,6 +101,7 @@ internal class AgentLoop(
 
         while (true) {
             runController.throwIfCancelled()
+            runStats?.roundStarted()
             if (purpose.allowsTools) appendPendingSteeringMessage()
 
             val roundTools = if (purpose.allowsTools) toolsForRound?.invoke() ?: tools else JSONArray()
@@ -125,6 +130,7 @@ internal class AgentLoop(
                                 }
                                 if (providerEvent is ProviderEvent.Usage) {
                                 roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
+                                runStats?.recordUsage(providerEvent.usage)
                             }
                                 if (providerEvent is ProviderEvent.BlockDelta &&
                                     providerEvent.kind == AssistantBlockKind.THINKING
@@ -228,6 +234,9 @@ internal class AgentLoop(
 
             publishTranscript()
             if (purpose.allowsTools) context.compact(roundTools, final = true)
+            runStats?.takeIf { !it.isEmpty }?.let { stats ->
+                onEvent(AgentEvent.RunStatsReported(stats.snapshot().toString()))
+            }
             onEvent(AgentEvent.RunFinished(round = round, contentChars = content.length))
             return Result(
                 content = content,
@@ -297,6 +306,7 @@ internal class AgentLoop(
             )
         )
 
+        val startedAt = System.nanoTime()
         val result = try {
             toolExecutor.execute(toolCall)
         } catch (throwable: Exception) {
@@ -309,6 +319,7 @@ internal class AgentLoop(
                     .toString(),
             )
         }
+        runStats?.recordTool(toolCall.name, elapsedMs(startedAt), traceFormatter.isSuccessResult(result))
         if (result.sensitive || AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
             sensitiveToolCallIds += toolCall.id
         }
@@ -381,7 +392,10 @@ internal class AgentLoop(
                 )
             )
         }
-        val pool = Executors.newFixedThreadPool(minOf(toolCalls.size, MAX_PARALLEL_TOOL_CALLS))
+        runStats?.recordParallelBatch(toolCalls.size)
+        val pool = Executors.newFixedThreadPool(
+            minOf(toolCalls.size, maxParallelToolCalls.coerceIn(1, MAX_PARALLEL_TOOL_CALLS_LIMIT)),
+        )
         val results = try {
             val futures = toolCalls.map { call ->
                 pool.submit<AgentModelClient.ToolResult> { runToolCall(call) }
@@ -403,11 +417,18 @@ internal class AgentLoop(
         }
     }
 
-    private fun runToolCall(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult = try {
-        toolExecutor.execute(call)
-    } catch (throwable: Exception) {
-        toolFailureResult(throwable)
+    private fun runToolCall(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
+        val startedAt = System.nanoTime()
+        val result = try {
+            toolExecutor.execute(call)
+        } catch (throwable: Exception) {
+            toolFailureResult(throwable)
+        }
+        runStats?.recordTool(call.name, elapsedMs(startedAt), traceFormatter.isSuccessResult(result))
+        return result
     }
+
+    private fun elapsedMs(startedAt: Long): Long = (System.nanoTime() - startedAt) / 1_000_000
 
     private fun toolFailureResult(throwable: Throwable): AgentModelClient.ToolResult =
         AgentModelClient.ToolResult(
@@ -441,6 +462,7 @@ internal class AgentLoop(
                 .toString(),
             sensitive = AgentSensitiveToolPolicy.isSensitive(toolCall.name),
         )
+        runStats?.recordTool(toolCall.name, durationMs = 0, success = false)
         if (result.sensitive) sensitiveToolCallIds += toolCall.id
         emitToolFinished(round, toolCall, result)
         return ToolOutcome(toolCall, result)

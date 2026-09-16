@@ -18,6 +18,8 @@ internal object AgentRuntimePolicy {
         val deviceSensitiveReadTools: Boolean = false,
         val deviceSensitiveActionTools: Boolean = false,
         val thinking: Boolean,
+        /** 同批只读工具的并发上限，取值由偏好决定，实际执行时仍会夹到允许区间。 */
+        val maxParallelToolCalls: Int = Prefs.Keys.INT_DEFAULTS.getValue(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT),
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -30,6 +32,7 @@ internal object AgentRuntimePolicy {
             deviceSensitiveActionTools =
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             thinking = preferences.allowed(Prefs.Keys.AGENT_THINKING_ENABLED),
+            maxParallelToolCalls = preferences.intValue(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT),
         )
 
     fun constrain(
@@ -47,6 +50,7 @@ internal object AgentRuntimePolicy {
                 config.deviceSensitiveReadTools && permissions.deviceSensitiveReadTools,
             deviceSensitiveActionTools =
                 config.deviceSensitiveActionTools && permissions.deviceSensitiveActionTools,
+            maxParallelToolCalls = permissions.maxParallelToolCalls,
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
         )
@@ -64,6 +68,12 @@ internal object AgentRuntimePolicy {
         if (this == null) return false
         val default = Prefs.Keys.BOOLEAN_DEFAULTS[key] ?: false
         return runCatching { getBoolean(key, default) }.getOrDefault(false)
+    }
+
+    private fun SharedPreferences?.intValue(key: String): Int {
+        val default = Prefs.Keys.INT_DEFAULTS[key] ?: 0
+        if (this == null) return default
+        return runCatching { getInt(key, default) }.getOrDefault(default)
     }
 
     private fun stripThinkingOverrides(raw: String): String {

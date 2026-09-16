@@ -16,7 +16,7 @@ internal data class LocalToolRequirement(
     val colorOs: Boolean = false,
     /**
      * 只读、幂等、不与其他调用共享状态或先后依赖的工具可以同批并发执行。
-     * 判断依据见 [AgentToolRequirements.isParallelSafe] 的登记清单。
+     * 声明入口是 [AgentToolRequirements] 的 `registerParallelSafe`，默认不并发。
      */
     val parallelSafe: Boolean = false,
 )
@@ -24,41 +24,69 @@ internal data class LocalToolRequirement(
 /** 展示、模型目录与执行边界共同使用的本地工具能力合同。未登记的工具不能发布。 */
 internal object AgentToolRequirements {
     private val definitions = buildMap {
+        /** 顺序通道：有写副作用、推进会话或任务状态、或依赖同批其它调用结果的工具。 */
         fun register(root: RootRequirement, vararg names: String) {
             names.forEach { name ->
                 check(put(name, LocalToolRequirement(root)) == null) { "Duplicate tool: $name" }
             }
         }
+
+        /**
+         * 并发通道的显式声明入口。
+         *
+         * 并发只覆盖"读取即返回"的工具，所以声明必须落到这个函数上，而不是给顺序登记加一个可以忘记的开关：
+         * 新增工具若写进 [register]，它就一定走顺序通道，不会因为漏改默认值而悄悄进入并发。
+         */
+        fun registerParallelSafe(root: RootRequirement, vararg names: String) {
+            names.forEach { name ->
+                check(put(name, LocalToolRequirement(root, parallelSafe = true)) == null) {
+                    "Duplicate tool: $name"
+                }
+            }
+        }
+
         register(
             RootRequirement.NONE,
-            "get_current_context", "search_apps", "launch_app", "open_uri", "browser_use",
-            "run_sequence", "save_flow", "use_flow",
+            "launch_app", "open_uri", "browser_use", "run_sequence", "save_flow", "use_flow",
             "observe_screen", "tap", "tap_area", "tap_element", "long_press",
             "long_press_element", "swipe", "drag", "scroll", "scroll_element", "input_text",
-            "replace_text", "clear_text", "set_clipboard", "get_clipboard", "paste_text",
+            "replace_text", "clear_text", "set_clipboard", "paste_text",
             "wait", "wait_for_text", "wait_for_package", "open_system_panel",
-            "set_alarm", "set_timer", "device_status", "media_control", "set_volume",
+            "set_alarm", "set_timer", "media_control", "set_volume",
+            "memory_write", "character_memory_write",
+            "skills_install_from_github", "task_plan",
+        )
+        registerParallelSafe(
+            RootRequirement.NONE,
+            "get_current_context", "search_apps", "device_status", "get_clipboard",
             "search_notification_history", "recent_app_activity", "app_usage_summary",
-            "get_current_location", "get_device_environment", "memory_get", "memory_write",
-            "character_memory_get", "character_memory_write",
+            "get_current_location", "get_device_environment", "memory_get",
+            "character_memory_get",
             "skills_list", "skills_read", "skills_read_resource", "skills_list_curated",
-            "skills_inspect_github", "skills_install_from_github", "task_plan",
+            "skills_inspect_github", "run_stats",
         )
         register(
             RootRequirement.PARTIAL,
-            "press_key", "network_info", "get_setting", "recent_notifications",
-            "search_personal_orders", "terminal", "run_command", "read_file",
-            "write_file", "edit_file", "search_code", "list_directory", "read_image",
+            "press_key", "terminal", "run_command", "write_file", "edit_file", "read_image",
+        )
+        registerParallelSafe(
+            RootRequirement.PARTIAL,
+            "network_info", "get_setting", "recent_notifications", "search_personal_orders",
+            "read_file", "search_code", "list_directory",
         )
         register(
             RootRequirement.REQUIRED,
-            "top_memory_apps", "top_storage_apps", "wifi_credentials", "read_sms_code",
-            "get_logcat", "set_setting", "set_device_state", "app_state_control",
-            "list_alarms", "list_active_timers", "get_health_summary", "search_clipboard_history",
-            "search_media", "search_audio", "search_recordings", "search_files",
-            "search_calendar_events", "search_contacts", "search_call_history", "search_messages",
-            "search_downloads", "search_coloros_notes", "search_coloros_recordings",
-            "search_recording_summaries", "search_coloros_memories", "search_saved_places",
+            "read_sms_code", "set_setting", "set_device_state", "app_state_control",
+        )
+        registerParallelSafe(
+            RootRequirement.REQUIRED,
+            "top_memory_apps", "top_storage_apps", "wifi_credentials",
+            "get_logcat", "list_alarms", "list_active_timers", "get_health_summary",
+            "search_clipboard_history", "search_media", "search_audio", "search_recordings",
+            "search_files", "search_calendar_events", "search_contacts", "search_call_history",
+            "search_messages", "search_downloads", "search_coloros_notes",
+            "search_coloros_recordings", "search_recording_summaries",
+            "search_coloros_memories", "search_saved_places",
             "search_qq_chat_images", "search_wechat_chat_images",
         )
         listOf(
@@ -80,31 +108,7 @@ internal object AgentToolRequirements {
             "search_coloros_notes", "search_coloros_recordings", "search_recording_summaries",
             "search_coloros_memories", "search_saved_places",
         ).forEach { name -> put(name, getValue(name).copy(colorOs = true)) }
-        // 并发执行只覆盖"读取即返回"的工具：没有写操作、不推进会话或任务状态、
-        // 也不依赖同批其它调用的结果。屏幕观察与手势、terminal 会话、browser_use、
-        // memory_write、skills_install 等有状态或写副作用的能力一律留在顺序通道。
-        // read_image 同样留在顺序通道：一次解码多张大图的内存峰值不值得用并发去换。
-        listOf(
-            "get_current_context", "device_status", "network_info", "get_setting",
-            "get_device_environment", "get_current_location", "get_clipboard",
-            "top_memory_apps", "top_storage_apps", "get_logcat", "get_health_summary",
-            "list_alarms", "list_active_timers", "wifi_credentials",
-            "read_file", "list_directory", "search_code",
-            "search_apps", "search_clipboard_history", "recent_notifications",
-            "search_notification_history", "recent_app_activity", "app_usage_summary",
-            "search_media", "search_audio", "search_recordings", "search_files",
-            "search_downloads", "search_calendar_events", "search_contacts",
-            "search_call_history", "search_messages", "search_coloros_notes",
-            "search_coloros_recordings", "search_recording_summaries",
-            "search_coloros_memories", "search_saved_places", "search_personal_orders",
-            "search_qq_chat_images", "search_wechat_chat_images",
-            "memory_get", "character_memory_get",
-            "skills_list", "skills_read", "skills_read_resource",
-            "skills_list_curated", "skills_inspect_github",
-        ).forEach { name ->
-            val requirement = this[name] ?: return@forEach
-            put(name, requirement.copy(parallelSafe = true))
-        }
+        // 只读通道里也不放 read_image：一次解码多张大图的内存峰值不值得用并发去换。
         // 系统记忆优先使用 Hook 桥接，框架失联时仍有独立的 Root 快照来源。
         listOf("search_coloros_memories", "search_saved_places", "search_personal_orders").forEach { name ->
             put(name, getValue(name).copy(lsposedRequirement = LsposedRequirement.OPTIONAL))

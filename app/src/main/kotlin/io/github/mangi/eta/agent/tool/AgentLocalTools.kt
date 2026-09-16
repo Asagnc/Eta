@@ -12,6 +12,7 @@ import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentRunStatsToolCatalog
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
@@ -82,6 +83,8 @@ internal class AgentLocalTools(
         (AgentScreenObservationContract.Options) -> RootShellDeviceController.Observation
     )? = null,
     private val onTaskPlanUpdated: ((String) -> Unit)? = null,
+    /** 本次 run 的度量摘要，由 Runtime 侧的执行循环提供；缺失时工具回报自己不可用。 */
+    private val runStatsSummary: (() -> String)? = null,
     private val beforeToolExecution: (String) -> ToolExecutionDecision = {
         ToolExecutionDecision.Allow
     },
@@ -213,6 +216,10 @@ internal class AgentLocalTools(
                 "search_code" -> textResult(terminalTool { searchCode(args) })
                 "list_directory" -> textResult(terminalTool { listDirectory(args) })
                 "task_plan" -> textResult(taskPlan(args))
+                AgentRunStatsToolCatalog.NAME -> textResult(
+                    runStatsSummary?.invoke()
+                        ?: errorResult("RUN_STATS_UNAVAILABLE", "本次 run 没有可用的度量数据"),
+                )
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))

@@ -102,6 +102,7 @@ internal object AgentModelClient {
         rewriteReply: Boolean = false,
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
+        runStats: AgentRunStats? = null,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -178,6 +179,8 @@ internal object AgentModelClient {
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
             initialSupplementIndex = initialSupplementIndex,
+            runStats = runStats,
+            maxParallelToolCalls = config.maxParallelToolCalls,
             toolsForRound = {
                 val capabilities = capabilitiesProvider()
                 if (capabilities.rootAvailable != promptRootAvailable) {
@@ -271,6 +274,8 @@ internal object AgentModelClient {
         val deviceDirectTools: Boolean = true,
         val deviceSensitiveReadTools: Boolean = false,
         val deviceSensitiveActionTools: Boolean = false,
+        /** 同批只读工具的并发上限；调整它需要用 eval 扫 2/4/8 找性价比拐点，而不是凭感觉改。 */
+        val maxParallelToolCalls: Int = 4,
         val thinkingEnabled: Boolean = false,
         val reasoningEffort: ReasoningEffort? = null,
         val reasoningCapabilities: ModelReasoningCapabilities? = null,

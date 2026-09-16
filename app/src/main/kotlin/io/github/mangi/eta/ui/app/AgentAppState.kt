@@ -2054,6 +2054,9 @@ internal class AgentAppState(
                 }
             }
 
+            // 运行度量随事件流进入归档，会话页不单独渲染。
+            is AgentEvent.RunStatsReported -> Unit
+
             is AgentEvent.AssistantBlockStart -> {
                 updateRunTrace(runId) { messages ->
                     runMessageProjector.startAssistantBlock(runId, event, messages)

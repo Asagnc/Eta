@@ -85,6 +85,20 @@ class AgentToolRequirementsTest {
             .unavailableCode("search_coloros_memories"))
     }
 
+    @Test
+    fun concurrencyIsDeclaredPerToolInsteadOfDefaultingOn() {
+        assertTrue(AgentToolRequirements.isParallelSafe("search_code"))
+        assertTrue(AgentToolRequirements.isParallelSafe("read_file"))
+        assertTrue(AgentToolRequirements.isParallelSafe("run_stats"))
+        listOf(
+            "observe_screen", "terminal", "browser_use", "memory_write", "task_plan",
+            "write_file", "edit_file", "skills_install_from_github", "read_image", "set_setting",
+        ).forEach { name ->
+            assertFalse("$name 不能进并发通道", AgentToolRequirements.isParallelSafe(name))
+        }
+        assertEquals(RootRequirement.NONE, AgentToolRequirements.rootRequirement("run_stats"))
+    }
+
     private fun catalog(root: Boolean) = AgentToolCatalog.build(
         terminalTools = true, browserTools = true, deviceDirectTools = true,
         deviceSensitiveReadTools = true, deviceSensitiveActionTools = true,

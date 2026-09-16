@@ -8,6 +8,7 @@ import io.github.mangi.eta.agent.tool.ConversationHistoryTool
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
+import io.github.mangi.eta.agent.model.AgentRunStats
 import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
@@ -143,6 +144,7 @@ internal class AgentRuntimeRunExecutor(
                 }
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
+            val runStats = AgentRunStats()
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -207,6 +209,7 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                runStatsSummary = { runStats.summaryText() },
                 onTaskPlanUpdated = { planJson ->
                     acceptEvent(
                         session,
@@ -264,6 +267,7 @@ internal class AgentRuntimeRunExecutor(
                 capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
                 prompt = request.prompt,
                 toolExecutor = runToolExecutor,
+                runStats = runStats,
                 images = request.images,
                 history = request.history,
                 runController = runController,

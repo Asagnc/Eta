@@ -33,6 +33,16 @@ class PrefsDefaultsTest {
     }
 
     @Test
+    fun numericDefaultsAreDeclaredSeparatelyFromBooleanSwitches() {
+        assertEquals(
+            mapOf(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 4),
+            Prefs.Keys.INT_DEFAULTS,
+        )
+        // 数值项与布尔项共用 App 私有配置组，但不参与布尔开关的本地/远程同步协议。
+        assertFalse(Prefs.Keys.LOCAL_AGENT_KEYS.contains(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT))
+    }
+
+    @Test
     fun localAgentKeysMatchRuntimeOwnedSettings() {
         assertEquals(
             setOf(
