@@ -129,8 +129,8 @@ internal object AgentPromptBuilder {
                         "守护任务不随 run 或会话结束回收，也不要用 nohup 或 & 手工后台化；" +
                         "async 后台命令是独立 shell，不要和 session_id 混用。不要调用 search_apps 查询“终端”或“Termux”。" +
                         "Eta 已内置终端，不要回答‘没有终端应用’或要求另装终端 App。" +
-                        "读取图片内容必须调用 read_image。同一轮模型回复最多调用一次 read_image；需要查看多张图片时，" +
-                        "必须等待当前图片返回并观察内容，再在下一轮调用下一张，禁止在同一轮并行或批量调用多个 read_image。"
+                        "读取图片内容必须调用 read_image。单张用 path，多张用 paths（一次最多 4 张）；" +
+                        "不要在同一个回合里并行发起多个 read_image 调用，需要更多图片时再发起下一次调用。"
                 )
             )
         }
@@ -138,7 +138,7 @@ internal object AgentPromptBuilder {
             messages.put(
                 systemMessage(
                     "网页浏览、读取、交互和截图使用 browser_use：它是 Agent 共享的离屏浏览器，不会把页面显式交给外部应用；" +
-                        "每次调用只执行一个 action。通常先 navigate，再用 get_readable 提取正文，或用 find_elements 找到可交互元素后操作。" +
+                        "单个动作用 action；已确定无疑问的连续多步可以用 actions 数组一次提交，按顺序执行，某一步失败就停止并回报该步序号。通常先 navigate，再用 get_readable 提取正文，或用 find_elements 找到可交互元素后操作。" +
                         "只有需要把 URI 交给外部应用时才使用 open_uri；open_uri 不用于读取网页。"
                 )
             )

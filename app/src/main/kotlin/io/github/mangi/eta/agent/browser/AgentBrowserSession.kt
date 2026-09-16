@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.browser
 
+import io.github.mangi.eta.agent.model.AgentBrowserToolCatalog
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.MutableContextWrapper
@@ -411,6 +412,8 @@ internal object AgentBrowserSession {
         agentRunId: String? = null,
     ): BrowserToolResult {
         initialize(context)
+        val batch = args.optJSONArray("actions")
+        if (batch != null) return executeBatch(context, batch, userInitiated, agentRunId)
         val action = args.optString("action").trim().lowercase(Locale.ROOT)
         if (action !in SUPPORTED_ACTIONS) {
             return errorResult(action.ifBlank { "unknown" }, "INVALID_ACTION", "浏览器 action 无效或缺失")
@@ -468,6 +471,81 @@ internal object AgentBrowserSession {
                 if (activeAgentRunId == agentRunId) activeAgentRunId = null
             }
         }
+    }
+
+    /**
+     * 一次提交多个动作：按数组顺序执行，某一步返回失败就停止，并回报失败步的序号与原因。
+     * 每一步都走 executeInternal，沿用同一把可重入锁，因此用户接管、中断与 epoch 判定和单步调用一致。
+     */
+    private fun executeBatch(
+        context: Context,
+        actions: JSONArray,
+        userInitiated: Boolean,
+        agentRunId: String?,
+    ): BrowserToolResult {
+        val stepCount = actions.length()
+        if (stepCount == 0) return errorResult("batch", "INVALID_ARGUMENT", "actions 不能为空")
+        if (stepCount > AgentBrowserToolCatalog.MAX_BATCH_ACTIONS) {
+            return errorResult(
+                "batch",
+                "INVALID_ARGUMENT",
+                "actions 一次最多 ${AgentBrowserToolCatalog.MAX_BATCH_ACTIONS} 步",
+            )
+        }
+        val results = JSONArray()
+        val images = mutableListOf<BrowserImage>()
+        var failedIndex = -1
+        var failedAction = ""
+        var failedCode = ""
+        var failedMessage = ""
+        for (index in 0 until stepCount) {
+            val step = actions.optJSONObject(index)
+            if (step == null) {
+                failedIndex = index
+                failedCode = "INVALID_ARGUMENT"
+                failedMessage = "actions[$index] 必须是对象"
+                break
+            }
+            val stepArgs = JSONObject(step.toString())
+            val stepAction = stepArgs.optString("action").trim().lowercase(Locale.ROOT)
+            val result = executeInternal(
+                context = context,
+                args = stepArgs,
+                userInitiated = userInitiated,
+                agentRunId = agentRunId,
+            )
+            images += result.images
+            val payload = runCatching { JSONObject(result.content) }.getOrNull()
+            val succeeded = payload?.optBoolean("ok") == true
+            results.put(
+                JSONObject()
+                    .put("index", index)
+                    .put("action", stepAction)
+                    .put("ok", succeeded),
+            )
+            if (!succeeded) {
+                failedIndex = index
+                failedAction = stepAction
+                failedCode = payload?.optString("code").orEmpty()
+                failedMessage = payload?.optString("message").orEmpty()
+                break
+            }
+        }
+        val envelope = baseEnvelope(
+            "batch",
+            ok = failedIndex < 0,
+            status = if (failedIndex < 0) "ok" else "failed",
+        )
+            .put("count", results.length())
+            .put("results", results)
+        if (failedIndex >= 0) {
+            envelope
+                .put("failed_index", failedIndex)
+                .put("failed_action", failedAction)
+                .put("code", failedCode)
+                .put("message", failedMessage)
+        }
+        return toolResult(envelope, images)
     }
 
     private fun navigate(args: JSONObject): BrowserToolResult {

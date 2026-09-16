@@ -4,11 +4,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object AgentBrowserToolCatalog {
+    /** 单次 actions 数组允许的步数上限。 */
+    const val MAX_BATCH_ACTIONS = 10
+
     fun appendTo(tools: JSONArray) {
         tools.put(
             AgentToolSchema.function(
                 name = "browser_use",
-                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。一次调用只执行一个 action；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。evaluate_js 可在页面里执行 JS 表达式（支持 await），get_cookies 与 set_cookie 读写该浏览器的 Cookie，set_proxy 与 clear_proxy 控制该进程内所有 WebView 的代理（例如指向本机抓包工具），设置后 download 也走同一条代理，download 把 http(s) 文件保存到公共下载目录并返回路径。需要把 URI 显式交给外部应用时使用 open_uri。",
+                description = "操作 Eta 共享的离屏 Agent 浏览器，不会切换到外部浏览器。单个动作用 action；已确定无疑问的连续多步可以用 actions 数组一次提交，按顺序执行，某步失败即停止并回报失败步序号；网页浏览通常先 navigate，再用 get_readable 提取正文，或用 find_elements 查找可交互元素。evaluate_js 可在页面里执行 JS 表达式（支持 await），get_cookies 与 set_cookie 读写该浏览器的 Cookie，set_proxy 与 clear_proxy 控制该进程内所有 WebView 的代理（例如指向本机抓包工具），设置后 download 也走同一条代理，download 把 http(s) 文件保存到公共下载目录并返回路径。需要把 URI 显式交给外部应用时使用 open_uri。",
                 parameters = JSONObject()
                     .put("type", "object")
                     .put(
@@ -153,8 +156,16 @@ internal object AgentBrowserToolCatalog {
                                     .put("type", "integer")
                                     .put("description", "navigate、wait_for_selector 或 evaluate_js 的超时毫秒数。")
                             )
+                            .put(
+                                "actions",
+                                JSONObject()
+                                    .put("type", "array")
+                                    .put("maxItems", MAX_BATCH_ACTIONS)
+                                    .put("items", JSONObject().put("type", "object"))
+                                    .put("description", "连续多步时使用：每项是 {action, ...该动作自己的参数}，按顺序执行；某一步失败即停止，并回报该步的 index、code 与 message。与 action 同时给出时以 actions 为准。")
+                            )
                     )
-                    .put("required", JSONArray().put("action"))
+                    .put("required", JSONArray())
             )
         )
     }

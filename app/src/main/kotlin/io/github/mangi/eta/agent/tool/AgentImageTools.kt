@@ -7,20 +7,88 @@ import io.github.mangi.eta.agent.device.BoundedFileCopy
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.media.MAX_AGENT_IMAGE_BYTES
+import io.github.mangi.eta.agent.model.AgentFileVisionToolCatalog
 import io.github.mangi.eta.agent.model.AgentModelClient
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** 读取用户已明确指定的单张图片，并以临时视觉附件交给当前模型回合。 */
+/**
+ * 读取用户已明确指定的图片，并以临时视觉附件交给当前模型回合。
+ *
+ * 一次调用最多 [AgentFileVisionToolCatalog.MAX_IMAGES_PER_CALL] 张，逐张独立读取：
+ * 单张失败只影响它自己，结果里按路径逐条报告状态，读取成功的图片照样交给模型。
+ */
 internal class AgentImageTools(
     private val context: Context,
     private val root: BoundedRootCommandExecutor,
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
 ) {
     fun readImage(args: JSONObject): AgentModelClient.ToolResult {
-        val source = args.getString("path").removePrefix("file://")
+        val sources = resolveSources(args)
+        if (sources.isEmpty()) {
+            return sensitive(error("IMAGE_PATH_DENIED", "需要提供 path 或 paths"))
+        }
+        if (sources.size > AgentFileVisionToolCatalog.MAX_IMAGES_PER_CALL) {
+            return sensitive(
+                error(
+                    "IMAGE_TOO_MANY",
+                    "一次最多读取 ${AgentFileVisionToolCatalog.MAX_IMAGES_PER_CALL} 张图片",
+                ),
+            )
+        }
+        if (sources.size == 1) return readOne(sources.first())
+
+        val images = mutableListOf<AgentModelClient.ModelImage>()
+        val reports = JSONArray()
+        var firstFailureCode = ""
+        for (source in sources) {
+            val one = readOne(source)
+            val payload = runCatching { JSONObject(one.content) }.getOrNull()
+            val attached = payload?.optBoolean("ok") == true && one.images.isNotEmpty()
+            if (attached) {
+                images += one.images
+            } else if (firstFailureCode.isEmpty()) {
+                firstFailureCode = payload?.optString("code").orEmpty()
+            }
+            reports.put(
+                JSONObject()
+                    .put("path", source)
+                    .put("ok", attached)
+                    .apply {
+                        if (attached) {
+                            put("image_attached", true)
+                        } else {
+                            put("code", payload?.optString("code").orEmpty())
+                            put("message", payload?.optString("message").orEmpty())
+                        }
+                    },
+            )
+        }
+        val content = JSONObject()
+            .put("ok", images.isNotEmpty())
+            .put("tool", "read_image")
+            .put("count", images.size)
+            .put("results", reports)
+        if (images.isEmpty()) content.put("code", firstFailureCode)
+        return sensitive(content.toString(), images)
+    }
+
+    /** 本次要读取的路径清单：paths 非空时以它为准，否则退回单张 path。 */
+    private fun resolveSources(args: JSONObject): List<String> {
+        val batch = args.optJSONArray("paths")
+        if (batch != null && batch.length() > 0) {
+            return (0 until batch.length()).mapNotNull { index ->
+                batch.optString(index).trim().takeIf(String::isNotEmpty)
+            }
+        }
+        return listOf(args.optString("path").trim()).filter(String::isNotEmpty)
+    }
+
+    private fun readOne(rawSource: String): AgentModelClient.ToolResult {
+        val source = rawSource.removePrefix("file://")
         val sourceKind = when {
             source.startsWith("content://") -> ImageSourceKind.ContentUri
             source.startsWith("/") && !source.contains('\u0000') -> ImageSourceKind.File
