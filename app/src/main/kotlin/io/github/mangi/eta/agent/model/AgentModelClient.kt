@@ -279,6 +279,10 @@ internal object AgentModelClient {
         val maxParallelToolCalls: Int = 4,
         /** 子智能体默认关闭：它会引入额外的模型开销，只在需要并行检索时开启。 */
         val subAgentTools: Boolean = false,
+        /** 请求视图里保留完整内容的最新工具结果条数；0 表示只保留最后一条，负数表示不清理。 */
+        val toolResultKeep: Int = 6,
+        /** 上下文占用提示的触发百分比，0 表示关闭该提示。 */
+        val contextNoticePercent: Int = 60,
         val thinkingEnabled: Boolean = false,
         val reasoningEffort: ReasoningEffort? = null,
         val reasoningCapabilities: ModelReasoningCapabilities? = null,

@@ -36,7 +36,11 @@ class PrefsDefaultsTest {
     @Test
     fun numericDefaultsAreDeclaredSeparatelyFromBooleanSwitches() {
         assertEquals(
-            mapOf(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 4),
+            mapOf(
+                Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 4,
+                Prefs.Keys.AGENT_TOOL_RESULT_KEEP to 6,
+                Prefs.Keys.AGENT_CONTEXT_NOTICE_PERCENT to 60,
+            ),
             Prefs.Keys.INT_DEFAULTS,
         )
         // 数值项与布尔项共用 App 私有配置组，但不参与布尔开关的本地/远程同步协议。

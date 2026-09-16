@@ -45,6 +45,10 @@ internal object Prefs {
         const val AGENT_THINKING_ENABLED = "agent_thinking_enabled"
         /** 子智能体开关，默认关闭；开启后模型才会看到 delegate 与 multi_perspective。 */
         const val AGENT_SUBAGENTS_ENABLED = "agent_subagents_enabled"
+        /** 请求视图里保留完整内容的最新工具结果条数。 */
+        const val AGENT_TOOL_RESULT_KEEP = "agent_tool_result_keep"
+        /** 上下文占用提示的触发百分比，设为 0 即关闭该策略（用于对照实验）。 */
+        const val AGENT_CONTEXT_NOTICE_PERCENT = "agent_context_notice_percent"
         /** 同批只读工具的并发上限；默认值与运行时的并发配置项一致。 */
         const val AGENT_PARALLEL_TOOL_LIMIT = "agent_parallel_tool_limit"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
@@ -72,6 +76,8 @@ internal object Prefs {
         /** 数值开关及其默认值。 */
         val INT_DEFAULTS: Map<String, Int> = mapOf(
             AGENT_PARALLEL_TOOL_LIMIT to 4,
+            AGENT_TOOL_RESULT_KEEP to 6,
+            AGENT_CONTEXT_NOTICE_PERCENT to 60,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */

@@ -79,6 +79,20 @@ class AgentRunStatsTest {
     }
 
     @Test
+    fun pruningAndContextNoticeCountersAreReported() {
+        val stats = AgentRunStats()
+        stats.recordPrunedToolResults(0)
+        stats.recordPrunedToolResults(3)
+        stats.recordContextNotice()
+        val snapshot = stats.snapshot()
+        assertEquals(3, snapshot.getInt("pruned_tool_results"))
+        assertEquals(1, snapshot.getInt("context_notices"))
+        val summary = stats.summaryText()
+        assertTrue(summary.contains("已清理较早的工具结果 3 条"))
+        assertTrue(summary.contains("上下文提示触发 1 次"))
+    }
+
+    @Test
     fun snapshotListsEightToolsWhileSummaryKeepsTotals() {
         val stats = AgentRunStats()
         repeat(12) { index -> stats.recordTool("tool_$index", durationMs = index * 10L, success = true) }

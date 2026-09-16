@@ -30,6 +30,8 @@ internal class AgentRunStats {
     private val cachedTokens = AtomicLong()
     private val reasoningTokens = AtomicLong()
     private val contextTokens = AtomicInteger()
+    private val prunedToolResults = AtomicInteger()
+    private val contextNotices = AtomicInteger()
 
     val isEmpty: Boolean
         get() = rounds.get() == 0 && buckets.isEmpty()
@@ -51,6 +53,16 @@ internal class AgentRunStats {
         if (size <= 1) return
         parallelBatches.incrementAndGet()
         parallelCalls.addAndGet(size)
+    }
+
+    /** 请求视图里被替换成占位内容的工具结果条数。 */
+    fun recordPrunedToolResults(count: Int) {
+        if (count > 0) prunedToolResults.addAndGet(count)
+    }
+
+    /** 上下文占用提示实际触发的次数；策略是否值得保留要看它。 */
+    fun recordContextNotice() {
+        contextNotices.incrementAndGet()
     }
 
     fun recordUsage(usage: AgentTokenUsage) {
@@ -92,6 +104,8 @@ internal class AgentRunStats {
             .put("tool_total_ms", totalMs)
             .put("parallel_batches", parallelBatches.get())
             .put("parallel_calls", parallelCalls.get())
+            .put("pruned_tool_results", prunedToolResults.get())
+            .put("context_notices", contextNotices.get())
             .put("distinct_tools", buckets.size)
             .put("listed_tools", tools.length())
             .put("tools", tools)
@@ -114,6 +128,13 @@ internal class AgentRunStats {
         append("，耗时合计 ").append(seconds(buckets.values.sumOf { it.totalMs.get() })).append("；")
         append("并发批次 ").append(parallelBatches.get())
             .append("（覆盖 ").append(parallelCalls.get()).append(" 次调用）。\n")
+        if (prunedToolResults.get() > 0) {
+            append("已清理较早的工具结果 ").append(prunedToolResults.get()).append(" 条；")
+        }
+        if (contextNotices.get() > 0) {
+            append("上下文提示触发 ").append(contextNotices.get()).append(" 次；")
+        }
+        if (prunedToolResults.get() > 0 || contextNotices.get() > 0) append("\n")
         append("token：输入 ").append(inputTokens.get())
             .append("、输出 ").append(outputTokens.get())
             .append("、缓存命中 ").append(cachedTokens.get())

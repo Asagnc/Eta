@@ -56,8 +56,7 @@ internal class AgentLoop(
 
         const val MAX_PARALLEL_TOOL_CALLS_LIMIT = 8
 
-        /** 上下文占用越过窗口该比例时开始提示，留出压缩与收尾的余量。 */
-        const val CONTEXT_NOTICE_RATIO = 0.6
+        /** 上下文提示阈值与工具结果保留条数都是运行时配置（见 ModelConfig），不在循环里硬编码。 */
     }
 
     private var toolCallValidator = AgentToolCallValidator(tools)
@@ -108,7 +107,7 @@ internal class AgentLoop(
             toolCallValidator = AgentToolCallValidator(roundTools)
             publishTranscript()
             context.compact(roundTools)
-            var requestMessages = roleplayContext?.projectMessages(messages, roundTools) ?: messages
+            var requestMessages = requestMessagesFor(roundTools)
             var requestEstimate = AgentContextBudget.rawEstimate(requestMessages, roundTools)
             var roundInputTokens: Int? = null
             var overflowAttempts = 0
@@ -336,13 +335,30 @@ internal class AgentLoop(
      * 其余情况（含参数校验失败、有副作用工具、异常终止状态）保持逐个顺序执行。
      */
     /**
+     * 请求视图：较早的工具结果换成占位内容，会话历史与归档保持完整。
+     *
+     * 这是最轻量的压缩手段——不动助手推理，也不改写摘要，只让请求体变短；
+     * 需要原始内容时模型可以重新调用对应工具。
+     */
+    private fun requestMessagesFor(roundTools: JSONArray): JSONArray {
+        val base = roleplayContext?.projectMessages(messages, roundTools)
+            ?: AgentContextPruner.copyOf(messages)
+        val pruned = AgentContextPruner.prune(base, config.toolResultKeep)
+        if (pruned > 0) runStats?.recordPrunedToolResults(pruned)
+        return base
+    }
+
+    /**
      * 上下文接近窗口上限时返回一句提示，附在批次最后一条工具结果上。
-     * 只在越线时出现，平时不占用上下文。
+     * 只在越线时出现，平时不占用上下文；阈值由配置决定，设为 0 即关闭该策略。
      */
     private fun contextPressureNotice(roundTools: JSONArray): String? {
+        val percent = config.contextNoticePercent
+        if (percent <= 0) return null
         val window = context.budget.windowTokens?.takeIf { it > 0 } ?: return null
         val used = context.budget.estimate(messages, roundTools)
-        if (used < window * CONTEXT_NOTICE_RATIO) return null
+        if (used < window * percent / 100) return null
+        runStats?.recordContextNotice()
         return "上下文已用约 ${used * 100 / window}%（$used/$window token），后续请精简输出与工具调用。"
     }
 
