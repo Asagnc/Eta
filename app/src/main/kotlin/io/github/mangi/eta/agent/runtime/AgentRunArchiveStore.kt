@@ -9,6 +9,10 @@ import io.github.mangi.eta.data.db.RuntimeArchiveEventEntity
 import io.github.mangi.eta.data.db.RuntimeArchiveRunEntity
 import io.github.mangi.eta.data.db.RuntimeArchiveRunWithEvents
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 
@@ -41,6 +45,7 @@ internal object AgentRunArchiveStore {
                 events = compacted.toEventEntities(archiveRunId),
             )
         }
+        updateSignals.tryEmit(Unit)
     }
 
     fun list(context: Context): List<ArchivedRun> {
@@ -60,6 +65,14 @@ internal object AgentRunArchiveStore {
                 .deleteArchivedRun(runId)
         }
     }
+
+    private val updateSignals = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** 归档写入后发出的进程内信号，供正在运行的界面立即导入。 */
+    val updates: SharedFlow<Unit> = updateSignals.asSharedFlow()
 
     private val ArchivedRun.archiveRunId: String
         get() = result.runId.ifBlank { handoff.id }

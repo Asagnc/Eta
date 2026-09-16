@@ -97,6 +97,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -175,6 +176,11 @@ internal class AgentAppState(
                 importArchivedExternalRuns()
             } finally {
                 runtimeRecoveryInProgress.set(false)
+            }
+        }
+        scope.launch {
+            AgentRunArchiveStore.updates.collect {
+                importArchivedExternalRuns()
             }
         }
     }
