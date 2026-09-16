@@ -419,6 +419,7 @@ internal class AgentLocalTools(
                 .getOrElse { throwable ->
                     errorResult("SEQUENCE_STEP_FAILED", "第 $index 步执行异常：${throwable.javaClass.simpleName}")
                 }
+                .let { first -> settleOrRetrySequenceStep(action, stepArgs, first) }
             val ok = !outcome.startsWith("{\"ok\":false")
             executed.put(
                 JSONObject()
@@ -516,6 +517,29 @@ internal class AgentLocalTools(
             .getOrElse { return errorResult("FLOW_LOAD_FAILED", "流程文件损坏") }
         val steps = flow.optJSONArray("steps") ?: return errorResult("FLOW_LOAD_FAILED", "流程缺少 steps")
         return runSequence(JSONObject().put("steps", steps))
+    }
+
+    /**
+     * 序列内相邻步骤间隔很短，这里补两件事：点击类动作后等界面稳定再走下一步；输入框在被点击后
+     * 要等控件报出光标位置，紧接着写入会因没有可靠光标被拒，此时稍等后重试一次同样的写入。
+     */
+    private fun settleOrRetrySequenceStep(
+        action: String,
+        args: JSONObject,
+        first: String,
+    ): String {
+        if (first.isOkJson()) {
+            when (action) {
+                "tap", "tap_area", "tap_element", "tap_text", "long_press", "press" ->
+                    runCatching { Thread.sleep(SEQUENCE_SETTLE_AFTER_TAP_MS) }
+                "swipe", "drag", "scroll" ->
+                    runCatching { Thread.sleep(SEQUENCE_SETTLE_AFTER_SCROLL_MS) }
+            }
+            return first
+        }
+        if (action != "input" || !first.contains(SEQUENCE_NO_SELECTION_CODE)) return first
+        runCatching { Thread.sleep(SEQUENCE_INPUT_RETRY_DELAY_MS) }
+        return runCatching { dispatchSequenceStep(action, args) }.getOrElse { first }
     }
 
     private fun dispatchSequenceStep(action: String, args: JSONObject): String = when (action) {
@@ -1642,3 +1666,8 @@ private val FLOW_SAFE_ACTIONS = setOf(
     "tap_text", "input", "replace", "clear", "press", "wait",
     "wait_text", "wait_package", "swipe", "scroll",
 )
+
+private const val SEQUENCE_SETTLE_AFTER_TAP_MS = 350L
+private const val SEQUENCE_SETTLE_AFTER_SCROLL_MS = 650L
+private const val SEQUENCE_INPUT_RETRY_DELAY_MS = 400L
+private const val SEQUENCE_NO_SELECTION_CODE = "TEXT_SELECTION_UNAVAILABLE"

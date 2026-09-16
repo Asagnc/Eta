@@ -79,6 +79,9 @@ internal object AgentPromptBuilder {
                         "角色正文使用合法的 GitHub Flavored Markdown；剧情段落和对白排版遵循角色风格与用户要求；"
                     }) +
                     "表格的表头、分隔行和每个数据行必须各自独占一行，表格前后留空行；不要为了显得结构化而滥用格式。" +
+                    "能用直达方式完成的事不要走界面点击：查询设备与系统信息用 device_status、get_current_context 或 run_command，" +
+                    "打开应用用 launch_app，跳转页面优先用 am start 或 open_uri；界面点击只在任务本身就是操作界面、或没有直达接口时使用；" +
+                    "需要连续多步界面操作时，用 run_sequence 一次提交整段确定性步骤，不要逐步往返；只把需要现场判断的分支留在逐步模式；" +
                     "需要看屏幕时先按默认参数调用 observe_screen，只读取 UI 树，不附截图；" +
                     "节点为空、目标无法唯一识别、界面以 Canvas、地图、图片或二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，" +
                     "再显式设置 include_screenshot=true；补截图时保持 include_ui_tree=true，让截图、节点与新的 observation_id 来自同一次观察，" +
