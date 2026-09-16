@@ -224,5 +224,51 @@ internal object AgentGestureToolCatalog {
                         .put("required", JSONArray().put("index").put("observation_id").put("direction"))
                 )
             )
+            .put(
+                AgentToolSchema.function(
+                    name = "run_sequence",
+                    description = "按顺序执行一组屏幕操作，一次调用覆盖多步、减少模型往返。每个 step 用对应工具的入参表达：{action: 'tap_element', index, observation_id}、{action: 'input', text}、{action: 'replace', text}、{action: 'press', button}、{action: 'wait', duration_ms}、{action: 'wait_text', text, timeout_ms}、{action: 'swipe', x1, y1, x2, y2}、{action: 'scroll', direction}。任何一步失败立即停止，返回 failed_step、已执行步骤与当前屏幕摘要；只放确定性步骤，需要现场判断的分支操作不要放进序列。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject()
+                                .put(
+                                    "steps",
+                                    JSONObject()
+                                        .put("type", "array")
+                                        .put(
+                                            "description",
+                                            "按顺序执行的步骤数组；action 与对应工具一致：tap / tap_area / tap_element / long_press / swipe / drag / scroll / input / replace / clear / press / wait / wait_text / wait_package"
+                                        )
+                                        .put(
+                                            "items",
+                                            JSONObject()
+                                                .put("type", "object")
+                                                .put(
+                                                    "properties",
+                                                    JSONObject()
+                                                        .put("action", JSONObject().put("type", "string"))
+                                                        .put("index", JSONObject().put("type", "integer"))
+                                                        .put("observation_id", JSONObject().put("type", "string"))
+                                                        .put("text", JSONObject().put("type", "string"))
+                                                        .put("button", JSONObject().put("type", "string"))
+                                                        .put("duration_ms", JSONObject().put("type", "integer"))
+                                                        .put("timeout_ms", JSONObject().put("type", "integer"))
+                                                        .put("direction", JSONObject().put("type", "string"))
+                                                        .put("x", JSONObject().put("type", "integer"))
+                                                        .put("y", JSONObject().put("type", "integer"))
+                                                        .put("x1", JSONObject().put("type", "integer"))
+                                                        .put("y1", JSONObject().put("type", "integer"))
+                                                        .put("x2", JSONObject().put("type", "integer"))
+                                                        .put("y2", JSONObject().put("type", "integer"))
+                                                )
+                                                .put("required", JSONArray().put("action"))
+                                        )
+                                )
+                        )
+                        .put("required", JSONArray().put("steps"))
+                )
+            )
     }
 }

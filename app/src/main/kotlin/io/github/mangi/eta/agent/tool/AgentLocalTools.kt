@@ -176,6 +176,7 @@ internal class AgentLocalTools(
                 "open_uri" -> textResult(openUri(args))
                 "browser_use" -> browserUse(args, toolCall.id)
                 "observe_screen" -> observeScreen(args)
+                "run_sequence" -> textResult(runSequence(args))
                 "tap" -> textResult(tap(args))
                 "tap_area" -> textResult(tapArea(args))
                 "tap_element" -> textResult(tapElement(args))
@@ -396,6 +397,101 @@ internal class AgentLocalTools(
             images = listOfNotNull(observation.image)
         )
     }
+
+    private fun runSequence(args: JSONObject): String {
+        val steps = args.optJSONArray("steps") ?: return errorResult("INVALID_ARGUMENT", "steps 不能为空")
+        if (steps.length() == 0 || steps.length() > MAX_SEQUENCE_STEPS) {
+            return errorResult("INVALID_ARGUMENT", "steps 数量需在 1..$MAX_SEQUENCE_STEPS 之间")
+        }
+        val executed = JSONArray()
+        for (index in 0 until steps.length()) {
+            val step = steps.optJSONObject(index)
+                ?: return errorResult("INVALID_ARGUMENT", "steps[$index] 必须是对象")
+            val action = step.optString("action").ifBlank {
+                return errorResult("INVALID_ARGUMENT", "steps[$index] 缺少 action")
+            }
+            val stepArgs = JSONObject()
+            step.keys().forEach { key -> stepArgs.put(key, step.get(key)) }
+            stepArgs.remove("action")
+            val outcome = runCatching { dispatchSequenceStep(action, stepArgs) }
+                .getOrElse { throwable ->
+                    errorResult("SEQUENCE_STEP_FAILED", "第 $index 步执行异常：${throwable.javaClass.simpleName}")
+                }
+            val ok = !outcome.startsWith("{\"ok\":false")
+            executed.put(
+                JSONObject()
+                    .put("index", index)
+                    .put("action", action)
+                    .put("ok", ok)
+                    .put("result", outcome.take(SEQUENCE_RESULT_CHARS))
+            )
+            if (!ok) {
+                return JSONObject()
+                    .put("ok", false)
+                    .put("code", "SEQUENCE_STOPPED")
+                    .put("failed_step", index)
+                    .put("failed_action", action)
+                    .put("steps", executed)
+                    .put("current_screen", currentScreenSummary())
+                    .toString()
+            }
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("steps", executed)
+            .put("current_screen", currentScreenSummary())
+            .toString()
+    }
+
+    private fun dispatchSequenceStep(action: String, args: JSONObject): String = when (action) {
+        "tap" -> tap(args)
+        "tap_area" -> tapArea(args)
+        "tap_element" -> tapElement(args)
+        "long_press" -> longPress(args)
+        "swipe" -> swipe(args)
+        "drag" -> drag(args)
+        "scroll" -> deviceController.scroll(args.optString("direction"))
+        "input" -> inputText(args)
+        "replace" -> replaceText(args)
+        "clear" -> clearText(args)
+        "press" -> deviceController.pressKey(args.optString("button"))
+        "wait" -> deviceController.waitMs(args.optInt("duration_ms", 1_000))
+        "wait_text" -> waitForText(args)
+        "wait_package" -> waitForPackage(args)
+        else -> errorResult("INVALID_ARGUMENT", "steps 中不支持的 action=$action")
+    }
+
+    private fun currentScreenSummary(): String = runCatching {
+        val observation = deviceController.observe(
+            includeScreenshot = false,
+            includeUiTree = true,
+            maxNodes = 60,
+        )
+        val element = observation.elementObservation
+        val nodes = element?.nodes.orEmpty()
+        JSONObject()
+            .put("package", element?.packageName.orEmpty())
+            .put("node_count", nodes.size)
+            .put(
+                "interactive",
+                JSONArray().also { array ->
+                    nodes.filter { it.clickable || it.editable || it.scrollable }
+                        .take(40)
+                        .forEach { node ->
+                            array.put(
+                                JSONObject()
+                                    .put("index", node.index)
+                                    .put("text", node.text)
+                                    .put("desc", node.desc)
+                                    .put("clickable", node.clickable)
+                                    .put("editable", node.editable)
+                                    .put("scrollable", node.scrollable)
+                            )
+                        }
+                }
+            )
+            .toString()
+    }.getOrElse { "" }
 
     private fun tap(args: JSONObject): String {
         val point = convertPoint(
@@ -1400,3 +1496,6 @@ internal class AgentLocalTools(
         val MEMORY_TOOL_NAMES = setOf("memory_get", "memory_write")
     }
 }
+
+private const val MAX_SEQUENCE_STEPS = 12
+private const val SEQUENCE_RESULT_CHARS = 200

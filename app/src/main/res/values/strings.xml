@@ -246,6 +246,7 @@
   <string name="overlay_continuation_unavailable">Additional input not supported here</string>
   <string name="overlay_stopped">Stopped</string>
   <string name="tool_observe_screen">Observe screen</string>
+  <string name="tool_run_sequence">Run sequence</string>
   <string name="tool_tap">Tap</string>
   <string name="tool_tap_element">Tap element</string>
   <string name="tool_long_press">Long press</string>
