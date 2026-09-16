@@ -742,6 +742,11 @@ internal object AgentRuntimeWire {
                 putInt("image_bytes", event.imageBytes)
             }
 
+            is AgentEvent.TaskPlanUpdated -> {
+                putString(KEY_TYPE, "task_plan_updated")
+                putString("plan_json", event.planJson)
+            }
+
             is AgentEvent.RunFinished -> {
                 putString(KEY_TYPE, "run_finished")
                 putInt("round", event.round)
@@ -879,6 +884,10 @@ internal object AgentRuntimeWire {
             toolName = bundle.getString("tool_name").orEmpty(),
             imageCount = bundle.getInt("image_count"),
             imageBytes = bundle.getInt("image_bytes"),
+        )
+
+        "task_plan_updated" -> AgentEvent.TaskPlanUpdated(
+            planJson = bundle.getString("plan_json").orEmpty(),
         )
 
         "run_finished" -> AgentEvent.RunFinished(

@@ -204,6 +204,14 @@ internal sealed interface AgentEvent {
                 "images=$imageCount, image_bytes=$imageBytes"
     }
 
+    data class TaskPlanUpdated(
+        /** 完整清单快照的 JSON 数组，每项含 id、content、status。 */
+        val planJson: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "task_plan_updated chars=${planJson.length}"
+    }
+
     data class RunFinished(
         val round: Int,
         val contentChars: Int

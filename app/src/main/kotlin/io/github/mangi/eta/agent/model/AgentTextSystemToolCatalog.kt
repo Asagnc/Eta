@@ -267,5 +267,49 @@ internal object AgentTextSystemToolCatalog {
                         .put("required", JSONArray().put("panel"))
                 )
             )
+            .put(
+                AgentToolSchema.function(
+                    name = "task_plan",
+                    description = "维护当前任务清单。需要多个步骤才能完成的任务先用它列出计划，" +
+                        "每开始一步把它标为 in_progress、确认完成后标为 completed；" +
+                        "简单的一两步任务不需要清单。每次调用提交完整清单，不是增量修改。" +
+                        "同一时间只能有一项 in_progress。",
+                    parameters = JSONObject()
+                        .put("type", "object")
+                        .put(
+                            "properties",
+                            JSONObject().put(
+                                "todos",
+                                JSONObject()
+                                    .put("type", "array")
+                                    .put(
+                                        "description",
+                                        "当前完整任务清单；传空数组表示清空。",
+                                    )
+                                    .put(
+                                        "items",
+                                        JSONObject()
+                                            .put("type", "object")
+                                            .put(
+                                                "properties",
+                                                JSONObject()
+                                                    .put("id", JSONObject().put("type", "string")
+                                                        .put("description", "稳定标识，例如 inspect-project；同一任务复用同一 id。"))
+                                                    .put("content", JSONObject().put("type", "string")
+                                                        .put("description", "可执行、可验证的具体步骤，不要写成空泛目标。"))
+                                                    .put(
+                                                        "status",
+                                                        JSONObject()
+                                                            .put("type", "string")
+                                                            .put("enum", JSONArray().put("pending").put("in_progress").put("completed")),
+                                                    )
+                                                    .put("required", JSONArray().put("id").put("content").put("status")),
+                                            ),
+                                    ),
+                            ),
+                        )
+                        .put("required", JSONArray().put("todos")),
+                )
+            )
     }
 }

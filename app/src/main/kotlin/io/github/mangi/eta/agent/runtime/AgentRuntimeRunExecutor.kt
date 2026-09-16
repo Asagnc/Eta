@@ -207,6 +207,15 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                onTaskPlanUpdated = { planJson ->
+                    acceptEvent(
+                        session,
+                        AgentEvent.TaskPlanUpdated(planJson),
+                        archivedEvents,
+                        entrySurfaceGuard,
+                        checkpointRecorder,
+                    )
+                },
             )
             val routingExecutor = RoutingToolExecutor(
                 local = executor,

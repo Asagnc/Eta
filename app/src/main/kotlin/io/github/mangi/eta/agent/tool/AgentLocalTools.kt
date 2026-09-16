@@ -81,6 +81,7 @@ internal class AgentLocalTools(
     private val screenObservationProvider: (
         (AgentScreenObservationContract.Options) -> RootShellDeviceController.Observation
     )? = null,
+    private val onTaskPlanUpdated: ((String) -> Unit)? = null,
     private val beforeToolExecution: (String) -> ToolExecutionDecision = {
         ToolExecutionDecision.Allow
     },
@@ -211,6 +212,7 @@ internal class AgentLocalTools(
                 "edit_file" -> textResult(terminalTool { editFile(args) })
                 "search_code" -> textResult(terminalTool { searchCode(args) })
                 "list_directory" -> textResult(terminalTool { listDirectory(args) })
+                "task_plan" -> textResult(taskPlan(args))
                 "memory_get" -> textResult(memoryGet(args))
                 "memory_write" -> textResult(memoryWrite(args))
                 "skills_list" -> textResult(skillsList(args))
@@ -291,6 +293,59 @@ internal class AgentLocalTools(
             sensitive = true,
         )
     }
+
+    /** 当前 run 的任务清单；只在本次 run 内有效，事件把它同步给界面。 */
+    private var currentTaskPlan: String = ""
+
+    /**
+     * 维护任务清单：每次提交的是完整快照，校验不通过时不改动已保存的清单。
+     */
+    private fun taskPlan(args: JSONObject): String {
+        val raw = args.optJSONArray("todos")
+            ?: return errorResult("INVALID_ARGUMENT", "todos 必须是数组")
+        val normalized = JSONArray()
+        val seen = mutableSetOf<String>()
+        var inProgress = 0
+        for (index in 0 until raw.length()) {
+            val item = raw.optJSONObject(index)
+                ?: return errorResult("INVALID_ARGUMENT", "第 ${index + 1} 项不是对象")
+            val id = item.optString("id").trim()
+            val content = item.optString("content").trim()
+            val status = item.optString("status").trim().ifBlank { "pending" }
+            if (id.isEmpty()) return errorResult("INVALID_ARGUMENT", "第 ${index + 1} 项缺少 id")
+            if (!seen.add(id)) return errorResult("INVALID_ARGUMENT", "id 重复：$id")
+            if (content.isEmpty()) return errorResult("INVALID_ARGUMENT", "第 ${index + 1} 项缺少 content")
+            if (status !in TASK_PLAN_STATUSES) {
+                return errorResult("INVALID_ARGUMENT", "status 只能是 pending、in_progress 或 completed，收到：$status")
+            }
+            if (status == "in_progress") inProgress++
+            normalized.put(
+                JSONObject().put("id", id).put("content", content).put("status", status),
+            )
+        }
+        if (inProgress > 1) {
+            return errorResult("INVALID_ARGUMENT", "同一时间只能有一项 in_progress，当前有 $inProgress 项")
+        }
+        currentTaskPlan = normalized.toString()
+        onTaskPlanUpdated?.invoke(currentTaskPlan)
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "task_plan")
+            .put("items", normalized.length())
+            .put("plan", renderTaskPlan(normalized))
+            .toString()
+    }
+
+    private fun renderTaskPlan(todos: JSONArray): String =
+        (0 until todos.length()).joinToString("\n") { index ->
+            val item = todos.getJSONObject(index)
+            val marker = when (item.getString("status")) {
+                "completed" -> "[x]"
+                "in_progress" -> "[>]"
+                else -> "[ ]"
+            }
+            "$marker ${item.getString("id")} - ${item.getString("content")}"
+        }
 
     private fun memoryGet(args: JSONObject): String = try {
         val result = AgentMemoryRepository.read(
@@ -1703,3 +1758,6 @@ private const val SEQUENCE_SETTLE_AFTER_TAP_MS = 350L
 private const val SEQUENCE_SETTLE_AFTER_SCROLL_MS = 650L
 private const val SEQUENCE_INPUT_RETRY_DELAY_MS = 400L
 private const val SEQUENCE_NO_SELECTION_CODE = "TEXT_SELECTION_UNAVAILABLE"
+
+/** 任务清单允许的状态值。 */
+private val TASK_PLAN_STATUSES = setOf("pending", "in_progress", "completed")

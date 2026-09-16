@@ -56,6 +56,7 @@ import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
+import io.github.mangi.eta.ui.model.AgentTaskPlanCodec
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import io.github.mangi.eta.ui.model.AgentMessageUi
@@ -2041,6 +2042,18 @@ internal class AgentAppState(
             return
         }
         when (event) {
+            is AgentEvent.TaskPlanUpdated -> {
+                conversationIdForRun(runId)?.let { conversationId ->
+                    conversationsById[conversationId]?.let { state ->
+                        updateConversation(
+                            conversationId = conversationId,
+                            state = state.copy(taskPlan = AgentTaskPlanCodec.decode(event.planJson)),
+                            updateTimestamp = false,
+                        )
+                    }
+                }
+            }
+
             is AgentEvent.AssistantBlockStart -> {
                 updateRunTrace(runId) { messages ->
                     runMessageProjector.startAssistantBlock(runId, event, messages)
