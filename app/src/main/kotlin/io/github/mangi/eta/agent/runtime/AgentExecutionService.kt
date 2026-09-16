@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -138,5 +139,49 @@ internal class AgentExecutionService : Service() {
             leases.release(id)
             mainHandler.post { instance?.refreshNotification() }
         }
+
+        /** 后台任务结束时提示用户；应用就在前台时不打扰。 */
+        fun notifyFinished(context: Context, ok: Boolean, detail: String? = null) {
+            if (isAppForeground(context)) return
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    DONE_CHANNEL,
+                    context.getString(R.string.execution_channel),
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+            val open = PendingIntent.getActivity(
+                context, 2, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val title = context.getString(
+                if (ok) R.string.execution_finished_title else R.string.execution_failed_title,
+            )
+            val text = detail ?: context.getString(
+                if (ok) R.string.execution_finished_text else R.string.execution_failed_text,
+            )
+            val finished = Notification.Builder(context, DONE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setWhen(System.currentTimeMillis())
+                .build()
+            manager.notify(DONE_NOTIFICATION_ID, finished)
+        }
+
+        private fun isAppForeground(context: Context): Boolean {
+            val manager = context.getSystemService(ActivityManager::class.java) ?: return true
+            val processes = runCatching { manager.runningAppProcesses }.getOrNull() ?: return true
+            return processes.any {
+                it.processName == context.packageName &&
+                    it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+            }
+        }
+
+        private const val DONE_CHANNEL = "eta_execution_done"
+        private const val DONE_NOTIFICATION_ID = 1108
     }
 }

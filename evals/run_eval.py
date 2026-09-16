@@ -133,6 +133,24 @@ def validate_arguments(schema: dict, arguments: dict) -> list[str]:
     return problems
 
 
+RETRY_LIMIT = 6
+
+
+def rate_limit_delay(detail: str, attempt: int) -> float:
+    """限流/服务端错误的等待时间：优先用服务端给的 retryAfterSeconds，否则指数退避。"""
+    wait = 0.0
+    try:
+        payload = json.loads(detail)
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict):
+            raw = data.get("retryAfterSeconds")
+            if isinstance(raw, (int, float)):
+                wait = float(raw)
+    except json.JSONDecodeError:
+        pass
+    return max(wait, 2.0 ** attempt, 5.0) + 0.5
+
+
 def post_chat(provider_url: str, model: str, messages: list[dict], tools: list[dict], api_key: str) -> dict:
     body = json.dumps(
         {
@@ -153,22 +171,29 @@ def post_chat(provider_url: str, model: str, messages: list[dict], tools: list[d
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-            return json.loads(response.read().decode())
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode(errors="replace")[:400]
-        if error.code in (401, 403):
-            raise Failure("auth_error", detail)
-        if error.code == 429:
-            raise Failure("rate_limited", detail)
-        if error.code >= 500:
-            raise Failure("server_error", f"{error.code} {detail}")
-        raise Failure("http_error", f"{error.code} {detail}")
-    except (urllib.error.URLError, TimeoutError) as error:
-        raise Failure("network_error", str(error))
-    except json.JSONDecodeError as error:
-        raise Failure("invalid_response", str(error))
+    for attempt in range(RETRY_LIMIT + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")[:400]
+            if error.code in (401, 403):
+                raise Failure("auth_error", detail)
+            if error.code in (429, 500, 502, 503, 504):
+                if attempt < RETRY_LIMIT:
+                    time.sleep(rate_limit_delay(detail, attempt))
+                    continue
+                kind = "rate_limited" if error.code == 429 else "server_error"
+                raise Failure(kind, detail if error.code == 429 else f"{error.code} {detail}")
+            raise Failure("http_error", f"{error.code} {detail}")
+        except (urllib.error.URLError, TimeoutError) as error:
+            if attempt < RETRY_LIMIT:
+                time.sleep(rate_limit_delay("", attempt))
+                continue
+            raise Failure("network_error", str(error))
+        except json.JSONDecodeError as error:
+            raise Failure("invalid_response", str(error))
+    raise Failure("rate_limited", "重试次数用尽")
 
 
 def dry_run_chat(task: dict, messages: list[dict], tools: list[dict], mapping: dict[str, str] | None = None) -> dict:
@@ -356,6 +381,7 @@ def main() -> int:
     parser.add_argument("--baseline", default="")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--pause", type=float, default=4.0, help="任务之间的间隔秒数，避免触发中转站限流")
     parser.add_argument(
         "--tool-name-style",
         choices=("plain", "prefixed"),
@@ -378,7 +404,9 @@ def main() -> int:
             parser.error("请通过环境变量 ETA_EVAL_API_KEY 提供密钥（脚本不会保存它）")
 
     records: list[dict] = []
-    for task in tasks:
+    for index, task in enumerate(tasks):
+        if index and args.pause > 0:
+            time.sleep(args.pause)
         selected, mapping = apply_name_style(select_tools(tools_snapshot, task["tools"]), args.tool_name_style)
         for attempt in range(args.repeat):
             if args.dry_run:

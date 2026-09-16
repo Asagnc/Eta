@@ -359,10 +359,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
 
         thread(name = "agent-runtime") {
+            var finished = false
             try {
-                executeRun(session, request)
+                finished = executeRun(session, request)
             } finally {
                 AgentExecutionService.release("run:${request.runId}")
+                AgentExecutionService.notifyFinished(applicationContext, finished)
             }
         }
     }
@@ -370,7 +372,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
-    ) {
+    ): Boolean {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
             currentPermissions = ::currentRuntimePermissions,
@@ -380,7 +382,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             },
             persistArtifacts = ::persistRunArtifacts,
         ).execute(session, request)
-        if (!outcome.shouldUpdateHost) return
+        if (!outcome.shouldUpdateHost) return true
         postTerminalOverlay(
             session = session,
             result = outcome.result,
@@ -394,6 +396,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 }
             },
         )
+        return true
     }
 
     private fun handleAcceptedRunEvent(

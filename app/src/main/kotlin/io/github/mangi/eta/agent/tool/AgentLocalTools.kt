@@ -1096,21 +1096,25 @@ internal class AgentLocalTools(
         }
         val limit = args.optInt("limit", DEFAULT_FIND_LIMIT).coerceIn(1, MAX_FIND_LIMIT)
         val output = terminalController.runCommand(
-            command = "find '$path' -name '$glob' -type f 2>/dev/null | head -n $limit",
+            command = "find '$path' -name '$glob' -type f | head -n $limit",
             cwd = null,
             timeoutSeconds = FIND_TIMEOUT_SECONDS,
         )
         val parsed = runCatching { JSONObject(output) }.getOrNull()
-        val files = parsed?.optString("output").orEmpty()
+        val stderr = parsed?.optString("stderr").orEmpty()
+        val files = parsed?.optString("stdout").orEmpty()
             .lines()
             .map { it.trim() }
             .filter { it.isNotBlank() }
+        val stderrNotice = stderr.take(500)
+        val ok = (parsed?.optBoolean("ok") ?: true) && !(files.isEmpty() && stderrNotice.isNotBlank())
         return JSONObject()
-            .put("ok", parsed?.optBoolean("ok") ?: true)
+            .put("ok", ok)
             .put("path", path)
             .put("glob", glob)
             .put("count", files.size)
             .put("files", JSONArray(files))
+            .apply { if (stderrNotice.isNotBlank()) put("stderr", stderrNotice) }
             .toString()
     }
 
@@ -1756,6 +1760,8 @@ internal class AgentLocalTools(
             )
         }
         val outputJson = runCatching { JSONObject(output) }.getOrNull()
+        val stdout = outputJson?.optString("stdout").orEmpty()
+        val stderr = outputJson?.optString("stderr").orEmpty()
         return JSONObject()
             .put("ok", outputJson?.optBoolean("ok") ?: true)
             .put("skill", entry.id)
@@ -1766,7 +1772,8 @@ internal class AgentLocalTools(
             .put("inputs", frontmatter["inputs"].orEmpty())
             .put("outputs", frontmatter["outputs"].orEmpty())
             .put("skill_body_loaded", false)
-            .put("output", outputJson?.opt("output") ?: output)
+            .put("output", if (outputJson == null) output else stdout)
+            .apply { if (stderr.isNotBlank()) put("stderr", stderr) }
             .toString()
     }
 
