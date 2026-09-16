@@ -167,6 +167,7 @@ internal class AgentLocalTools(
                 return@runCatching textResult(errorResult("ROOT_REQUIRED", "此操作需要 Root 授权，本次未执行"))
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
+            credentialPathError(toolCall.name, args)?.let { return@runCatching it }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
             when (val decision = beforeToolExecution(toolCall.name)) {
                 ToolExecutionDecision.Allow -> Unit
@@ -256,10 +257,11 @@ internal class AgentLocalTools(
                 )
             )
         }.let { result ->
-            if (result.sensitive || !AgentSensitiveToolPolicy.isSensitive(toolCall.name)) {
-                result
-            } else {
-                result.copy(sensitive = true)
+            val sensitive = result.sensitive || AgentSensitiveToolPolicy.isSensitive(toolCall.name)
+            val content = CredentialRedactor.redact(result.content)
+            when {
+                content == result.content && sensitive == result.sensitive -> result
+                else -> result.copy(content = content, sensitive = sensitive)
             }
         }
 
@@ -280,6 +282,21 @@ internal class AgentLocalTools(
             sensitive = toolName in DEVICE_SENSITIVE_READ_TOOL_NAMES ||
                 toolName in DEVICE_SENSITIVE_ACTION_TOOL_NAMES,
         )
+    }
+
+    /**
+     * 文件类工具的凭据路径拦截。
+     *
+     * provider 密钥以明文存在 App 私有数据库里，而文件工具在 Root 下可读，因此这里在调用前
+     * 直接拒绝，不回显路径内容。终端命令是本层的已知缺口，真正的隔离需要把密钥移出可读文件。
+     */
+    private fun credentialPathError(toolName: String, args: JSONObject): AgentModelClient.ToolResult? {
+        if (toolName !in CREDENTIAL_PATH_TOOL_NAMES) return null
+        val path = args.optString("path").ifBlank { args.optString("cwd") }
+        if (path.isBlank()) return null
+        val dataDir = runCatching { context.applicationContext.dataDir.absolutePath }.getOrNull() ?: return null
+        if (!CredentialBoundary.deniesLoosely(dataDir, path)) return null
+        return textResult(errorResult("CREDENTIAL_PATH_BLOCKED", CredentialBoundary.message()))
     }
 
     private fun terminalTool(block: () -> String): String {
@@ -1959,6 +1976,10 @@ internal class AgentLocalTools(
                 DEVICE_SENSITIVE_ACTION_TOOL_NAMES
         val MEMORY_TOOL_NAMES = setOf("memory_get", "memory_write")
         val SUPPORTED_SKILL_REQUIREMENTS = setOf("root", "linux")
+        /** 会按路径读取内容的工具；凭据路径在这些工具上直接拒绝。 */
+        val CREDENTIAL_PATH_TOOL_NAMES = setOf(
+            "read_file", "read_image", "list_directory", "search_code", "edit_file", "write_file",
+        )
     }
 }
 
