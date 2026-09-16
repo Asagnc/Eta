@@ -83,12 +83,13 @@ internal object AgentToolRequirements {
         // 并发执行只覆盖"读取即返回"的工具：没有写操作、不推进会话或任务状态、
         // 也不依赖同批其它调用的结果。屏幕观察与手势、terminal 会话、browser_use、
         // memory_write、skills_install 等有状态或写副作用的能力一律留在顺序通道。
+        // read_image 同样留在顺序通道：一次解码多张大图的内存峰值不值得用并发去换。
         listOf(
             "get_current_context", "device_status", "network_info", "get_setting",
             "get_device_environment", "get_current_location", "get_clipboard",
             "top_memory_apps", "top_storage_apps", "get_logcat", "get_health_summary",
             "list_alarms", "list_active_timers", "wifi_credentials",
-            "read_file", "list_directory", "search_code", "read_image",
+            "read_file", "list_directory", "search_code",
             "search_apps", "search_clipboard_history", "recent_notifications",
             "search_notification_history", "recent_app_activity", "app_usage_summary",
             "search_media", "search_audio", "search_recordings", "search_files",
