@@ -370,7 +370,11 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
             cachedTokens = usage.firstNestedInt(
                 "prompt_tokens_details",
                 childKey = "cached_tokens"
-            ) ?: usage.firstInt("cache_read_input_tokens")
+            ) ?: usage.firstInt(
+                // prompt_cache_hit_tokens 是 DeepSeek 命中的输入 token 数，语义与 cached_tokens 一致。
+                "cache_read_input_tokens",
+                "prompt_cache_hit_tokens"
+            )
         ).takeUnless { it.isEmpty }
     }
 

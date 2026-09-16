@@ -347,6 +347,35 @@ class OpenAiChatCompletionsProviderTest {
     }
 
     @Test
+    fun completeReadsDeepSeekCacheHitTokens() {
+        val usage = JSONObject()
+            .put("prompt_tokens", 100)
+            .put("completion_tokens", 5)
+            .put("total_tokens", 105)
+            .put("prompt_cache_hit_tokens", 80)
+            .put("prompt_cache_miss_tokens", 20)
+        val body = buildString {
+            append(sseChunk(JSONObject().put("content", "ok"), finishReason = "stop"))
+            append(usageChunk(usage))
+            append("data: [DONE]\n\n")
+        }
+
+        withSseServer(body) { baseUrl ->
+            val events = mutableListOf<ProviderEvent>()
+            OpenAiChatCompletionsProvider.complete(
+                request = providerRequest(baseUrl = baseUrl),
+                runController = AgentRunController(),
+                onEvent = events::add,
+            )
+
+            assertEquals(
+                80,
+                events.filterIsInstance<ProviderEvent.Usage>().single().usage.cachedTokens,
+            )
+        }
+    }
+
+    @Test
     fun completeParsesReasoningUsageAndMergesExtraBody() {
         val usage = JSONObject()
             .put("prompt_tokens", 10)
