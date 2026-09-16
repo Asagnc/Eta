@@ -5,6 +5,34 @@ import org.json.JSONObject
 
 /** 屏幕手势与节点交互工具 schema。 */
 internal object AgentGestureToolCatalog {
+    /**
+     * 序列步骤的公共结构。
+     *
+     * run_sequence 与 save_flow 接受同一组字段，定义在这里避免两边漂移；
+     * 两者的差异只在各自 description 说明的限制（save_flow 不允许 index/observation_id）。
+     */
+    private fun stepItems(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put(
+            "properties",
+            JSONObject()
+                .put("action", JSONObject().put("type", "string"))
+                .put("index", JSONObject().put("type", "integer"))
+                .put("observation_id", JSONObject().put("type", "string"))
+                .put("text", JSONObject().put("type", "string"))
+                .put("button", JSONObject().put("type", "string"))
+                .put("duration_ms", JSONObject().put("type", "integer"))
+                .put("timeout_ms", JSONObject().put("type", "integer"))
+                .put("direction", JSONObject().put("type", "string"))
+                .put("x", JSONObject().put("type", "integer"))
+                .put("y", JSONObject().put("type", "integer"))
+                .put("x1", JSONObject().put("type", "integer"))
+                .put("y1", JSONObject().put("type", "integer"))
+                .put("x2", JSONObject().put("type", "integer"))
+                .put("y2", JSONObject().put("type", "integer")),
+        )
+        .put("required", JSONArray().put("action"))
+
     fun appendTo(tools: JSONArray) {
         tools
             .put(
@@ -241,30 +269,7 @@ internal object AgentGestureToolCatalog {
                                             "description",
                                             "按顺序执行的步骤数组；action 与对应工具一致：tap / tap_area / tap_element / long_press / swipe / drag / scroll / input / replace / clear / press / wait / wait_text / wait_package"
                                         )
-                                        .put(
-                                            "items",
-                                            JSONObject()
-                                                .put("type", "object")
-                                                .put(
-                                                    "properties",
-                                                    JSONObject()
-                                                        .put("action", JSONObject().put("type", "string"))
-                                                        .put("index", JSONObject().put("type", "integer"))
-                                                        .put("observation_id", JSONObject().put("type", "string"))
-                                                        .put("text", JSONObject().put("type", "string"))
-                                                        .put("button", JSONObject().put("type", "string"))
-                                                        .put("duration_ms", JSONObject().put("type", "integer"))
-                                                        .put("timeout_ms", JSONObject().put("type", "integer"))
-                                                        .put("direction", JSONObject().put("type", "string"))
-                                                        .put("x", JSONObject().put("type", "integer"))
-                                                        .put("y", JSONObject().put("type", "integer"))
-                                                        .put("x1", JSONObject().put("type", "integer"))
-                                                        .put("y1", JSONObject().put("type", "integer"))
-                                                        .put("x2", JSONObject().put("type", "integer"))
-                                                        .put("y2", JSONObject().put("type", "integer"))
-                                                )
-                                                .put("required", JSONArray().put("action"))
-                                        )
+                                        .put("items", stepItems())
                                 )
                         )
                         .put("required", JSONArray().put("steps"))
@@ -281,7 +286,13 @@ internal object AgentGestureToolCatalog {
                             JSONObject()
                                 .put("name", JSONObject().put("type", "string").put("description", "流程名，仅字母数字 _-，不超过 80 字符"))
                                 .put("description", JSONObject().put("type", "string").put("description", "用途说明，帮助下次匹配"))
-                                .put("steps", JSONObject().put("type", "array").put("description", "语义化步骤数组，与 run_sequence 的 steps 相同但只允许语义动作"))
+                                .put(
+                                    "steps",
+                                    JSONObject()
+                                        .put("type", "array")
+                                        .put("description", "语义化步骤数组，与 run_sequence 的 steps 相同但只允许语义动作")
+                                        .put("items", stepItems())
+                                )
                         )
                         .put("required", JSONArray().put("name").put("steps"))
                 )

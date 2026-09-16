@@ -282,10 +282,7 @@ internal object AgentTextSystemToolCatalog {
                                 "todos",
                                 JSONObject()
                                     .put("type", "array")
-                                    .put(
-                                        "description",
-                                        "当前完整任务清单；传空数组表示清空。",
-                                    )
+                                    .put("description", "当前完整任务清单；传空数组表示清空。")
                                     .put(
                                         "items",
                                         JSONObject()
@@ -302,9 +299,9 @@ internal object AgentTextSystemToolCatalog {
                                                         JSONObject()
                                                             .put("type", "string")
                                                             .put("enum", JSONArray().put("pending").put("in_progress").put("completed")),
-                                                    )
-                                                    .put("required", JSONArray().put("id").put("content").put("status")),
-                                            ),
+                                                    ),
+                                            )
+                                            .put("required", JSONArray().put("id").put("content").put("status")),
                                     ),
                             ),
                         )
