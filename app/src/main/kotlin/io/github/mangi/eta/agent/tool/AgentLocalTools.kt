@@ -11,7 +11,6 @@ import io.github.mangi.eta.agent.device.DeviceControlUnavailableException
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
-import io.github.mangi.eta.agent.device.VirtualScreenController
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
@@ -104,7 +103,6 @@ internal class AgentLocalTools(
         rootAvailable = rootAvailable,
     )
     private val imageTools = AgentImageTools(context, rootCommandExecutor, rootAvailable)
-    private val virtualScreen = VirtualScreenController(context, logger, rootCommandExecutor)
     private val terminalController = RootShellTerminalController(
         logger = logger,
         rootAvailable = rootAvailable,
@@ -202,7 +200,6 @@ internal class AgentLocalTools(
                     structuredDeviceTools.execute(toolCall.name, args)
                         ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
                 "read_image" -> fileVisionTool { imageTools.readImage(args) }
-                "virtual_screen" -> virtualScreen.execute(args)
                 "terminal" -> textResult(terminalTool { terminal(args) })
                 "run_command" -> textResult(terminalTool { runCommand(args) })
                 "read_file" -> textResult(terminalTool { readFile(args) })

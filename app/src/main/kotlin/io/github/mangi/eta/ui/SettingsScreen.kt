@@ -25,7 +25,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.PictureInPicture
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Security
@@ -309,15 +308,6 @@ internal fun SettingsScreen(
                         title = stringResource(R.string.ui_allow_sensitive_device_operation_3d42ea),
                         key = Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
                         icon = Icons.Rounded.GppMaybe,
-                    )
-
-                    SwitchPref(
-                        context = context,
-                        prefs = agentPrefs,
-                        title = stringResource(R.string.ui_virtual_screen_mirror),
-                        summary = stringResource(R.string.ui_virtual_screen_mirror_summary),
-                        key = Prefs.Keys.AGENT_VIRTUAL_SCREEN_MIRROR,
-                        icon = Icons.Rounded.PictureInPicture,
                     )
 
                     SwitchPref(

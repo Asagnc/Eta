@@ -42,7 +42,6 @@ internal object Prefs {
         const val AGENT_DEVICE_DIRECT_TOOLS = "agent_device_direct_tools"
         const val AGENT_DEVICE_SENSITIVE_READ_TOOLS = "agent_device_sensitive_read_tools"
         const val AGENT_DEVICE_SENSITIVE_ACTION_TOOLS = "agent_device_sensitive_action_tools"
-        const val AGENT_VIRTUAL_SCREEN_MIRROR = "agent_virtual_screen_mirror"
         const val AGENT_THINKING_ENABLED = "agent_thinking_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
 
@@ -62,7 +61,6 @@ internal object Prefs {
             AGENT_DEVICE_DIRECT_TOOLS to true,
             AGENT_DEVICE_SENSITIVE_READ_TOOLS to true,
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
-            AGENT_VIRTUAL_SCREEN_MIRROR to false,
             AGENT_THINKING_ENABLED to true
         )
 
@@ -73,7 +71,6 @@ internal object Prefs {
             AGENT_DEVICE_DIRECT_TOOLS,
             AGENT_DEVICE_SENSITIVE_READ_TOOLS,
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
-            AGENT_VIRTUAL_SCREEN_MIRROR,
             AGENT_THINKING_ENABLED,
         )
     }
