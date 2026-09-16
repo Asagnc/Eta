@@ -98,6 +98,9 @@ private fun AgentTaskPlanRow(item: AgentTaskPlanItemUi) {
                 tint = MiuixTheme.colorScheme.primary,
             )
 
+            // 运行中止时仍留在进行中的项：不带图标，文字行保留原文，只是不再显示「进行中」。
+            AgentTaskPlanStatus.INTERRUPTED -> Spacer(modifier = Modifier.size(14.dp))
+
             // 未开始的一项不配图标，留出同宽空位保持各行文字对齐。
             AgentTaskPlanStatus.PENDING -> Spacer(modifier = Modifier.size(14.dp))
         }

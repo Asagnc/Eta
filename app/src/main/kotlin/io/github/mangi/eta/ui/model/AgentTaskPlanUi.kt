@@ -5,7 +5,7 @@ import org.json.JSONArray
 
 /** 任务清单单项的状态；与 task_plan 工具接受的字符串一一对应。 */
 @Immutable
-internal enum class AgentTaskPlanStatus { PENDING, IN_PROGRESS, COMPLETED }
+internal enum class AgentTaskPlanStatus { PENDING, IN_PROGRESS, COMPLETED, INTERRUPTED }
 
 /** 任务清单快照里的一项，由 task_plan 工具事件投影而来。 */
 @Immutable
@@ -33,6 +33,7 @@ internal object AgentTaskPlanCodec {
                 status = when (item.optString("status")) {
                     "completed" -> AgentTaskPlanStatus.COMPLETED
                     "in_progress" -> AgentTaskPlanStatus.IN_PROGRESS
+                    "interrupted" -> AgentTaskPlanStatus.INTERRUPTED
                     else -> AgentTaskPlanStatus.PENDING
                 },
             )
