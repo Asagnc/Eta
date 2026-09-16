@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +103,9 @@ import top.yukonga.miuix.kmp.window.WindowDialog
  * 浏览器通常在后台由模型驱动；进入本页后挂载的是同一个 WebView，用户可以直接接管，
  * 不会新建一份与 Agent 状态脱节的预览。
  */
+/** mitmproxy 的默认监听端口，作为设置代理时的预填值。 */
+private const val DEFAULT_PROXY_ADDRESS = "127.0.0.1:8080"
+
 @Composable
 internal fun AgentBrowserScreen(
     modifier: Modifier = Modifier,
@@ -116,6 +120,8 @@ internal fun AgentBrowserScreen(
     var addressFocused by remember { mutableStateOf(false) }
     var actionPending by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showProxyDialog by remember { mutableStateOf(false) }
+    var proxyDraft by remember { mutableStateOf("") }
 
     LaunchedEffect(context.applicationContext) {
         AgentBrowserSession.initialize(context.applicationContext)
@@ -238,6 +244,14 @@ internal fun AgentBrowserScreen(
                 }
             },
             onReset = { showResetDialog = true },
+            onProxy = {
+                if (snapshot.proxy != null) {
+                    launchBrowserAction { AgentBrowserSession.clearProxyFromUser() }
+                } else {
+                    proxyDraft = DEFAULT_PROXY_ADDRESS
+                    showProxyDialog = true
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -263,6 +277,36 @@ internal fun AgentBrowserScreen(
             )
         }
     }
+
+    if (showProxyDialog) {
+        WindowDialog(
+            show = true,
+            title = stringResource(R.string.browser_proxy_set),
+            summary = stringResource(R.string.browser_proxy_dialog_summary),
+            onDismissRequest = { showProxyDialog = false },
+        ) {
+            TextField(
+                value = proxyDraft,
+                onValueChange = { proxyDraft = it },
+                label = stringResource(R.string.browser_proxy_dialog_label),
+                useLabelAsPlaceholder = true,
+                singleLine = true,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.action_confirm),
+                confirmEnabled = proxyDraft.isNotBlank(),
+                onCancel = { showProxyDialog = false },
+                onConfirm = {
+                    showProxyDialog = false
+                    val rule = proxyDraft
+                    launchBrowserAction {
+                        AgentBrowserSession.setProxyFromUser(context.applicationContext, rule)
+                    }
+                },
+            )
+        }
+    }
 }
 
 /**
@@ -278,6 +322,7 @@ private fun BrowserWindow(
     onRefresh: () -> Unit,
     onOpenExternal: () -> Unit,
     onReset: () -> Unit,
+    onProxy: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -296,6 +341,7 @@ private fun BrowserWindow(
             onRefresh = onRefresh,
             onOpenExternal = onOpenExternal,
             onReset = onReset,
+            onProxy = onProxy,
         )
         Box(
             modifier = Modifier
@@ -337,6 +383,7 @@ private fun BrowserToolbar(
     onRefresh: () -> Unit,
     onOpenExternal: () -> Unit,
     onReset: () -> Unit,
+    onProxy: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -397,6 +444,14 @@ private fun BrowserToolbar(
             }
         }
 
+        BrowserControlButton(
+            icon = Icons.Rounded.VpnKey,
+            description = stringResource(
+                if (snapshot.proxy != null) R.string.browser_proxy_clear else R.string.browser_proxy_set,
+            ),
+            enabled = snapshot.available || snapshot.proxy != null,
+            onClick = onProxy,
+        )
         BrowserControlButton(
             icon = Icons.AutoMirrored.Rounded.OpenInNew,
             description = stringResource(R.string.browser_open_external),

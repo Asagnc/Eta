@@ -235,6 +235,17 @@ internal object AgentBrowserSession {
     fun reloadFromUser(): BrowserToolResult =
         executeFromExistingContext("reload", userInitiated = true)
 
+    /** 浏览器页的代理开关：用户自己开/关，不受 Agent 动作的用户接管限制。 */
+    fun setProxyFromUser(context: Context, proxy: String): BrowserToolResult =
+        executeInternal(
+            context = context,
+            args = JSONObject().put("action", "set_proxy").put("proxy", proxy.trim()),
+            userInitiated = true,
+        )
+
+    fun clearProxyFromUser(): BrowserToolResult =
+        executeFromExistingContext("clear_proxy", userInitiated = true)
+
     /** 停止必须能越过串行操作锁，才能立刻唤醒正在等待导航的工具调用。 */
     fun stopFromUser(): BrowserToolResult {
         interruptCurrentAction(force = true)

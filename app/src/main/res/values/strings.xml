@@ -1093,6 +1093,10 @@
   <string name="browser_opening">Opening webpage</string>
   <string name="browser_opening_host">Opening %1$s</string>
   <string name="browser_proxy_chip">Proxy %1$s</string>
+  <string name="browser_proxy_set">Set proxy</string>
+  <string name="browser_proxy_clear">Disable proxy</string>
+  <string name="browser_proxy_dialog_label">Proxy address</string>
+  <string name="browser_proxy_dialog_summary">Format [scheme://]host[:port], for example 127.0.0.1:8080. Schemes: http, https, socks.</string>
   <string name="model_not_selected">Not selected</string>
   <string name="model_switch_current">Switch model. Current: %1$s</string>
   <string name="model_collapse_provider">Collapse %1$s</string>
