@@ -26,8 +26,6 @@ internal object AgentRuntimePolicy {
         val toolResultKeep: Int = Prefs.Keys.INT_DEFAULTS.getValue(Prefs.Keys.AGENT_TOOL_RESULT_KEEP),
         /** 上下文占用提示的百分比阈值，0 表示关闭。 */
         val contextNoticePercent: Int = Prefs.Keys.INT_DEFAULTS.getValue(Prefs.Keys.AGENT_CONTEXT_NOTICE_PERCENT),
-        /** 高风险工具的权限档位：0 = 放行，1 = 需要确认，2 = 直接拒绝。 */
-        val permissionMode: Int = Prefs.Keys.INT_DEFAULTS.getValue(Prefs.Keys.AGENT_PERMISSION_MODE),
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -44,68 +42,7 @@ internal object AgentRuntimePolicy {
             maxParallelToolCalls = preferences.intValue(Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT),
             toolResultKeep = preferences.intValue(Prefs.Keys.AGENT_TOOL_RESULT_KEEP),
             contextNoticePercent = preferences.intValue(Prefs.Keys.AGENT_CONTEXT_NOTICE_PERCENT),
-            permissionMode = preferences.intValue(Prefs.Keys.AGENT_PERMISSION_MODE).coerceIn(0, 2),
         )
-
-    /** 工具的风险档位；只读工具不受权限档位限制。 */
-    enum class ToolRisk { READ, WRITE, EXECUTE, DEVICE }
-
-    /** 执行前的裁决结果。 */
-    enum class ToolPermission { ALLOW, ASK, DENY }
-
-    fun riskOf(toolName: String): ToolRisk {
-        val name = toolName.trim().lowercase()
-        return when {
-            name in WRITE_TOOLS -> ToolRisk.WRITE
-            name in EXECUTE_TOOLS -> ToolRisk.EXECUTE
-            name in DEVICE_TOOLS -> ToolRisk.DEVICE
-            else -> ToolRisk.READ
-        }
-    }
-
-    fun permissionFor(mode: Int, toolName: String): ToolPermission = when {
-        riskOf(toolName) == ToolRisk.READ -> ToolPermission.ALLOW
-        mode >= 2 -> ToolPermission.DENY
-        mode == 1 -> ToolPermission.ASK
-        else -> ToolPermission.ALLOW
-    }
-
-    /**
-     * 确认请求的分组键：工具 + 参数里出现的路径。
-     * 同一次 run 内同一个键只需要用户确认一次，同类操作一并放行。
-     */
-    fun approvalGroupKey(toolName: String, args: JSONObject?): String {
-        val path = args?.let { raw ->
-            PATH_ARGUMENT_KEYS.firstNotNullOfOrNull { key ->
-                raw.optString(key).takeIf { it.isNotBlank() }
-            }
-        }
-        return if (path.isNullOrBlank()) toolName else "$toolName:$path"
-    }
-
-    private val PATH_ARGUMENT_KEYS = listOf("path", "file", "file_path", "target", "cwd", "query")
-
-    /** 写盘类：会改动磁盘或长期记忆。 */
-    private val WRITE_TOOLS = setOf(
-        "write_file", "edit_file", "memory_write", "character_memory_write",
-        "save_flow", "task_plan",
-    )
-
-    /** 执行类：起进程、联网或安装外部内容。 */
-    private val EXECUTE_TOOLS = setOf(
-        "run_command", "terminal", "skills_run", "skills_install_from_github",
-        "launch_app", "open_uri", "browser_use", "delegate", "multi_perspective",
-    )
-
-    /** 设备与界面动作：会直接改变设备状态或对他人可见。 */
-    private val DEVICE_TOOLS = setOf(
-        "tap", "tap_area", "tap_element", "long_press", "long_press_element",
-        "swipe", "drag", "scroll", "scroll_element", "press_key",
-        "input_text", "replace_text", "clear_text", "paste_text", "set_clipboard",
-        "run_sequence", "use_flow", "open_system_panel",
-        "set_alarm", "set_timer", "set_volume", "media_control",
-        "set_setting", "set_device_state", "app_state_control", "read_sms_code",
-    )
 
     fun constrain(
         config: AgentModelClient.ModelConfig,

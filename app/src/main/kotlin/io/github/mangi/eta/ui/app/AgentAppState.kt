@@ -2,7 +2,6 @@ package io.github.mangi.eta.ui.app
 
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 
-import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
@@ -120,13 +119,6 @@ internal class AgentAppState(
     private val runEventFlushJobs = mutableMapOf<String, Job>()
     private var currentRunId: String? = null
     private var currentRunJob: Job? = null
-    /** 正在等用户确认的高风险工具调用；界面据此弹确认框。 */
-    var pendingApproval by mutableStateOf<AgentRuntimeWire.ApprovalRequest?>(null)
-        private set
-    /** 当前这次 run 的 runtime 客户端，用来回填确认结果。 */
-    @Volatile
-    private var activeRuntimeClient: AgentRuntimeClient? = null
-    private val approvalTimeouts = mutableMapOf<String, Job>()
     private val persistenceLock = Any()
     private var persistenceJob: Job? = null
     private val runtimeRecoveryInProgress = AtomicBoolean(false)
@@ -977,6 +969,7 @@ internal class AgentAppState(
             SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+            SystemNoticeCode.SelfReview -> R.string.system_notice_self_review
         },
     )
 
@@ -1377,9 +1370,7 @@ internal class AgentAppState(
                 return@launch
             }
             val result = runInterruptible {
-                val runtimeClient = AgentRuntimeClient(appContext, AndroidAgentLogger)
-                activeRuntimeClient = runtimeClient
-                runtimeClient.run(
+                AgentRuntimeClient(appContext, AndroidAgentLogger).run(
                     request = AgentRuntimeWire.RunRequest(
                         operation = operation,
                         rewriteTargetMessageId = rewriteTargetMessageId,
@@ -1395,7 +1386,6 @@ internal class AgentAppState(
                         ),
                     ),
                     onEvent = { event -> enqueueRunEvent(runId, event) },
-                    onApproval = { approval -> onApprovalRequested(approval) },
                 )
             }
             withContext(Dispatchers.Main) {
@@ -2178,6 +2168,17 @@ internal class AgentAppState(
                 }
             }
 
+            is AgentEvent.SelfReview -> {
+                updateMessages(runId) { messages ->
+                    val id = "assistant-$runId-self-review"
+                    messages.filterNot { it.id == id } + SystemNoticeMessageUi(
+                        id = id,
+                        code = SystemNoticeCode.SelfReview,
+                        detail = event.text,
+                    )
+                }
+            }
+
             is AgentEvent.ModelRetryScheduled -> {
                 updateRunTrace(runId) { messages ->
                     runMessageProjector.scheduleModelRetry(runId, event, messages)
@@ -2224,37 +2225,6 @@ internal class AgentAppState(
             is AgentEvent.ToolImagesAttached,
             is AgentEvent.RoundStarted,
             -> Unit
-        }
-    }
-
-    /** runtime 请求确认一次高风险工具调用：弹确认框，并按前台/后台给不同的等待上限。 */
-    private fun onApprovalRequested(approval: AgentRuntimeWire.ApprovalRequest) {
-        approvalTimeouts.remove(approval.id)?.cancel()
-        pendingApproval = approval
-        approvalTimeouts[approval.id] = scope.launch {
-            val timeout = if (appInForeground()) 90_000L else 10 * 60 * 1000L
-            delay(timeout)
-            if (pendingApproval?.id == approval.id) {
-                pendingApproval = null
-                activeRuntimeClient?.respondApproval(approval.id, granted = false)
-            }
-        }
-    }
-
-    /** 用户点了「允许」或「拒绝」；等待超时同样按拒绝处理。 */
-    fun respondApproval(granted: Boolean) {
-        val approval = pendingApproval ?: return
-        approvalTimeouts.remove(approval.id)?.cancel()
-        pendingApproval = null
-        activeRuntimeClient?.respondApproval(approval.id, granted)
-    }
-
-    private fun appInForeground(): Boolean {
-        val manager = appContext.getSystemService(ActivityManager::class.java) ?: return true
-        val processes = runCatching { manager.runningAppProcesses }.getOrNull() ?: return true
-        return processes.any {
-            it.processName == appContext.packageName &&
-                it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
         }
     }
 

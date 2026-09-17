@@ -172,9 +172,6 @@
   <string name="conversation_no_results">No matching conversations</string>
   <string name="conversation_rename_title">Rename conversation</string>
   <string name="conversation_rename_hint">Conversation name</string>
-  <string name="tool_approval_title">Approve this action?</string>
-  <string name="tool_approval_message">%1$s wants to run: %2$s</string>
-  <string name="tool_approval_allow">Allow</string>
   <string name="conversation_delete_title">Delete conversation?</string>
   <string name="conversation_delete_message">This conversation and its messages will be permanently deleted.</string>
   <string name="conversation_delete_message_title">Delete message?</string>
@@ -285,6 +282,7 @@
   <string name="system_notice_model_retry">模型请求重试</string>
   <string name="conversation_persistence_failed">Couldn’t save the conversation. Please try again.</string>
   <string name="system_notice_interrupted">The run was interrupted. Partial output is preserved; unfinished actions were not retried.</string>
+  <string name="system_notice_self_review">Run self-review</string>
   <string name="tool_status_unknown">Result unknown</string>
   <string name="voice_listening">Listening…</string>
   <string name="voice_processing">Processing…</string>

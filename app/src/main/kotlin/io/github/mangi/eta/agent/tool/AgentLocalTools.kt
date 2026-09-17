@@ -91,7 +91,7 @@ internal class AgentLocalTools(
     private val runStatsSummary: (() -> String)? = null,
     /** 受限子智能体；未开启时工具回报自己未启用。 */
     private val subAgentRunner: AgentSubAgentRunner? = null,
-    private val beforeToolExecution: (String, JSONObject) -> ToolExecutionDecision = { _, _ ->
+    private val beforeToolExecution: (String) -> ToolExecutionDecision = {
         ToolExecutionDecision.Allow
     },
     private val skillIndexService: SkillIndexService? = null,
@@ -169,7 +169,7 @@ internal class AgentLocalTools(
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
             credentialPathError(toolCall.name, args)?.let { return@runCatching it }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
-            when (val decision = beforeToolExecution(toolCall.name, args)) {
+            when (val decision = beforeToolExecution(toolCall.name)) {
                 ToolExecutionDecision.Allow -> Unit
                 is ToolExecutionDecision.Reject -> {
                     if (decision.code.startsWith("ACCESSIBILITY_")) publishedObservation.set(PublishedObservation())

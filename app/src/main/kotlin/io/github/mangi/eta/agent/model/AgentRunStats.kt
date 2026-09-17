@@ -74,6 +74,35 @@ internal class AgentRunStats {
     }
 
     /** 按调用次数降序的工具明细，最多 [MAX_LISTED_TOOLS] 项，其余合并进 `other_calls`。 */
+    /**
+     * 运行自省：只在本轮确实有值得注意的问题时返回文本，交给界面提示用户。
+     * 空结果表示这次运行没有需要额外说明的地方，避免制造噪音。
+     */
+    fun selfReview(): String? {
+        val issues = mutableListOf<String>()
+        val failing = buckets.entries
+            .filter { it.value.failures.get() >= 2 }
+            .map { it.key }
+            .sorted()
+        if (failing.isNotEmpty()) {
+            issues += "这些工具反复失败：" + failing.joinToString("、")
+        }
+        val busy = buckets.entries
+            .filter { it.value.calls.get() >= 6 }
+            .map { it.key }
+            .sorted()
+        if (busy.isNotEmpty()) {
+            issues += "这些工具被反复调用，可能存在重复劳动：" + busy.joinToString("、")
+        }
+        if (prunedToolResults.get() >= 3) {
+            issues += "较早的工具结果被清理了 ${prunedToolResults.get()} 条，说明这轮信息量偏大"
+        }
+        if (contextNotices.get() >= 2) {
+            issues += "上下文占用提示触发了 ${contextNotices.get()} 次"
+        }
+        return issues.takeIf { it.isNotEmpty() }?.joinToString("；")
+    }
+
     fun snapshot(): JSONObject {
         val tools = JSONArray()
         var calls = 0

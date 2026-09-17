@@ -39,14 +39,9 @@ internal class AgentRuntimeClient(
         data object Unavailable : CompletedRunsQuery
     }
 
-    /** 当前 run 的服务端 Messenger，用来回填用户的确认选择。 */
-    @Volatile
-    private var activeApprovalMessenger: Messenger? = null
-
     fun run(
         request: AgentRuntimeWire.RunRequest,
-        onEvent: (AgentEvent) -> Unit,
-        onApproval: ((AgentRuntimeWire.ApprovalRequest) -> Unit)? = null,
+        onEvent: (AgentEvent) -> Unit
     ): AgentRuntimeWire.RunResult {
         val resultLatch = CountDownLatch(1)
         val resultRef = AgentResultMailbox()
@@ -61,14 +56,12 @@ internal class AgentRuntimeClient(
                 onRequestIngested = {
                     preparedImagesRef.getAndSet(null)?.close()
                 },
-                onApproval = onApproval,
             )
         )
 
         val lease = AgentRuntimeConnection.acquire(context, logger)
             ?: return AgentRuntimeWire.RunResult("", false, "", "Agent Runtime 服务绑定失败")
         val serviceMessenger = lease.messenger
-        activeApprovalMessenger = serviceMessenger
         val deathRecipient = IBinder.DeathRecipient {
             if (resultRef.get() == null) {
                 resultRef.set(
@@ -125,17 +118,6 @@ internal class AgentRuntimeClient(
             msg.data = AgentRuntimeWire.ackBundle(runId)
             serviceMessenger.send(msg)
         }
-    }
-
-    /** 回填用户对一次确认请求的选择；返回是否成功送出。 */
-    fun respondApproval(approvalId: String, granted: Boolean): Boolean {
-        val messenger = activeApprovalMessenger ?: return false
-        return runCatching {
-            val msg = Message.obtain(null, AgentRuntimeWire.MSG_APPROVAL_RESULT)
-            msg.data = AgentRuntimeWire.approvalResultBundle(approvalId, granted)
-            AgentWireText.send(messenger, msg)
-            true
-        }.getOrDefault(false)
     }
 
     fun ackResult(runId: String): Boolean {
@@ -311,7 +293,6 @@ internal class AgentRuntimeClient(
         private val onEvent: (AgentEvent) -> Unit,
         private val onResult: (Bundle) -> Unit,
         private val onRequestIngested: () -> Unit,
-        private val onApproval: ((AgentRuntimeWire.ApprovalRequest) -> Unit)? = null,
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             when (msg.what) {
@@ -321,12 +302,6 @@ internal class AgentRuntimeClient(
 
                 AgentRuntimeWire.MSG_RESULT -> {
                     onResult(msg.data ?: return)
-                }
-
-                AgentRuntimeWire.MSG_APPROVAL_REQUEST -> {
-                    AgentRuntimeWire.approvalRequestFromBundle(msg.data)?.let { request ->
-                        onApproval?.invoke(request)
-                    }
                 }
 
                 AgentRuntimeWire.MSG_REQUEST_INGESTED -> onRequestIngested()

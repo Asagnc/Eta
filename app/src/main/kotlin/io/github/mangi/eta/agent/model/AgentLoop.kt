@@ -235,6 +235,7 @@ internal class AgentLoop(
             if (purpose.allowsTools) context.compact(roundTools, final = true)
             runStats?.takeIf { !it.isEmpty }?.let { stats ->
                 onEvent(AgentEvent.RunStatsReported(stats.snapshot().toString()))
+                stats.selfReview()?.let { review -> onEvent(AgentEvent.SelfReview(review)) }
             }
             onEvent(AgentEvent.RunFinished(round = round, contentChars = content.length))
             return Result(

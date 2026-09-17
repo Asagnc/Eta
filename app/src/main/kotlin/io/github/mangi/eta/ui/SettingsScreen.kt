@@ -78,7 +78,6 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -220,8 +219,6 @@ internal fun SettingsScreen(
                         key = Prefs.Keys.AGENT_THINKING_ENABLED,
                         icon = Icons.Rounded.Psychology,
                     )
-
-                    PermissionModePref(prefs = agentPrefs)
                 }
             }
 
@@ -816,48 +813,6 @@ private fun putStringSync(
     value: String
 ): Boolean =
     runCatching { prefs.edit().putString(key, value).commit() }.getOrDefault(false)
-
-private fun putIntSync(
-    prefs: SharedPreferences,
-    key: String,
-    value: Int
-): Boolean =
-    runCatching { prefs.edit().putInt(key, value).commit() }.getOrDefault(false)
-
-/** 工具权限档位：放行 / 需要确认 / 直接拒绝。 */
-@Composable
-private fun PermissionModePref(prefs: SharedPreferences?) {
-    val key = Prefs.Keys.AGENT_PERMISSION_MODE
-    val default = Prefs.Keys.INT_DEFAULTS[key] ?: 0
-    var mode by remember(prefs, key) { mutableStateOf(prefs?.getInt(key, default) ?: default) }
-    DisposableEffect(prefs, key) {
-        val targetPrefs = prefs ?: return@DisposableEffect onDispose { }
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { changedPrefs, changedKey ->
-            if (changedKey == key) mode = changedPrefs.getInt(key, default)
-        }
-        targetPrefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { targetPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
-    listOf(
-        0 to "全部放行",
-        1 to "写/执行类需要我确认",
-        2 to "直接拒绝写/执行类",
-    ).forEach { (value, label) ->
-        RadioButtonPreference(
-            title = label,
-            selected = mode == value,
-            onClick = click@{
-                val targetPrefs = prefs ?: return@click
-                if (putIntSync(targetPrefs, key, value)) {
-                    mode = value
-                    if (key in Prefs.Keys.LOCAL_AGENT_KEYS) {
-                        Prefs.reconcileAgentPreferences(EtaApp.serviceInstance)
-                    }
-                }
-            },
-        )
-    }
-}
 
 private fun PowerAssistantTarget.displayName(context: Context): String =
     when (this) {

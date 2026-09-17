@@ -220,6 +220,13 @@ internal sealed interface AgentEvent {
             "run_stats_reported chars=${statsJson.length}"
     }
 
+    /** 运行结束时 agent 自己的复盘：发现的问题交给界面提示用户。 */
+    data class SelfReview(
+        val text: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String = "self_review chars=${text.length}"
+    }
+
     data class SubAgentUpdated(
         val id: String,
         val role: String,
