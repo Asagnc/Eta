@@ -348,7 +348,6 @@ internal fun ChatMessageItem(
                 onCompactUntilHere = onCompactUntilHere?.let { action -> { action(message.id) } },
                 modifier = modifier,
             )
-            MessageTimestamp(message.timestamp)
         }
         is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
             ContextCompactionMarker(message = message, modifier = modifier)
@@ -889,6 +888,14 @@ private fun AgentMessageBlock(
                     .padding(top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (message.timestamp > 0) {
+                    Text(
+                        text = formatMessageTimestamp(message.timestamp),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 4.dp, end = 2.dp),
+                    )
+                }
                 IconButton(
                     onClick = {
                         @Suppress("DEPRECATION")
