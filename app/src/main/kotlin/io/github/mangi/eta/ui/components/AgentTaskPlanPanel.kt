@@ -100,9 +100,17 @@ internal fun AgentTaskPlanPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
+                            val doneItems = items.filter { it.status == AgentTaskPlanStatus.COMPLETED }
                             onResume(
-                                "继续执行计划里的「${resumeTarget.content}」这一步：" +
-                                    "先把这一项标回进行中再往下做，已经完成的步骤不要重做。",
+                                buildString {
+                                    append("继续执行计划里的「${resumeTarget.content}」这一步：")
+                                    append("先把这一项标回进行中再往下做。")
+                                    if (doneItems.isNotEmpty()) {
+                                        append("已经完成、不要再做一遍的是：")
+                                        append(doneItems.joinToString("；") { it.content })
+                                        append("。")
+                                    }
+                                },
                             )
                         },
                 )

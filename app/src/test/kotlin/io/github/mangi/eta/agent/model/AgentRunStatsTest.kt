@@ -81,15 +81,17 @@ class AgentRunStatsTest {
     @Test
     fun pruningAndContextNoticeCountersAreReported() {
         val stats = AgentRunStats()
-        stats.recordPrunedToolResults(0)
-        stats.recordPrunedToolResults(3)
+        stats.updatePrunedToolResults(0)
+        stats.updatePrunedToolResults(3)
+        // 覆盖而非累加：后一轮请求会重新统计同一批结果，累加会把数字放大成没有意义的值。
+        stats.updatePrunedToolResults(5)
         stats.recordContextNotice()
         val snapshot = stats.snapshot()
-        assertEquals(3, snapshot.getInt("pruned_tool_results"))
+        assertEquals(5, snapshot.getInt("pruned_tool_results"))
         assertEquals(1, snapshot.getInt("context_notices"))
         val summary = stats.summaryText()
-        assertTrue(summary.contains("已清理较早的工具结果 3 条"))
-        assertTrue(summary.contains("上下文提示触发 1 次"))
+        assertTrue(summary.contains("最近一次请求压成占位的工具结果 5 条"))
+        assertTrue(summary.contains("上下文压力提示生效 1 轮"))
     }
 
     @Test

@@ -345,7 +345,7 @@ internal class AgentLoop(
         val base = roleplayContext?.projectMessages(messages, roundTools)
             ?: AgentContextPruner.copyOf(messages)
         val pruned = AgentContextPruner.prune(base, config.toolResultKeep)
-        if (pruned > 0) runStats?.recordPrunedToolResults(pruned)
+        runStats?.updatePrunedToolResults(pruned)
         return base
     }
 

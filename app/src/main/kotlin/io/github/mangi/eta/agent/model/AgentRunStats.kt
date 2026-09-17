@@ -55,9 +55,12 @@ internal class AgentRunStats {
         parallelCalls.addAndGet(size)
     }
 
-    /** 请求视图里被替换成占位内容的工具结果条数。 */
-    fun recordPrunedToolResults(count: Int) {
-        if (count > 0) prunedToolResults.addAndGet(count)
+    /**
+     * 最近一次请求视图里被压成占位的工具结果条数。
+     * 注意是覆盖而不是累加：同一个结果在后续每一轮都会被重新统计，累加会把数字放大成没有意义的值。
+     */
+    fun updatePrunedToolResults(count: Int) {
+        prunedToolResults.set(count)
     }
 
     /** 上下文占用提示实际触发的次数；策略是否值得保留要看它。 */
@@ -88,17 +91,18 @@ internal class AgentRunStats {
             issues += "这些工具反复失败：" + failing.joinToString("、")
         }
         val busy = buckets.entries
-            .filter { it.value.calls.get() >= 6 }
+            .filter { it.value.calls.get() >= 12 }
             .map { it.key }
             .sorted()
         if (busy.isNotEmpty()) {
-            issues += "这些工具被反复调用，可能存在重复劳动：" + busy.joinToString("、")
+            issues += "这些工具调用次数偏多（各 12 次以上），值得看一眼是不是有重复劳动：" +
+                busy.joinToString("、")
         }
-        if (prunedToolResults.get() >= 3) {
-            issues += "较早的工具结果被清理了 ${prunedToolResults.get()} 条，说明这轮信息量偏大"
+        if (prunedToolResults.get() >= 10) {
+            issues += "最近一次请求里有 ${prunedToolResults.get()} 条较早的工具结果被压成占位，本轮信息量偏大"
         }
-        if (contextNotices.get() >= 2) {
-            issues += "上下文占用提示触发了 ${contextNotices.get()} 次"
+        if (contextNotices.get() >= 3) {
+            issues += "上下文压力提示生效了 ${contextNotices.get()} 轮，系统一直在提醒精简"
         }
         return issues.takeIf { it.isNotEmpty() }?.joinToString("；")
     }
@@ -158,10 +162,10 @@ internal class AgentRunStats {
         append("并发批次 ").append(parallelBatches.get())
             .append("（覆盖 ").append(parallelCalls.get()).append(" 次调用）。\n")
         if (prunedToolResults.get() > 0) {
-            append("已清理较早的工具结果 ").append(prunedToolResults.get()).append(" 条；")
+            append("最近一次请求压成占位的工具结果 ").append(prunedToolResults.get()).append(" 条；")
         }
         if (contextNotices.get() > 0) {
-            append("上下文提示触发 ").append(contextNotices.get()).append(" 次；")
+            append("上下文压力提示生效 ").append(contextNotices.get()).append(" 轮；")
         }
         if (prunedToolResults.get() > 0 || contextNotices.get() > 0) append("\n")
         append("token：输入 ").append(inputTokens.get())
