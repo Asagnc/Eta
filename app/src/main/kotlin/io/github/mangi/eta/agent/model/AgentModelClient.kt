@@ -95,6 +95,8 @@ internal object AgentModelClient {
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
         sessionId: String = java.util.UUID.randomUUID().toString(),
         compactOnly: Boolean = false,
+        /** 局部压缩：只压缩到这条消息之前，其余历史保持原样。 */
+        compactUntilMessageId: String? = null,
         operationId: String = sessionId,
         initialUserMessageId: String = "user-$operationId",
         initialSupplementIndex: Int = 0,
@@ -197,7 +199,7 @@ internal object AgentModelClient {
             },
         )
         val result = try {
-            if (compactOnly) loop.compactOnly() else loop.run()
+            if (compactOnly) loop.compactOnly(compactUntilMessageId) else loop.run()
         } catch (throwable: Throwable) {
             throw AgentModelExecutionException(
                 cause = throwable,

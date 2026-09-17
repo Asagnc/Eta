@@ -54,7 +54,12 @@ internal class AgentContextSession(
         )
     }
 
-    fun compact(roundTools: JSONArray, force: Boolean = false, final: Boolean = false) {
+    fun compact(
+        roundTools: JSONArray,
+        force: Boolean = false,
+        final: Boolean = false,
+        untilMessageId: String? = null,
+    ) {
         val before = budget.estimate(messages, roundTools)
         if (!force && !budget.shouldCompact(before)) {
             try {
@@ -75,7 +80,7 @@ internal class AgentContextSession(
             var attempts = 0
             do {
                 candidate = AgentContextCompactor(config, provider, runController, roleplay = roleplay).compact(
-                    candidate, systemCount, sensitiveIds(), force,
+                    candidate, systemCount, sensitiveIds(), force, untilMessageId,
                 )
                 attempts++
                 val tokens = budget.estimate(candidate, roundTools)

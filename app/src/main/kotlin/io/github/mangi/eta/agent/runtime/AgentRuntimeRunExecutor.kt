@@ -303,6 +303,7 @@ internal class AgentRuntimeRunExecutor(
                 roleplayContext = roleplayContext,
                 rewriteReply = request.operation == AgentRuntimeWire.OP_REWRITE_REPLY,
                 compactOnly = request.operation == AgentRuntimeWire.OP_COMPACT,
+                compactUntilMessageId = request.compactUntilMessageId,
                 onContextSnapshot = { snapshot ->
                     val committed = snapshot.copy(operationId = request.runId)
                     AgentRunCheckpointStore.saveContext(appContext, request.runId, committed)

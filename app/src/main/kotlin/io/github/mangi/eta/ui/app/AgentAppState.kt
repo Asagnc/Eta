@@ -1236,7 +1236,7 @@ internal class AgentAppState(
         )
     }
 
-    fun compactCurrentContext() {
+    fun compactCurrentContext(untilMessageId: String? = null) {
         val conversationId = selectedConversationId ?: return
         if (currentRunId != null || !homeState.canCompactContext || modelPickerState.isChanging) return
         launchConversationRun(
@@ -1245,6 +1245,7 @@ internal class AgentAppState(
             prompt = "", images = emptyList(), history = homeState.history,
             userHistoryMessage = null, messages = homeState.messages, state = homeState,
             reasoningEffort = homeState.reasoningEffort, operation = AgentRuntimeWire.OP_COMPACT,
+            compactUntilMessageId = untilMessageId,
         )
     }
 
@@ -1260,6 +1261,7 @@ internal class AgentAppState(
         reasoningEffort: ReasoningEffort,
         operation: String = AgentRuntimeWire.OP_CHAT,
         rewriteTargetMessageId: String? = null,
+        compactUntilMessageId: String? = null,
     ) {
         runConversationIds[runId] = conversationId
         currentRunId = runId
@@ -1374,6 +1376,7 @@ internal class AgentAppState(
                     request = AgentRuntimeWire.RunRequest(
                         operation = operation,
                         rewriteTargetMessageId = rewriteTargetMessageId,
+                        compactUntilMessageId = compactUntilMessageId,
                         runId = runId,
                         prompt = prompt,
                         config = config,

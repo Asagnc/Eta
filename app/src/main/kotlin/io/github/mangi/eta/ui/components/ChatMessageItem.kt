@@ -66,6 +66,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -286,8 +289,8 @@ internal fun formatMessageTimestamp(
     }
 }
 
-private val TIMESTAMP_CLOCK_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val TIMESTAMP_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+private val TIMESTAMP_CLOCK_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+private val TIMESTAMP_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")
 
 @Composable
 internal fun ChatMessageItem(
@@ -309,7 +312,17 @@ internal fun ChatMessageItem(
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
     /** 思考过程被手动展开或折叠时回调，供聊天列表暂停自动跟底。 */
     onThinkingToggle: () -> Unit = {},
+    /** 长按消息可把该消息之前的历史压缩掉；为 null 时不提供长按菜单。 */
+    onCompactUntilHere: ((String) -> Unit)? = null,
 ) {
+    var compactMenuExpanded by remember { mutableStateOf(false) }
+    Box(
+        modifier = if (onCompactUntilHere != null) {
+            Modifier.combinedClickable(onClick = {}, onLongClick = { compactMenuExpanded = true })
+        } else {
+            Modifier
+        },
+    ) {
     when (message) {
         is UserMessageUi -> Column(
             modifier = Modifier.fillMaxWidth(),
@@ -396,6 +409,19 @@ internal fun ChatMessageItem(
         )
         is ToolSummaryMessageUi -> ToolSummaryInline(message = message, modifier = modifier, compact = compact)
         is SuggestionChipsMessageUi -> SuggestionChipsRow(message = message, onSuggestionClick = onSuggestionClick, modifier = modifier)
+    }
+        DropdownMenu(
+            expanded = compactMenuExpanded,
+            onDismissRequest = { compactMenuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.context_compact_until_here)) },
+                onClick = {
+                    compactMenuExpanded = false
+                    onCompactUntilHere?.invoke(message.id)
+                },
+            )
+        }
     }
 }
 

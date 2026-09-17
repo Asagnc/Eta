@@ -160,6 +160,8 @@ internal object AgentRuntimeWire {
         val modelSessionId: String = "",
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
+        /** 局部压缩：只压缩到这条消息之前，其余历史保持原样。 */
+        val compactUntilMessageId: String? = null,
     ) {
         // 旧入口沿用会话 handoff；无持久会话的入口以首个 run 为会话起点。
         val effectiveModelSessionId: String
@@ -289,6 +291,7 @@ internal object AgentRuntimeWire {
         putString(KEY_MODEL_DISPLAY_NAME, request.config.modelDisplayName)
         putString("operation", request.operation)
         request.rewriteTargetMessageId?.let { putString("rewrite_target_message_id", it) }
+        request.compactUntilMessageId?.let { putString("compact_until_message_id", it) }
         request.config.contextWindow?.let { putInt(KEY_CONTEXT_WINDOW, it) }
         AgentWireText.put(this, KEY_SYSTEM_PROMPT, request.config.systemPrompt, payloadDirectory)
         putString(KEY_ANTHROPIC_VERSION, request.config.anthropicVersion)
@@ -405,6 +408,9 @@ internal object AgentRuntimeWire {
             operation = bundle.getString("operation")?.also { require(it in setOf(OP_CHAT, OP_COMPACT, OP_REWRITE_REPLY)) } ?: OP_CHAT,
             rewriteTargetMessageId = bundle.getString("rewrite_target_message_id")?.also {
                 require(it.isNotBlank() && it.length <= 256) { "Invalid rewrite target" }
+            },
+            compactUntilMessageId = bundle.getString("compact_until_message_id")?.also {
+                require(it.isNotBlank() && it.length <= 256) { "Invalid compact target" }
             },
             modelSessionId = bundle.getString(KEY_MODEL_SESSION_ID).orEmpty(),
             config = AgentModelClient.ModelConfig(

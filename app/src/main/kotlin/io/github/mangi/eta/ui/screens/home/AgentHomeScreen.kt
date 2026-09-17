@@ -40,6 +40,9 @@ internal fun AgentHomeScreen(
             characterName = state.roleplay?.characterName,
             onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
             onCompactContext = { onAction(AgentHomeAction.CompactContext) },
+            onCompactContextUntilHere = { messageId ->
+                onAction(AgentHomeAction.CompactContextUntilHere(messageId))
+            },
             canCompactContext = state.canCompactContext,
             onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
             onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },

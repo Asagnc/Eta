@@ -87,8 +87,8 @@ internal class AgentLoop(
         publishedTranscriptSize = transcript.length()
     }
 
-    fun compactOnly(): Result {
-        context.compact(tools, force = true)
+    fun compactOnly(untilMessageId: String? = null): Result {
+        context.compact(tools, force = true, untilMessageId = untilMessageId)
         return Result("", "", emptySet())
     }
 

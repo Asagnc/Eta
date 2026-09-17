@@ -37,6 +37,9 @@ internal fun AgentChatScreen(
             characterName = state.roleplay?.characterName,
             onReasoningEffortChange = { onAction(AgentChatAction.ReasoningEffortChanged(it)) },
             onCompactContext = { onAction(AgentChatAction.CompactContext) },
+            onCompactContextUntilHere = { messageId ->
+                onAction(AgentChatAction.CompactContextUntilHere(messageId))
+            },
             canCompactContext = state.canCompactContext,
             onModelSelected = { onAction(AgentChatAction.ModelSelected(it)) },
             onSubmit = { text -> onAction(AgentChatAction.SubmitMessage(text)) },
