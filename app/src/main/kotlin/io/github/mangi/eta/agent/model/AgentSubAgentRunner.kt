@@ -228,3 +228,6 @@ internal const val MAX_SUB_AGENT_ROUNDS = 6
 internal const val SUB_AGENT_TOKEN_BUDGET = 30_000
 internal const val SUB_AGENT_PARALLEL_LIMIT = 3
 internal const val SUB_AGENT_SUMMARY_CHARS = 4_000
+
+/** 单次主运行里允许委派子智能体的总次数；防止反复委派把成本放大。 */
+internal const val SUB_AGENT_INVOCATION_LIMIT = 4

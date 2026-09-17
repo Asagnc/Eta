@@ -17,6 +17,7 @@ import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
 import io.github.mangi.eta.agent.model.AgentSubAgentRunner
 import io.github.mangi.eta.agent.model.AgentSubAgentToolCatalog
+import io.github.mangi.eta.agent.model.SUB_AGENT_INVOCATION_LIMIT
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
@@ -237,8 +238,23 @@ internal class AgentLocalTools(
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
                 "skills_run" -> textResult(terminalTool { skillsRun(args) })
-                AgentSubAgentToolCatalog.DELEGATE -> textResult(delegate(args))
-                AgentSubAgentToolCatalog.MULTI_PERSPECTIVE -> textResult(multiPerspective(args))
+                AgentSubAgentToolCatalog.DELEGATE,
+                AgentSubAgentToolCatalog.MULTI_PERSPECTIVE -> {
+                    val used = subAgentInvocations.incrementAndGet()
+                    if (used > SUB_AGENT_INVOCATION_LIMIT) {
+                        textResult(
+                            errorResult(
+                                code = "SUB_AGENT_LIMIT_REACHED",
+                                message = "本次运行最多委派 $SUB_AGENT_INVOCATION_LIMIT 次子智能体，已经用完；" +
+                                    "请自己继续处理，或先汇总已有结论",
+                            ),
+                        )
+                    } else if (toolCall.name == AgentSubAgentToolCatalog.DELEGATE) {
+                        textResult(delegate(args))
+                    } else {
+                        textResult(multiPerspective(args))
+                    }
+                }
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",
@@ -330,6 +346,9 @@ internal class AgentLocalTools(
 
     /** 当前 run 的任务清单；只在本次 run 内有效，事件把它同步给界面。 */
     private var currentTaskPlan: String = ""
+
+    /** 本次运行已经委派过多少次子智能体；护栏值见 SUB_AGENT_INVOCATION_LIMIT。 */
+    private val subAgentInvocations = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * 维护任务清单：每次提交的是完整快照，校验不通过时不改动已保存的清单。
