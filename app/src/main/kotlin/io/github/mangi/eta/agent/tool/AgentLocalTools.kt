@@ -1152,16 +1152,27 @@ internal class AgentLocalTools(
             replaceAll = args.optBoolean("replace_all", false)
         )
 
-    private fun searchCode(args: JSONObject): String =
-        appendBusyBoxRegexHint(
+    private fun searchCode(args: JSONObject): String {
+        val requested = args.optString("pattern")
+        // BusyBox 的 grep -E 不认 PCRE 的 \s/\d/\w：先翻成 POSIX 类，省掉一轮 "bad regex"。
+        val pattern = SearchPattern.toPosix(requested)
+        val result = appendBusyBoxRegexHint(
             terminalController.searchCode(
                 path = args.optString("path"),
-                pattern = args.optString("pattern"),
+                pattern = pattern,
                 glob = args.optString("glob").ifBlank { null },
                 maxResults = args.optInt("max_results", FileTextOperations.DEFAULT_SEARCH_RESULTS),
                 contextLines = args.optInt("context_lines", 0)
             ),
         )
+        if (pattern == requested) return result
+        return runCatching {
+            JSONObject(result)
+                .put("pattern_used", pattern)
+                .put("pattern_rewritten", true)
+                .toString()
+        }.getOrDefault(result)
+    }
 
     /**
      * 用 shell 的 find 复用既有文件通道，只返回匹配到的路径。

@@ -886,7 +886,34 @@ internal object AgentBrowserSession {
             evaluateObject(view, BrowserDomScripts.evaluateScript(expression, resultKey, maxChars, bridgeName))
         } catch (failure: BrowserFailure) {
             if (failure.code != "SCRIPT_FAILED") throw failure
-            throw BrowserFailure("SCRIPT_FAILED", "expression 无法执行，请检查语法是否完整")
+            // 一串语句（function 声明、`var x=1; x` 之类）放进表达式位置必然语法失败。
+            // 先按函数体重试：用 eval 执行原样代码，这样还能拿到最后一条语句的值。
+            if (retryAsStatements(view, expression, resultKey, maxChars, bridgeName)) return
+            throw BrowserFailure(
+                "SCRIPT_FAILED",
+                "expression 无法执行（${failure.message}）。这里要的是单个表达式：" +
+                    "多条语句请包成 (async () => { ... })()，并用 return 交出结果。",
+            )
+        }
+    }
+
+    /** 把整段代码当语句块重试一次；成功返回 true。 */
+    private fun retryAsStatements(
+        view: WebView,
+        expression: String,
+        resultKey: String,
+        maxChars: Int,
+        bridgeName: String?,
+    ): Boolean {
+        val attempts = listOf(
+            // eval 会返回最后一条语句的完成值，最贴近"我写了一段脚本"的预期。
+            "(async () => { return eval(${JSONObject.quote(expression)}); })()",
+            "(async () => {\n$expression\n})()",
+        )
+        return attempts.any { wrapped ->
+            runCatching {
+                evaluateObject(view, BrowserDomScripts.evaluateScript(wrapped, resultKey, maxChars, bridgeName))
+            }.isSuccess
         }
     }
 
