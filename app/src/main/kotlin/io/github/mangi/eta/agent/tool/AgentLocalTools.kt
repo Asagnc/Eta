@@ -280,7 +280,7 @@ internal class AgentLocalTools(
                 content == result.content && sensitive == result.sensitive -> result
                 else -> result.copy(content = content, sensitive = sensitive)
             }
-        }
+        }.also { result -> recordItemActivity(toolCall, result) }
 
     private fun deviceToolPermissionError(
         toolName: String,
@@ -350,9 +350,53 @@ internal class AgentLocalTools(
     /** 本次运行已经委派过多少次子智能体；护栏值见 SUB_AGENT_INVOCATION_LIMIT。 */
     private val subAgentInvocations = java.util.concurrent.atomic.AtomicInteger(0)
 
+    /** 计划项的执行痕迹，由本层自动采集，不占模型的输出预算。 */
+    private class ItemActivity {
+        var startedAt: Long = 0L
+        var finishedAt: Long = 0L
+        var calls: Int = 0
+        var failure: String? = null
+    }
+
+    private val itemActivities = mutableMapOf<String, ItemActivity>()
+    private var activeItemId: String? = null
+
     /**
      * 维护任务清单：每次提交的是完整快照，校验不通过时不改动已保存的清单。
      */
+    /** 记录当前计划项的执行痕迹：工具调用次数、最近一次失败原因。 */
+    private fun recordItemActivity(
+        toolCall: AgentModelClient.ToolCall,
+        result: AgentModelClient.ToolResult,
+    ) {
+        val itemId = activeItemId ?: return
+        if (toolCall.name == "task_plan") return
+        val activity = itemActivities.getOrPut(itemId) { ItemActivity() }
+        activity.calls += 1
+        val payload = runCatching { JSONObject(result.content) }.getOrNull() ?: return
+        if (payload.optBoolean("ok", true)) return
+        val code = payload.optString("code").ifBlank { payload.optString("error") }
+        val message = payload.optString("message").ifBlank { payload.optString("stderr") }
+        activity.failure = listOf(code, message)
+            .filter { it.isNotBlank() }
+            .joinToString("：")
+            .take(160)
+            .ifBlank { "工具执行失败" }
+    }
+
+    /** 把采集到的痕迹写进清单 JSON，界面据此显示每步的代价与失败原因。 */
+    private fun decorateActivity(target: JSONObject, activity: ItemActivity?, status: String) {
+        val stats = activity ?: return
+        if (stats.calls > 0) target.put("tool_calls", stats.calls)
+        val end = if (status == "in_progress") System.currentTimeMillis() else stats.finishedAt
+        if (stats.startedAt > 0L && end > stats.startedAt) {
+            target.put("elapsed_ms", end - stats.startedAt)
+        }
+        if (status != "completed") {
+            stats.failure?.let { target.put("failure", it) }
+        }
+    }
+
     private fun taskPlan(args: JSONObject): String {
         val raw = args.optJSONArray("todos")
             ?: return errorResult("INVALID_ARGUMENT", "todos 必须是数组")
@@ -372,8 +416,24 @@ internal class AgentLocalTools(
                 return errorResult("INVALID_ARGUMENT", "status 只能是 pending、in_progress 或 completed，收到：$status")
             }
             if (status == "in_progress") inProgress++
+            val activity = itemActivities.getOrPut(id) { ItemActivity() }
+            if (status == "in_progress" && activeItemId != id) {
+                activeItemId = id
+                activity.startedAt = System.currentTimeMillis()
+                activity.finishedAt = 0L
+                activity.calls = 0
+                activity.failure = null
+            }
+            if (status == "completed" && activity.finishedAt == 0L) {
+                activity.finishedAt = System.currentTimeMillis()
+                if (activeItemId == id) activeItemId = null
+            }
             normalized.put(
-                JSONObject().put("id", id).put("content", content).put("status", status),
+                JSONObject()
+                    .put("id", id)
+                    .put("content", content)
+                    .put("status", status)
+                    .also { decorateActivity(it, activity, status) },
             )
         }
         if (inProgress > 1) {

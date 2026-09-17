@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.ui.model.AgentTaskPlanItemUi
 import io.github.mangi.eta.ui.model.AgentTaskPlanStatus
@@ -43,11 +44,18 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 internal fun AgentTaskPlanPanel(
     items: List<AgentTaskPlanItemUi>,
     modifier: Modifier = Modifier,
+    onResume: ((String) -> Unit)? = null,
 ) {
     if (items.isEmpty()) return
     var expanded by rememberSaveable { mutableStateOf(true) }
+    var autoCollapsed by rememberSaveable { mutableStateOf(false) }
     val completed = items.count { it.status == AgentTaskPlanStatus.COMPLETED }
     val interrupted = items.count { it.status == AgentTaskPlanStatus.INTERRUPTED }
+    // 整份清单跑完时自动收起一次，把屏幕让回对话；用户自己展开过就不再强制收起。
+    if (!autoCollapsed && items.isNotEmpty() && completed == items.size) {
+        autoCollapsed = true
+        expanded = false
+    }
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         insideMargin = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
@@ -81,6 +89,23 @@ internal fun AgentTaskPlanPanel(
             Spacer(modifier = Modifier.height(6.dp))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items.forEach { item -> AgentTaskPlanRow(item) }
+            }
+            val resumeTarget = items.firstOrNull { it.status == AgentTaskPlanStatus.INTERRUPTED }
+            if (onResume != null && resumeTarget != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "从「${resumeTarget.content}」继续",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onResume(
+                                "继续执行计划里的「${resumeTarget.content}」这一步：" +
+                                    "先把这一项标回进行中再往下做，已经完成的步骤不要重做。",
+                            )
+                        },
+                )
             }
         }
     }
@@ -116,16 +141,35 @@ private fun AgentTaskPlanRow(item: AgentTaskPlanItemUi) {
             AgentTaskPlanStatus.PENDING -> Spacer(modifier = Modifier.size(14.dp))
         }
         Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = item.content,
-            style = MiuixTheme.textStyles.footnote1,
-            color = if (item.status == AgentTaskPlanStatus.IN_PROGRESS) {
-                MiuixTheme.colorScheme.onSurfaceContainer
-            } else {
-                MiuixTheme.colorScheme.onSurfaceVariantSummary
-            },
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.content,
+                style = MiuixTheme.textStyles.footnote1,
+                color = if (item.status == AgentTaskPlanStatus.IN_PROGRESS) {
+                    MiuixTheme.colorScheme.onSurfaceContainer
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val detail = buildList {
+                if (item.toolCalls > 0) add("${item.toolCalls} 次工具调用")
+                if (item.elapsedMillis > 0) {
+                    val seconds = item.elapsedMillis / 1000
+                    add(if (seconds < 60) "$seconds 秒" else "${seconds / 60} 分 ${seconds % 60} 秒")
+                }
+                item.failure?.let { add("失败：$it") }
+            }.joinToString(" · ")
+            if (detail.isNotBlank()) {
+                Text(
+                    text = detail,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

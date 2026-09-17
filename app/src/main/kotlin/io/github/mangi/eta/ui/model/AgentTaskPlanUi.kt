@@ -14,6 +14,9 @@ internal data class AgentTaskPlanItemUi(
     val id: String,
     val content: String,
     val status: AgentTaskPlanStatus,
+    val toolCalls: Int = 0,
+    val elapsedMillis: Long = 0L,
+    val failure: String? = null,
 )
 
 internal object AgentTaskPlanCodec {
@@ -37,6 +40,9 @@ internal object AgentTaskPlanCodec {
                     "interrupted" -> AgentTaskPlanStatus.INTERRUPTED
                     else -> AgentTaskPlanStatus.PENDING
                 },
+                toolCalls = item.optInt("tool_calls", 0),
+                elapsedMillis = item.optLong("elapsed_ms", 0L),
+                failure = item.optString("failure").takeIf { it.isNotBlank() },
             )
         }
     }.getOrDefault(emptyList())

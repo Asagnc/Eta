@@ -324,7 +324,7 @@ private fun AgentChatScaffold(
         ),
         topBar = {
             // 清单为空时面板自身不渲染，因此这里始终挂载不会占位。
-            AgentTaskPlanPanel(items = taskPlan)
+            AgentTaskPlanPanel(items = taskPlan, onResume = onSubmit)
         },
         bottomBar = {
             AgentChatBottomBar(
