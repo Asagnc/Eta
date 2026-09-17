@@ -19,7 +19,13 @@ internal object AgentHttpClient {
     val modelClient: OkHttpClient by lazy {
         client.newBuilder()
             .readTimeout(MODEL_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(false)
+            // 保留 OkHttp 默认的连接层重试（原为 false）。
+            // 连接池里的空闲连接可能已被对端静默回收且不发 Connection: close，
+            // 实测部分中转网关空闲约 150s 后即单向关闭连接，复用时首次写入/读取
+            // 直接抛 IOException，于是模型请求表现为「暂时中断」并被应用层重试，
+            // 用户看到无谓的重试提示。OkHttp 仅在请求尚未被服务端受理时换新连接
+            // 重试（陈旧连接、连接失败、HTTP/2 REFUSED_STREAM），不会重复触发推理。
+            .retryOnConnectionFailure(true)
             .build()
     }
 
