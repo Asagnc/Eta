@@ -102,6 +102,10 @@ jobs:
 
       - name: 验证并整理 APK
         id: apk
+        env:
+          ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
+          ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
+          ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
           debug_apk="app/build/outputs/apk/debug/app-debug.apk"
           release_apk="app/build/outputs/apk/release/app-release.apk"
@@ -123,8 +127,26 @@ jobs:
           echo "debug_path=$output_dir/app-debug.apk" >> "$GITHUB_OUTPUT"
 
           if [[ -f "$release_apk" ]]; then
-            "$apksigner_path" verify "$release_apk"
-            cp "$release_apk" "$output_dir/app-release.apk"
+            # AGP 只会产出单一签名方案，这里用发布证书重签，显式开启 V1+V2+V3：
+            # V1 供依赖 JAR 签名的加固/改包工具链，V2 供 Android 7+，V3 供 Android 9+。
+            zipalign_path="$(find "$ANDROID_HOME/build-tools" \
+              -type f -name zipalign | sort -V | tail -n 1)"
+            if [[ -z "$zipalign_path" ]]; then
+              echo "::error::未找到 zipalign。"
+              exit 1
+            fi
+            "$zipalign_path" -p -f 4 "$release_apk" "$output_dir/app-release-aligned.apk"
+            "$apksigner_path" sign \
+              --ks "$RUNNER_TEMP/eta-release.jks" \
+              --ks-pass "pass:$ETA_RELEASE_STORE_PASSWORD" \
+              --ks-key-alias "$ETA_RELEASE_KEY_ALIAS" \
+              --key-pass "pass:$ETA_RELEASE_KEY_PASSWORD" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "$output_dir/app-release.apk" \
+              "$output_dir/app-release-aligned.apk"
+            "$apksigner_path" verify -v --print-certs "$output_dir/app-release.apk"
             echo "release_path=$output_dir/app-release.apk" >> "$GITHUB_OUTPUT"
           fi
 
