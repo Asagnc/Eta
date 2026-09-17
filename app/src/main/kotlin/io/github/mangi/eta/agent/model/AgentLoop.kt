@@ -381,20 +381,17 @@ internal class AgentLoop(
         return copy(content = content.toString())
     }
 
-    /** 一次失败的可比较摘要：工具 + 错误码 + 错误消息。 */
-    private data class FailureSummary(val signature: String, val detail: String)
-
     /**
      * 连续同因失败的纠偏提示。
      *
      * 错误来自真实执行，属于可靠的外部反馈，所以在运行中就附在结果旁边提醒换做法，
      * 而不是等运行结束再写一句总结——那时候唯一还能改变行为的是用户，提示已经晚了。
-     * 只认显式失败（结果里 ok=false）；退出码非零之类的"业务上没成功"不在此列，避免误判。
+     * 只认显式失败（结果里 ok=false）；签名归一化见 AgentFailureSignature。
      */
     private fun failureNudges(outcomes: List<ToolOutcome>): Map<Int, String> {
         val nudges = mutableMapOf<Int, String>()
         outcomes.forEachIndexed { index, outcome ->
-            val failure = outcome.failureSummary()
+            val failure = AgentFailureSignature.of(outcome.call.name, outcome.result.content)
             if (failure == null) {
                 failureGuard.reset()
                 return@forEachIndexed
@@ -405,19 +402,6 @@ internal class AgentLoop(
                 "${failure.detail}。原样重试不会成功，请先核对前置条件，或换一种做法。"
         }
         return nudges
-    }
-
-    private fun ToolOutcome.failureSummary(): FailureSummary? {
-        val content = runCatching { JSONObject(result.content) }.getOrNull() ?: return null
-        if (content.optBoolean("ok", true)) return null
-        val code = content.optString("code").ifBlank { "error" }
-        val message = content.optString("message")
-            .ifBlank { content.optString("stderr") }
-            .take(120)
-        return FailureSummary(
-            signature = "${call.name}:$code:$message",
-            detail = if (message.isBlank()) code else "$code：$message",
-        )
     }
 
     private fun executeToolCalls(
