@@ -25,8 +25,9 @@ import androidx.room.migration.Migration
         McpServerEntity::class,
         CharacterEntity::class,
         UserPersonaEntity::class,
+        SubAgentRunEntity::class,
     ],
-    version = 24,
+    version = 25,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
+    abstract fun subAgentRunDao(): SubAgentRunDao
 
     companion object {
         @Volatile
@@ -67,6 +69,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_21_22,
                         MIGRATION_22_23,
                         MIGRATION_23_24,
+                        MIGRATION_24_25,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -83,6 +86,19 @@ internal abstract class EtaDatabase : RoomDatabase() {
                 instance?.close()
                 instance = null
             }
+        }
+
+        /** 子智能体的消耗样本：用于按历史分位数评估后续委派的 token 预算。 */
+        internal val MIGRATION_24_25 = Migration(24, 25) { database ->
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sub_agent_runs` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`scope` TEXT NOT NULL, " +
+                    "`tokens` INTEGER NOT NULL, " +
+                    "`rounds` INTEGER NOT NULL, " +
+                    "`ok` INTEGER NOT NULL, " +
+                    "`created_at` INTEGER NOT NULL)",
+            )
         }
 
         internal val MIGRATION_19_20 = Migration(19, 20) { database ->

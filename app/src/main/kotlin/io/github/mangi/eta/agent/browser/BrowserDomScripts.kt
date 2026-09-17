@@ -367,8 +367,25 @@ internal object BrowserDomScripts {
 
     fun readable(offset: Int, maxChars: Int): String =
         """
-        var target = readableTarget();
-        if (!target || !visible(target)) throw new Error('TARGET_NOT_VISIBLE');
+        var markdownHolder = function (html) {
+          var holder = document.createElement('div');
+          holder.setAttribute('data-eta-readability', '1');
+          holder.style.position = 'fixed';
+          holder.style.left = '-10000px';
+          holder.style.top = '0';
+          holder.innerHTML = html;
+          document.body.appendChild(holder);
+          return holder;
+        };
+        var article = null;
+        try {
+          if (typeof Readability === 'function') {
+            article = new Readability(document.cloneNode(true), { charThreshold: 140 }).parse();
+          }
+        } catch (error) { article = null; }
+        var fromReadability = !!(article && article.content);
+        var target = fromReadability ? markdownHolder(article.content) : readableTarget();
+        if (!target || (!fromReadability && !visible(target))) throw new Error('TARGET_NOT_VISIBLE');
         var state = markdownState();
         emitMarkdown(target, 0, state);
         var markdown = cleanBlock(state.parts.join(''), MAX_DOCUMENT_CHARS);

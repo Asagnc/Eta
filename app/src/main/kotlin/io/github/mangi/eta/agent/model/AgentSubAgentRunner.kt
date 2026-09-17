@@ -29,7 +29,16 @@ internal class AgentSubAgentRunner(
     private val tokenBudget: Int = SUB_AGENT_TOKEN_BUDGET,
     private val parallelLimit: Int = SUB_AGENT_PARALLEL_LIMIT,
 ) {
-    data class Request(val role: String, val brief: String, val context: String = "")
+    /**
+     * [plan] 由调用方按任务档位与历史消耗算好；缺省时按 compare 档默认值执行，
+     * 保证单独调用 run() 也不会因为没传预算而失控。
+     */
+    data class Request(
+        val role: String,
+        val brief: String,
+        val context: String = "",
+        val plan: SubAgentPlan? = null,
+    )
 
     data class Outcome(
         val role: String,
@@ -39,12 +48,17 @@ internal class AgentSubAgentRunner(
         val estimatedTokens: Int,
         val errorCode: String = "",
         val errorMessage: String = "",
+        val scope: SubAgentScope = SubAgentScope.COMPARE,
+        val tokenBudget: Int = 0,
+        val budgetFromHistory: Boolean = false,
     )
 
     private val sequence = AtomicInteger()
 
     fun run(request: Request): Outcome {
         val role = request.role.trim().ifBlank { DEFAULT_ROLE }
+        val plan = request.plan
+            ?: SubAgentPlan(SubAgentScope.COMPARE, maxRounds, tokenBudget, 0, fromHistory = false)
         val id = "sub-$role-${sequence.incrementAndGet()}"
         onEvent(AgentEvent.SubAgentUpdated(id = id, role = role, phase = PHASE_STARTED, summaryChars = 0))
 
@@ -59,15 +73,15 @@ internal class AgentSubAgentRunner(
         var estimatedTokens = 0
         var errorCode = ""
         var errorMessage = ""
-        while (round <= maxRounds) {
+        while (round <= plan.maxRounds) {
             if (runController.isCancelled) {
                 errorCode = "SUB_AGENT_CANCELLED"
                 break
             }
             estimatedTokens = AgentContextBudget.rawEstimate(messages, tools)
-            if (estimatedTokens > tokenBudget) {
+            if (estimatedTokens > plan.tokenBudget) {
                 errorCode = "SUB_AGENT_BUDGET_EXCEEDED"
-                errorMessage = "子智能体上下文约 $estimatedTokens token，超过上限 $tokenBudget"
+                errorMessage = "子智能体上下文约 $estimatedTokens token，超过本次预算 ${plan.tokenBudget}"
                 break
             }
             val response = try {
@@ -119,7 +133,7 @@ internal class AgentSubAgentRunner(
         }
         if (summary.isBlank() && errorCode.isEmpty()) {
             errorCode = "SUB_AGENT_NO_RESULT"
-            errorMessage = "子智能体在 $maxRounds 轮内没有给出结论"
+            errorMessage = "子智能体在 ${plan.maxRounds} 轮内没有给出结论"
         }
         val ok = errorCode.isEmpty()
         val content = summary.toString().trim().take(SUB_AGENT_SUMMARY_CHARS)
@@ -136,10 +150,13 @@ internal class AgentSubAgentRunner(
             role = role,
             ok = ok,
             summary = content,
-            rounds = round.coerceAtMost(maxRounds),
+            rounds = round.coerceAtMost(plan.maxRounds),
             estimatedTokens = estimatedTokens,
             errorCode = errorCode,
             errorMessage = errorMessage,
+            scope = plan.scope,
+            tokenBudget = plan.tokenBudget,
+            budgetFromHistory = plan.fromHistory,
         )
     }
 
@@ -224,10 +241,14 @@ internal class AgentSubAgentRunner(
 /** 子智能体允许使用的工具：只检索、不写文件、不碰设备。 */
 internal val READ_ONLY_TOOL_NAMES = setOf("read_file", "search_code", "list_directory")
 
+/** 构造参数的兜底值：真实预算由 [AgentSubAgentBudget] 按档位与历史消耗算出。 */
 internal const val MAX_SUB_AGENT_ROUNDS = 6
 internal const val SUB_AGENT_TOKEN_BUDGET = 30_000
 internal const val SUB_AGENT_PARALLEL_LIMIT = 3
 internal const val SUB_AGENT_SUMMARY_CHARS = 4_000
 
-/** 单次主运行里允许委派子智能体的总次数；防止反复委派把成本放大。 */
-internal const val SUB_AGENT_INVOCATION_LIMIT = 4
+/**
+ * 单次主运行里允许委派子智能体的总次数。多智能体实践里复杂任务可以起 10+ 个子代理，
+ * 手机端压到 6：既有覆盖面，又不会把 token 成本放大到不可控。
+ */
+internal const val SUB_AGENT_INVOCATION_LIMIT = 6

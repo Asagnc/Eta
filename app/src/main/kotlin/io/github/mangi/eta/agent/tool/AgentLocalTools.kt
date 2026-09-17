@@ -15,9 +15,12 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentRunStatsToolCatalog
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
 import io.github.mangi.eta.agent.model.AgentSensitiveToolPolicy
+import io.github.mangi.eta.agent.model.AgentSubAgentBudget
 import io.github.mangi.eta.agent.model.AgentSubAgentRunner
 import io.github.mangi.eta.agent.model.AgentSubAgentToolCatalog
 import io.github.mangi.eta.agent.model.SUB_AGENT_INVOCATION_LIMIT
+import io.github.mangi.eta.agent.model.SubAgentSample
+import io.github.mangi.eta.agent.model.SubAgentScope
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
@@ -46,6 +49,8 @@ import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.HookSupport
+import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.SubAgentRunEntity
 import io.github.mangi.eta.data.repository.AgentMemoryException
 import io.github.mangi.eta.data.repository.AgentMemoryMutation
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
@@ -1867,13 +1872,19 @@ internal class AgentLocalTools(
         val task = args.optString("task").trim()
         if (task.isBlank()) return errorResult("MISSING_PARAM", "缺少 task")
         val role = args.optString("role").trim().ifBlank { DEFAULT_SUB_AGENT_ROLE }
+        // 预算按"档位 + 同档位历史消耗"算，而不是写死一个数：样本够就用 P75，
+        // 不够就退回档位默认值，来源会一并回给模型。
+        val scope = SubAgentScope.fromWire(args.optString("scope"))
+        val plan = AgentSubAgentBudget.plan(scope, subAgentHistory(scope))
         val outcome = runner.run(
             AgentSubAgentRunner.Request(
                 role = role,
                 brief = task.take(MAX_SUB_AGENT_TASK_CHARS),
                 context = args.optString("context").trim().take(MAX_SUB_AGENT_CONTEXT_CHARS),
+                plan = plan,
             ),
         )
+        recordSubAgentRuns(listOf(outcome))
         return subAgentResult(listOf(outcome))
     }
 
@@ -1892,15 +1903,19 @@ internal class AgentLocalTools(
             return errorResult("INVALID_ARGUMENT", "角色最多 $MAX_SUB_AGENT_ROLES 个")
         }
         val brief = args.optString("brief").trim()
+        val scope = SubAgentScope.fromWire(args.optString("scope"))
+        val plan = AgentSubAgentBudget.plan(scope, subAgentHistory(scope))
         val outcomes = runner.runAll(
             roles.map { role ->
                 AgentSubAgentRunner.Request(
                     role = role,
                     brief = topic.take(MAX_SUB_AGENT_TASK_CHARS),
                     context = brief.take(MAX_SUB_AGENT_CONTEXT_CHARS),
+                    plan = plan,
                 )
             },
         )
+        recordSubAgentRuns(outcomes)
         return subAgentResult(outcomes)
     }
 
@@ -1915,14 +1930,55 @@ internal class AgentLocalTools(
                     .put("rounds", outcome.rounds)
                     .put("summary", outcome.summary)
                     .put("error", outcome.errorCode.ifBlank { JSONObject.NULL as Any })
-                    .put("message", outcome.errorMessage),
+                    .put("message", outcome.errorMessage)
+                    .put("scope", outcome.scope.wire)
+                    .put("token_budget", outcome.tokenBudget)
+                    .put("budget_source", if (outcome.budgetFromHistory) "history" else "default"),
             )
         }
         return JSONObject()
             .put("ok", outcomes.any { outcome -> outcome.ok })
             .put("results", results)
-            .put("note", "子智能体的工具输出没有进入当前上下文；请校验摘要后再下结论")
+            .put(
+                "note",
+                "子智能体的工具输出没有进入当前上下文；请校验摘要后再下结论。" +
+                    "budget_source=history 表示预算按同档位历史消耗估算，default 表示样本不足、用的档位默认值。",
+            )
             .toString()
+    }
+
+    /**
+     * 读同档位的历史消耗样本，用于估算本次委派的预算。
+     *
+     * 读库失败不该让委派失败：任何异常都退化成"没有样本"，由 [AgentSubAgentBudget] 回退默认值。
+     */
+    private fun subAgentHistory(scope: SubAgentScope): List<SubAgentSample> = runCatching {
+        runBlocking {
+            EtaDatabase.get(context).subAgentRunDao()
+                .recent(scope.wire, SUB_AGENT_HISTORY_SAMPLES)
+                .map { row -> SubAgentSample(tokens = row.tokens, rounds = row.rounds, ok = row.ok) }
+        }
+    }.getOrElse { emptyList() }
+
+    /** 把本次实际消耗写回样本表，并按条数裁剪——这张表只服务预算评估，不需要长期归档。 */
+    private fun recordSubAgentRuns(outcomes: List<AgentSubAgentRunner.Outcome>) {
+        runCatching {
+            runBlocking {
+                val dao = EtaDatabase.get(context).subAgentRunDao()
+                outcomes.forEach { outcome ->
+                    dao.insert(
+                        SubAgentRunEntity(
+                            scope = outcome.scope.wire,
+                            tokens = outcome.estimatedTokens,
+                            rounds = outcome.rounds,
+                            ok = outcome.ok,
+                            createdAt = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+                dao.trim(SUB_AGENT_HISTORY_KEEP)
+            }
+        }
     }
 
     private fun isVisibleInCurrentRun(skillId: String): Boolean {
@@ -2167,3 +2223,9 @@ private const val MAX_SUB_AGENT_CONTEXT_CHARS = 4_000
 private const val MIN_SUB_AGENT_ROLES = 2
 private const val MAX_SUB_AGENT_ROLES = 4
 private const val DEFAULT_SUB_AGENT_ROLE = "检索"
+
+/** 预算评估取最近多少条同档位样本；太多会让旧习惯拖住新任务。 */
+private const val SUB_AGENT_HISTORY_SAMPLES = 12
+
+/** 样本表保留上限，超出按时间裁掉最旧的。 */
+private const val SUB_AGENT_HISTORY_KEEP = 400

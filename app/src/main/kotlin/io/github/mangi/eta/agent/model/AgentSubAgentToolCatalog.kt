@@ -47,6 +47,21 @@ internal object AgentSubAgentToolCatalog {
                                         .put("maxLength", 4_000)
                                         .put("description", "可选背景（已知路径、约束），只发给这个子智能体。")
                                 )
+                                .put(
+                                    "scope",
+                                    JSONObject()
+                                        .put("type", "string")
+                                        .put(
+                                            "enum",
+                                            JSONArray().put("quick").put("compare").put("deep"),
+                                        )
+                                        .put(
+                                            "description",
+                                            "子任务规模，决定它的轮数与 token 预算，也决定它值不值得派生：" +
+                                                "quick 单点查找；compare 多方向对比（默认）；deep 大范围检索。" +
+                                                "能给一个文件解决的事就别用子智能体，也别给简单任务选 deep。",
+                                        )
+                                )
                         )
                         .put("required", JSONArray().put("task"))
                 )

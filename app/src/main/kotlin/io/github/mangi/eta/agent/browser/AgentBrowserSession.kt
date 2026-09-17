@@ -96,6 +96,9 @@ internal object AgentBrowserSession {
     private const val TOOL_NAME = "browser_use"
     private const val DEFAULT_TEXT_CHARS = 8_000
     private const val MAX_TEXT_CHARS = 12_000
+
+    /** 低于这个字符数的正文提取视为失败：与其交给调用方一个空字符串，不如明确报错。 */
+    private const val MIN_READABLE_CHARS = 200
     private const val NAVIGATION_TIMEOUT_MS = 25_000L
     private const val JAVASCRIPT_TIMEOUT_MS = 8_000L
     private const val DEFAULT_SCRIPT_CHARS = 2_000
@@ -629,8 +632,27 @@ internal object AgentBrowserSession {
         return toolResult(envelope)
     }
 
+    /** Readability 注入过的页面 URL；导航会重置 JS 上下文，所以按 URL 判断是否要重新注入。 */
+    private var readabilityInjectedUrl: String? = null
+
+    /**
+     * 把 Mozilla Readability 注入当前页面供正文提取使用。
+     * 注入失败（资源缺失或页面抛错）不影响启发式回退，因此这里吞掉异常。
+     */
+    private fun ensureReadabilityInjected(view: WebView) {
+        val ctx = appContext ?: return
+        val url = callOnMain { view.url } ?: return
+        if (url == readabilityInjectedUrl) return
+        val source = runCatching {
+            ctx.assets.open("browser/readability.js").bufferedReader().use { it.readText() }
+        }.getOrNull() ?: return
+        callOnMain { view.evaluateJavascript(source, null) }
+        readabilityInjectedUrl = url
+    }
+
     private fun readPage(args: JSONObject, readable: Boolean): BrowserToolResult {
         val view = requirePage()
+        if (readable) ensureReadabilityInjected(view)
         val offset = args.optInt("offset", 0).coerceIn(0, 200_000)
         val maxChars = args.optInt("max_chars", DEFAULT_TEXT_CHARS)
             .coerceIn(256, MAX_TEXT_CHARS)
@@ -644,6 +666,19 @@ internal object AgentBrowserSession {
             }
         )
         val action = if (readable) "get_readable" else "get_text"
+        // 提取为空时明确报错：返回空字符串会让调用方分不清"页面确实没内容"和"提取失败"，
+        // 只能反复换工具重试，白白烧掉几轮。offset > 0 的分页读到末尾是正常的，不报错。
+        if (readable && offset == 0) {
+            val extracted = value.optInt("text_length", value.optString("text").length)
+            if (extracted < MIN_READABLE_CHARS) {
+                throw BrowserFailure(
+                    "EMPTY_EXTRACTION",
+                    "正文提取只得到 $extracted 个字符（阈值 $MIN_READABLE_CHARS）：页面可能尚未渲染，" +
+                        "或结构不在提取范围内。可先 wait_for_selector 等目标元素出现，再用 find_elements " +
+                        "定位，或改用 get_text 取整页文本。",
+                )
+            }
+        }
         val envelope = mergeValue(baseEnvelope(action, true, "ok"), value)
             .put("content_format", if (readable) "markdown" else "text")
         return toolResult(elideRepeatedRead(action, offset, maxChars, value, envelope))

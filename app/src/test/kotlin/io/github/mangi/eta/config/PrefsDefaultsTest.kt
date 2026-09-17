@@ -24,7 +24,7 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS to true,
                 Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
                 Prefs.Keys.AGENT_THINKING_ENABLED to true,
-                Prefs.Keys.AGENT_SUBAGENTS_ENABLED to false,
+                Prefs.Keys.AGENT_SUBAGENTS_ENABLED to true,
             ),
             Prefs.Keys.BOOLEAN_DEFAULTS,
         )

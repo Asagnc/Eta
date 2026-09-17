@@ -70,7 +70,7 @@ internal object Prefs {
             AGENT_DEVICE_SENSITIVE_READ_TOOLS to true,
             AGENT_DEVICE_SENSITIVE_ACTION_TOOLS to true,
             AGENT_THINKING_ENABLED to true,
-            AGENT_SUBAGENTS_ENABLED to false
+            AGENT_SUBAGENTS_ENABLED to true
         )
 
         /** 数值开关及其默认值。 */
