@@ -5,52 +5,85 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 连续同因失败的检测：连续两次才提醒，换了错误或成功就重新计数。 */
+/**
+ * 失败模式检测：连续撞墙和"绕一圈又回来"都要抓到，但正常的偶发失败不该报警。
+ */
 class AgentFailureGuardTest {
+
+    private val alpha = "terminal:EXIT_1:boom:1"
+    private val beta = "terminal:EXIT_127:not found:127"
 
     @Test
     fun firstFailureDoesNotNudge() {
         val guard = AgentFailureGuard()
-        val streak = guard.observe("terminal:EXIT_1:not found")
-        assertEquals(1, streak)
-        assertFalse(guard.shouldNudge(streak))
+        val verdict = guard.observe(alpha)
+        assertEquals(1, verdict.consecutive)
+        assertEquals(1, verdict.total)
+        assertFalse(verdict.shouldNudge)
     }
 
     @Test
-    fun secondIdenticalFailureNudges() {
+    fun secondConsecutiveFailureNudges() {
         val guard = AgentFailureGuard()
-        guard.observe("terminal:EXIT_1:not found")
-        val streak = guard.observe("terminal:EXIT_1:not found")
-        assertEquals(2, streak)
-        assertTrue(guard.shouldNudge(streak))
+        guard.observe(alpha)
+        val verdict = guard.observe(alpha)
+        assertEquals(AgentFailureGuard.Kind.CONSECUTIVE, verdict.kind)
+        assertEquals(2, verdict.consecutive)
+        assertTrue(verdict.shouldNudge)
     }
 
     @Test
-    fun differentFailureRestartsCount() {
+    fun unrelatedFailureBreaksStreakButKeepsTotal() {
         val guard = AgentFailureGuard()
-        guard.observe("terminal:EXIT_1:not found")
-        val streak = guard.observe("terminal:EXIT_127:command not found")
-        assertEquals(1, streak)
-        assertFalse(guard.shouldNudge(streak))
+        guard.observe(alpha)
+        val other = guard.observe(beta)
+        assertEquals(1, other.consecutive)
+        assertEquals(1, other.total)
+        assertFalse(other.shouldNudge)
     }
 
     @Test
-    fun successResetsStreak() {
+    fun returningToTheSameFailureAfterDetourStillNudges() {
         val guard = AgentFailureGuard()
-        guard.observe("write_file:PERMISSION_DENIED:denied")
-        guard.observe("write_file:PERMISSION_DENIED:denied")
+        guard.observe(alpha)
+        guard.observe(beta)
+        val back = guard.observe(alpha)
+        // 连续计数只有 1，但整轮已经第 2 次撞同一个错误——只按连续判定会漏掉这种情况。
+        assertEquals(1, back.consecutive)
+        assertEquals(2, back.total)
+        assertEquals(AgentFailureGuard.Kind.REPEATED, back.kind)
+        assertTrue(back.shouldNudge)
+    }
+
+    @Test
+    fun successResetsStreakButKeepsTotalHistory() {
+        val guard = AgentFailureGuard()
+        guard.observe(alpha)
         guard.reset()
-        val streak = guard.observe("write_file:PERMISSION_DENIED:denied")
-        assertEquals(1, streak)
-        assertFalse(guard.shouldNudge(streak))
+        val again = guard.observe(alpha)
+        assertEquals(1, again.consecutive)
+        assertEquals(2, again.total)
+        assertEquals(AgentFailureGuard.Kind.REPEATED, again.kind)
     }
 
     @Test
-    fun nudgesAgainOnEveryThreshold() {
+    fun nudgesAtEveryThresholdInsteadOfOnlyOnce() {
         val guard = AgentFailureGuard()
-        val streaks = (1..5).map { guard.observe("terminal:EXIT_1:boom") }
-        assertEquals(listOf(1, 2, 3, 4, 5), streaks)
-        // 只提醒 2、4 两次：避免只提醒一次后继续无效重试，也不至于每次都刷。
-        assertEquals(listOf(2, 4), streaks.filter { guard.shouldNudge(it) })
+        val verdicts = (1..6).map { guard.observe(alpha) }
+        val nudged = verdicts.filter { it.shouldNudge }.map { it.consecutive }
+        // 只在 2、4、6 次提醒：提醒一次后放着不管，和每次都刷屏都不合适。
+        assertEquals(listOf(2, 4, 6), nudged)
+    }
+
+    @Test
+    fun consecutiveHitWinsOverRepeatedSoTheMessageIsPrecise() {
+        val guard = AgentFailureGuard()
+        guard.observe(beta)
+        guard.observe(beta)
+        val fourth = guard.observe(beta)
+        assertEquals(3, fourth.consecutive)
+        assertEquals(3, fourth.total)
+        // 第 3 次不提醒（避免每次都刷），第 4 次由连续分支提醒。
+        assertFalse(fourth.shouldNudge)
     }
 }

@@ -396,9 +396,16 @@ internal class AgentLoop(
                 failureGuard.reset()
                 return@forEachIndexed
             }
-            val streak = failureGuard.observe(failure.signature)
-            if (!failureGuard.shouldNudge(streak)) return@forEachIndexed
-            nudges[index] = "同一个工具（${outcome.call.name}）已连续 $streak 次以相同错误失败：" +
+            val verdict = failureGuard.observe(failure.signature)
+            if (!verdict.shouldNudge) return@forEachIndexed
+            val reason = when (verdict.kind) {
+                AgentFailureGuard.Kind.CONSECUTIVE ->
+                    "已连续 ${verdict.consecutive} 次以相同错误失败"
+                AgentFailureGuard.Kind.REPEATED ->
+                    "本次运行里已第 ${verdict.total} 次以相同错误失败（中间换过别的方式，但问题没解决）"
+                AgentFailureGuard.Kind.NONE -> return@forEachIndexed
+            }
+            nudges[index] = "同一个工具（${outcome.call.name}）$reason：" +
                 "${failure.detail}。原样重试不会成功，请先核对前置条件，或换一种做法。"
         }
         return nudges
