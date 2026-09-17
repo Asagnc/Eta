@@ -46,6 +46,12 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                // 显式开启三套签名方案：V1（JAR 签名，老系统与部分加固/改包工具依赖）、
+                // V2（Android 7+ 校验）、V3（Android 9+ 校验，支持密钥轮换）。
+                // 默认按 minSdk 推导，只会出 V2，所以这里逐项固定。
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
