@@ -70,6 +70,7 @@ internal class AgentLoop(
     )
     private var supplementIndex = initialSupplementIndex
     private val repeatGuard = AgentRepeatGuard()
+    private val failureGuard = AgentFailureGuard()
 
     fun contextSnapshot(): AgentContextSnapshot? = context.snapshot()
 
@@ -201,12 +202,19 @@ internal class AgentLoop(
             if (toolCalls.isNotEmpty()) {
                 val outcomes = executeToolCalls(round, providerResponse.stopReason, toolCalls)
                 val notice = contextPressureNotice(roundTools)
+                val nudges = failureNudges(outcomes)
                 outcomes.forEachIndexed { index, outcome ->
-                    val result = if (notice != null && index == outcomes.lastIndex) {
-                        outcome.result.withContextNotice(notice)
-                    } else {
-                        outcome.result
-                    }
+                    val result = outcome.result
+                        .let { current ->
+                            nudges[index]?.let { hint -> current.withField("failure_notice", hint) } ?: current
+                        }
+                        .let { current ->
+                            if (notice != null && index == outcomes.lastIndex) {
+                                current.withContextNotice(notice)
+                            } else {
+                                current
+                            }
+                        }
                     appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, result))
                 }
                 publishTranscript()
@@ -363,10 +371,53 @@ internal class AgentLoop(
         return "上下文已用约 ${used * 100 / window}%（$used/$window token），后续请精简输出与工具调用。"
     }
 
-    private fun AgentModelClient.ToolResult.withContextNotice(notice: String): AgentModelClient.ToolResult {
+    private fun AgentModelClient.ToolResult.withContextNotice(notice: String): AgentModelClient.ToolResult =
+        withField("context_notice", notice)
+
+    /** 往工具结果 JSON 里补一个字段；结果不是 JSON 时原样返回，不改写内容。 */
+    private fun AgentModelClient.ToolResult.withField(key: String, value: String): AgentModelClient.ToolResult {
         val content = runCatching { JSONObject(this.content) }.getOrNull() ?: return this
-        content.put("context_notice", notice)
+        content.put(key, value)
         return copy(content = content.toString())
+    }
+
+    /** 一次失败的可比较摘要：工具 + 错误码 + 错误消息。 */
+    private data class FailureSummary(val signature: String, val detail: String)
+
+    /**
+     * 连续同因失败的纠偏提示。
+     *
+     * 错误来自真实执行，属于可靠的外部反馈，所以在运行中就附在结果旁边提醒换做法，
+     * 而不是等运行结束再写一句总结——那时候唯一还能改变行为的是用户，提示已经晚了。
+     * 只认显式失败（结果里 ok=false）；退出码非零之类的"业务上没成功"不在此列，避免误判。
+     */
+    private fun failureNudges(outcomes: List<ToolOutcome>): Map<Int, String> {
+        val nudges = mutableMapOf<Int, String>()
+        outcomes.forEachIndexed { index, outcome ->
+            val failure = outcome.failureSummary()
+            if (failure == null) {
+                failureGuard.reset()
+                return@forEachIndexed
+            }
+            val streak = failureGuard.observe(failure.signature)
+            if (!failureGuard.shouldNudge(streak)) return@forEachIndexed
+            nudges[index] = "同一个工具（${outcome.call.name}）已连续 $streak 次以相同错误失败：" +
+                "${failure.detail}。原样重试不会成功，请先核对前置条件，或换一种做法。"
+        }
+        return nudges
+    }
+
+    private fun ToolOutcome.failureSummary(): FailureSummary? {
+        val content = runCatching { JSONObject(result.content) }.getOrNull() ?: return null
+        if (content.optBoolean("ok", true)) return null
+        val code = content.optString("code").ifBlank { "error" }
+        val message = content.optString("message")
+            .ifBlank { content.optString("stderr") }
+            .take(120)
+        return FailureSummary(
+            signature = "${call.name}:$code:$message",
+            detail = if (message.isBlank()) code else "$code：$message",
+        )
     }
 
     private fun executeToolCalls(

@@ -76,35 +76,20 @@ internal class AgentRunStats {
         usage.contextTokens?.let(contextTokens::set)
     }
 
-    /** 按调用次数降序的工具明细，最多 [MAX_LISTED_TOOLS] 项，其余合并进 `other_calls`。 */
     /**
-     * 运行自省：只在本轮确实有值得注意的问题时返回文本，交给界面提示用户。
-     * 空结果表示这次运行没有需要额外说明的地方，避免制造噪音。
+     * 运行结束时只报告确实异常的信号。
+     *
+     * 调用次数多、裁剪条数、上下文提示次数都不算异常——它们随任务规模自然增长，
+     * 按需查 run_stats 即可，主动推送只会制造噪音（之前那版就报了"edit_file、terminal 被反复调用"）。
+     * 真正值得说的是某些工具本轮反复失败：那意味着任务多半没真正跑通。
      */
     fun selfReview(): String? {
-        val issues = mutableListOf<String>()
         val failing = buckets.entries
             .filter { it.value.failures.get() >= 2 }
-            .map { it.key }
+            .map { "${it.key}（${it.value.failures.get()} 次）" }
             .sorted()
-        if (failing.isNotEmpty()) {
-            issues += "这些工具反复失败：" + failing.joinToString("、")
-        }
-        val busy = buckets.entries
-            .filter { it.value.calls.get() >= 12 }
-            .map { it.key }
-            .sorted()
-        if (busy.isNotEmpty()) {
-            issues += "这些工具调用次数偏多（各 12 次以上），值得看一眼是不是有重复劳动：" +
-                busy.joinToString("、")
-        }
-        if (prunedToolResults.get() >= 10) {
-            issues += "最近一次请求里有 ${prunedToolResults.get()} 条较早的工具结果被压成占位，本轮信息量偏大"
-        }
-        if (contextNotices.get() >= 3) {
-            issues += "上下文压力提示生效了 ${contextNotices.get()} 轮，系统一直在提醒精简"
-        }
-        return issues.takeIf { it.isNotEmpty() }?.joinToString("；")
+        if (failing.isEmpty()) return null
+        return "这些工具本轮反复失败，任务可能没有真正跑通：" + failing.joinToString("、")
     }
 
     fun snapshot(): JSONObject {
