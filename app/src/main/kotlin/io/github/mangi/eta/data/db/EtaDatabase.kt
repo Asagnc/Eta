@@ -27,7 +27,7 @@ import androidx.room.migration.Migration
         UserPersonaEntity::class,
         SubAgentRunEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -70,6 +70,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_22_23,
                         MIGRATION_23_24,
                         MIGRATION_24_25,
+                        MIGRATION_25_26,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -98,6 +99,13 @@ internal abstract class EtaDatabase : RoomDatabase() {
                     "`rounds` INTEGER NOT NULL, " +
                     "`ok` INTEGER NOT NULL, " +
                     "`created_at` INTEGER NOT NULL)",
+            )
+        }
+
+        /** 消息时间戳：历史数据留 0，界面据此不展示时间。 */
+        internal val MIGRATION_25_26 = Migration(25, 26) { database ->
+            database.execSQL(
+                "ALTER TABLE `conversation_messages` ADD COLUMN `created_at` INTEGER NOT NULL DEFAULT 0",
             )
         }
 

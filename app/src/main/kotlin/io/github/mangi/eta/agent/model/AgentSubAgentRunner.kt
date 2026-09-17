@@ -131,9 +131,38 @@ internal class AgentSubAgentRunner(
             }
             round += 1
         }
-        if (summary.isBlank() && errorCode.isEmpty()) {
-            errorCode = "SUB_AGENT_NO_RESULT"
-            errorMessage = "子智能体在 ${plan.maxRounds} 轮内没有给出结论"
+        val exhausted = errorCode.isEmpty() || errorCode == "SUB_AGENT_BUDGET_EXCEEDED"
+        if (summary.isBlank() && exhausted) {
+            // 轮数/预算用尽前再追一次：收回工具，只要结论。
+            // 否则整次委派以 SUB_AGENT_NO_RESULT 收场，已经花掉的轮次和 token 全部没有产出。
+            val closing = JSONArray(messages.toString())
+                .put(AgentConversationCodec.userTextMessage(CLOSING_PROMPT))
+            summary.append(
+                runCatching {
+                    modelRetry.complete(
+                        initialRound = round,
+                        request = ProviderRequest(
+                            config = config,
+                            messages = closing,
+                            tools = JSONArray(),
+                            sessionId = id,
+                            purpose = ProviderRequestPurpose.CHAT,
+                        ),
+                        provider = provider,
+                        controller = runController,
+                        onEvent = {},
+                        onProviderEvent = { _, _ -> },
+                        discardAttemptReasoning = {},
+                    ).response.assistantMessage.optString("content").trim()
+                }.getOrDefault(""),
+            )
+            if (summary.isNotBlank()) {
+                errorCode = ""
+                errorMessage = ""
+            } else if (errorCode.isEmpty()) {
+                errorCode = "SUB_AGENT_NO_RESULT"
+                errorMessage = "子智能体在 ${plan.maxRounds} 轮内没有给出结论"
+            }
         }
         val ok = errorCode.isEmpty()
         val content = summary.toString().trim().take(SUB_AGENT_SUMMARY_CHARS)
@@ -231,6 +260,10 @@ internal class AgentSubAgentRunner(
     }
 
     private companion object {
+        /** 轮数/预算用尽后的收尾追问：收回工具，只要结论。 */
+        const val CLOSING_PROMPT =
+            "轮次已经用尽。请立刻基于已掌握的信息直接给出最终结论，不要再调用任何工具，也不要复述过程。"
+
         const val PHASE_STARTED = "started"
         const val PHASE_FINISHED = "finished"
         const val PHASE_FAILED = "failed"

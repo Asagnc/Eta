@@ -201,6 +201,7 @@ internal object AgentConversationStore {
                 content = content,
                 imagesJson = images.toJsonArrayString(),
                 isEdited = isEdited,
+                createdAt = timestamp.takeIf { it > 0 } ?: System.currentTimeMillis(),
             )
 
             is AgentMessageUi -> {
@@ -219,6 +220,7 @@ internal object AgentConversationStore {
                         outputTokens = usage?.outputTokens,
                         reasoningTokens = usage?.reasoningTokens,
                         cachedTokens = usage?.cachedTokens,
+                        createdAt = timestamp.takeIf { it > 0 } ?: System.currentTimeMillis(),
                     )
                 }
             }
@@ -275,6 +277,7 @@ internal object AgentConversationStore {
                 content = content,
                 images = imagesJson.toStringList(),
                 isEdited = isEdited,
+                timestamp = createdAt,
             )
 
             TYPE_ASSISTANT -> AgentMessageUi(
@@ -282,6 +285,7 @@ internal object AgentConversationStore {
                 content = content,
                 isStreaming = false,
                 renderMarkdown = renderMarkdown ?: true,
+                timestamp = createdAt,
                 usage = TokenUsageUi(
                     contextTokens = contextTokens,
                     inputTokens = inputTokens,

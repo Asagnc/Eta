@@ -105,4 +105,7 @@ internal data class ConversationMessageEntity(
     @ColumnInfo(name = "result_summary") val resultSummary: String? = null,
     @ColumnInfo(name = "image_count") val imageCount: Int = 0,
     @ColumnInfo(name = "tools_json") val toolsJson: String = "[]",
+    /** 消息写入时间；迁移前的历史消息为 0（界面不展示时间）。 */
+    @ColumnInfo(name = "created_at", defaultValue = "0")
+    val createdAt: Long = System.currentTimeMillis(),
 )

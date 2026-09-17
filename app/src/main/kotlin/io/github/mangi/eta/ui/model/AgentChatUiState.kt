@@ -44,6 +44,8 @@ data class UserMessageUi(
     val content: String,
     val images: List<String> = emptyList(),
     val isEdited: Boolean = false,
+    /** 消息时间；0 表示旧数据没有记录，不展示时间。 */
+    val timestamp: Long = 0,
 ) : AgentChatMessageUi
 
 @Immutable
@@ -56,6 +58,8 @@ data class AgentMessageUi(
     val characterEditable: Boolean = false,
     val candidateCount: Int = 1,
     val selectedCandidate: Int = 0,
+    /** 消息时间；0 表示旧数据没有记录，不展示时间。 */
+    val timestamp: Long = 0,
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {

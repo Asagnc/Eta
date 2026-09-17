@@ -106,6 +106,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -250,6 +253,42 @@ private fun rememberActivePulse(
     return alpha
 }
 
+/**
+ * 消息时间戳：今天只显示时间，昨天显示「昨天 HH:mm」，更早显示日期与时间。
+ * [timestamp] 为 0（迁移前的历史消息）时不显示。
+ */
+@Composable
+private fun MessageTimestamp(timestamp: Long) {
+    val text = remember(timestamp) { formatMessageTimestamp(timestamp) }
+    if (text.isEmpty()) return
+    Text(
+        text = text,
+        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 2.dp),
+    )
+}
+
+/** 独立成纯函数以便单测；时区取设备当前时区。 */
+internal fun formatMessageTimestamp(
+    timestamp: Long,
+    now: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): String {
+    if (timestamp <= 0L) return ""
+    val moment = Instant.ofEpochMilli(timestamp).atZone(zone)
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val clock = TIMESTAMP_CLOCK_FORMAT.format(moment)
+    return when (moment.toLocalDate()) {
+        today -> clock
+        today.minusDays(1) -> "昨天 $clock"
+        else -> TIMESTAMP_DATE_FORMAT.format(moment)
+    }
+}
+
+private val TIMESTAMP_CLOCK_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val TIMESTAMP_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+
 @Composable
 internal fun ChatMessageItem(
     message: AgentChatMessageUi,
@@ -272,26 +311,38 @@ internal fun ChatMessageItem(
     onThinkingToggle: () -> Unit = {},
 ) {
     when (message) {
-        is UserMessageUi -> UserMessageBubble(
-            message = message,
-            actionsEnabled = messageActionsEnabled,
-            isEditing = isEditing,
-            onEdit = { onEditMessage(message.id) },
-            onDelete = { onDeleteMessage(message.id) },
-            modifier = modifier,
-        )
-        is AgentMessageUi -> AgentMessageBlock(
-            message = message,
-            retainedStreamingState = retainedStreamingState,
-            showCopyAction = showCopyAction,
-            showMessageActions = showMessageActions,
-            messageActionsEnabled = messageActionsEnabled,
-            onDelete = { onDeleteMessage(message.id) },
-            onRegenerate = { onRegenerateMessage(message.id) },
-            onEdit = { onEditMessage(message.id) },
-            onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
-            modifier = modifier,
-        )
+        is UserMessageUi -> Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.End,
+        ) {
+            UserMessageBubble(
+                message = message,
+                actionsEnabled = messageActionsEnabled,
+                isEditing = isEditing,
+                onEdit = { onEditMessage(message.id) },
+                onDelete = { onDeleteMessage(message.id) },
+                modifier = modifier,
+            )
+            MessageTimestamp(message.timestamp)
+        }
+        is AgentMessageUi -> Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            AgentMessageBlock(
+                message = message,
+                retainedStreamingState = retainedStreamingState,
+                showCopyAction = showCopyAction,
+                showMessageActions = showMessageActions,
+                messageActionsEnabled = messageActionsEnabled,
+                onDelete = { onDeleteMessage(message.id) },
+                onRegenerate = { onRegenerateMessage(message.id) },
+                onEdit = { onEditMessage(message.id) },
+                onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+                modifier = modifier,
+            )
+            MessageTimestamp(message.timestamp)
+        }
         is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
             ContextCompactionMarker(message = message, modifier = modifier)
         } else {
