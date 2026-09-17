@@ -393,6 +393,7 @@ fun AgentAppRoot(
                             AgentToolsAction.OpenBrowser -> pushRoute(AppRoute.Browser)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
+                            AgentToolsAction.RunEvaluation -> agentState.startEvaluation()
                         }
                     },
                 )

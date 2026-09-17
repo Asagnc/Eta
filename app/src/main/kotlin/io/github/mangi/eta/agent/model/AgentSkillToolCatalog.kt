@@ -123,6 +123,13 @@ internal object AgentSkillToolCatalog {
                                         .put("description", "附加到声明命令末尾的参数串，由该环境的 Shell 解析；默认空。")
                                 )
                                 .put(
+                                    "inputs",
+                                    JSONObject()
+                                        .put("type", "object")
+                                        .put("description", "按 Skill 声明的 inputs 逐个传参；命令里的 {{名字}} 会被替换为对应值（已做 shell 转义）。缺必填项会直接报错。")
+                                        .put("additionalProperties", JSONObject().put("type", "string"))
+                                )
+                                .put(
                                     "timeout_seconds",
                                     JSONObject()
                                         .put("type", "integer")

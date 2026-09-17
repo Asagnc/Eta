@@ -93,7 +93,7 @@ class AgentPromptBuilderTest {
         assertTrue(messages.systemContents().any { it.contains("表格前后留空行") })
         assertTrue(messages.getJSONObject(2).getString("content").contains("open_and_exec"))
         assertTrue(messages.getJSONObject(2).getString("content").contains("多张用 paths"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("不要在同一个回合里并行发起多个 read_image 调用"))
+        assertTrue(messages.getJSONObject(2).getString("content").contains("read_image 不参与并发通道"))
         assertFalse(messages.systemContents().any { it.contains("网页浏览、读取") })
         assertEquals("旧问题", messages.getJSONObject(3).getString("content"))
         assertEquals("旧回答", messages.getJSONObject(4).getString("content"))

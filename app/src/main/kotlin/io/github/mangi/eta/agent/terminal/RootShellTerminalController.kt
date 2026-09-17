@@ -988,12 +988,77 @@ internal class RootShellTerminalController(
     /**
      * 按内容检索：递归目录，返回 文件:行号:内容。路径前缀按检索根目录缩写，便于阅读。
      */
-    fun searchCode(path: String, pattern: String, glob: String?, maxResults: Int, contextLines: Int): String {
-        if (!rootAvailable()) return UserFileAccess.searchCode(path, pattern, glob, maxResults, contextLines)
+    /** 按字符预算拼接结果行，返回文本与真正写入的行数：宁可少给几行，也不要把上下文一次撑爆。 */
+    private fun joinWithinBudget(lines: List<String>, budget: Int): Pair<String, Int> {
+        val builder = StringBuilder()
+        var emitted = 0
+        for (line in lines) {
+            if (builder.length + line.length + 1 > budget) break
+            if (builder.isNotEmpty()) builder.append('\n')
+            builder.append(line)
+            emitted++
+        }
+        return builder.toString() to emitted
+    }
+
+    fun searchCode(
+        path: String,
+        pattern: String,
+        glob: String?,
+        maxResults: Int,
+        contextLines: Int,
+        maxChars: Int,
+        filesOnly: Boolean,
+    ): String {
+        if (!rootAvailable()) {
+            return UserFileAccess.searchCode(
+                path, pattern, glob, maxResults, contextLines, maxChars, filesOnly,
+            )
+        }
         val safePath = normalizePath(path.ifBlank { DEFAULT_CWD })
         if (pattern.isEmpty()) return errorJson("INVALID_ARGUMENT", "pattern 不能为空")
         val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
+        val budget = maxChars.coerceIn(200, 32_000)
         val include = glob?.takeIf { it.isNotBlank() }?.let { " --include=${shellQuote(it)}" }.orEmpty()
+        val base = safePath.trimEnd('/')
+
+        if (filesOnly) {
+            // 先只回文件名与命中行数：用来决定接下来精读哪个文件，而不是把全部命中行读回来。
+            val fileCommand = "grep -rc -I -E$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+                " | grep -v ':0$' | head -n ${limit + 1}"
+            val fileResult = runSuText(fileCommand, timeoutSeconds = 30)
+            if (fileResult.output.isBlank() && fileResult.stderr.isNotBlank()) {
+                logger.warn(
+                    "Agent terminal action=search_code mode=files outcome=failed " +
+                        "errorChars=${fileResult.stderr.length}"
+                )
+                return errorJson("SEARCH_FAILED", fileResult.stderr)
+            }
+            val entries = fileResult.output.removeSuffix("\n")
+                .let { if (it.isEmpty()) emptyList() else it.split("\n") }
+                .map { line -> line.removePrefix("$base/").removePrefix("$base:") }
+            val budgeted = joinWithinBudget(entries.take(limit), budget)
+            logger.info(
+                "Agent terminal action=search_code mode=files outcome=succeeded files=${budgeted.second} " +
+                    "truncated=${entries.size > limit}"
+            )
+            return JSONObject()
+                .put("ok", true)
+                .put("tool", "search_code")
+                .put("mode", "files_only")
+                .put("path", safePath)
+                .put("pattern", pattern)
+                .put("glob", glob?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+                .put("match_files", budgeted.second)
+                .put("results", budgeted.first)
+                .put("truncated", entries.size > limit)
+                .put(
+                    "hint",
+                    if (entries.size > limit) "文件数超过上限；缩小 path 或加 glob 后再试。" else JSONObject.NULL,
+                )
+                .toString()
+        }
+
         val context = contextLines.coerceIn(0, 5).let { if (it > 0) " -C $it" else "" }
         val command = "grep -rn -I -E$context$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
             " | head -n ${limit + 1}"
@@ -1002,24 +1067,29 @@ internal class RootShellTerminalController(
             logger.warn("Agent terminal action=search_code outcome=failed errorChars=${result.stderr.length}")
             return errorJson("SEARCH_FAILED", result.stderr)
         }
-        val base = safePath.trimEnd('/')
         val lines = result.output.removeSuffix("\n")
             .let { if (it.isEmpty()) emptyList() else it.split("\n") }
             .map { line -> line.removePrefix("$base/").removePrefix("$base:") }
-        val selected = lines.take(limit)
+        val budgeted = joinWithinBudget(lines.take(limit), budget)
+        val clipped = lines.size > limit || budgeted.second < lines.take(limit).size
         logger.info(
             "Agent terminal action=search_code outcome=succeeded patternChars=${pattern.length} " +
-                "matches=${selected.size} truncated=${lines.size > limit}"
+                "matches=${budgeted.second} truncated=$clipped"
         )
         return JSONObject()
             .put("ok", true)
             .put("tool", "search_code")
+            .put("mode", "lines")
             .put("path", safePath)
             .put("pattern", pattern)
             .put("glob", glob?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
-            .put("match_lines", selected.size)
-            .put("results", selected.joinToString("\n").truncateForJson())
-            .put("truncated", lines.size > limit)
+            .put("match_lines", budgeted.second)
+            .put("results", budgeted.first)
+            .put("truncated", clipped)
+            .put(
+                "hint",
+                if (clipped) "结果被截断：先 files_only=true 看命中分布，或缩小 path／加 glob／把 pattern 写具体。" else JSONObject.NULL,
+            )
             .toString()
     }
 

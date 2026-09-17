@@ -40,6 +40,8 @@ import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
+import io.github.mangi.eta.agent.eval.AgentEvalCoordinator
+import io.github.mangi.eta.ui.model.AgentEvaluationUi
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
@@ -154,6 +156,60 @@ internal class AgentAppState(
 
     var toolsState by mutableStateOf(buildToolsState(appContext))
         private set
+
+    /**
+     * 跑一遍评测任务集。
+     *
+     * 每个任务都是一次真实 run（消耗真实 token），所以同一时间只允许一次；
+     * 进度写回工具页状态，报告由协调器落盘到 App 私有目录。
+     */
+    fun startEvaluation() {
+        if (toolsState.evaluation.running) return
+        scope.launch {
+            // 读取配置是 suspend 的，先在本协程里取一次；评测期间沿用同一份配置。
+            val config = currentAgentCapabilityConfig()
+            if (config == null) {
+                toolsState = toolsState.copy(
+                    evaluation = AgentEvaluationUi(summary = "当前没有可用的模型配置，先配置 provider 再跑评测"),
+                )
+                return@launch
+            }
+            val coordinator = AgentEvalCoordinator(appContext, config)
+            val tasks = coordinator.availableTasks()
+            if (tasks.isEmpty()) {
+                toolsState = toolsState.copy(evaluation = AgentEvaluationUi(summary = "没有可用的评测任务集"))
+                return@launch
+            }
+            toolsState = toolsState.copy(
+                evaluation = AgentEvaluationUi(running = true, taskCount = tasks.size),
+            )
+            val report = withContext(Dispatchers.IO) {
+                coordinator.run(tasks, label = "manual") { index, total, result ->
+                    scope.launch(Dispatchers.Main) {
+                        toolsState = toolsState.copy(
+                            evaluation = toolsState.evaluation.copy(
+                                taskCount = total,
+                                finishedCount = index + 1,
+                                currentTaskId = result.taskId,
+                                passedCount = toolsState.evaluation.passedCount + if (result.passed) 1 else 0,
+                            ),
+                        )
+                    }
+                }
+            }
+            toolsState = toolsState.copy(
+                evaluation = AgentEvaluationUi(
+                    running = false,
+                    taskCount = report.results.size,
+                    finishedCount = report.results.size,
+                    passedCount = report.passedCount,
+                    summary = "上次：${report.passedCount}/${report.results.size} 通过，" +
+                        "平均 ${"%.1f".format(report.averageRounds)} 轮，" +
+                        "输入 ${report.totalInputTokens} / 输出 ${report.totalOutputTokens} token",
+                ),
+            )
+        }
+    }
 
     var skillsState by mutableStateOf(AgentSkillsUiState(isLoading = true))
         private set
@@ -1332,14 +1388,7 @@ internal class AgentAppState(
             } else {
                 ReasoningEffort.OFF
             }
-            val config = RuntimeConfigRepository.currentRuntimeConfig()?.copy(
-                terminalTools = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS),
-                browserTools = agentBooleanForUi(Prefs.Keys.AGENT_BROWSER_TOOLS),
-                deviceDirectTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
-                deviceSensitiveReadTools =
-                    agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS),
-                deviceSensitiveActionTools =
-                    agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
+            val config = currentAgentCapabilityConfig()?.copy(
                 thinkingEnabled = permittedReasoningEffort.enablesReasoning,
                 reasoningEffort = permittedReasoningEffort,
             )
@@ -2937,6 +2986,20 @@ private fun buildPermissionHealthState(context: Context): PermissionHealthUiStat
         )
     )
 }
+
+/**
+ * 一次 run 使用的能力开关。
+ *
+ * 真实对话与评测共用同一份来源：两边若用不同的能力集，评测出来的轮次与 token 就不可比。
+ */
+internal suspend fun currentAgentCapabilityConfig(): AgentModelClient.ModelConfig? =
+    RuntimeConfigRepository.currentRuntimeConfig()?.copy(
+        terminalTools = agentBooleanForUi(Prefs.Keys.AGENT_TERMINAL_TOOLS),
+        browserTools = agentBooleanForUi(Prefs.Keys.AGENT_BROWSER_TOOLS),
+        deviceDirectTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
+        deviceSensitiveReadTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_READ_TOOLS),
+        deviceSensitiveActionTools = agentBooleanForUi(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
+    )
 
 private fun agentBooleanForUi(key: String): Boolean {
     return Prefs.isEnabled(key)

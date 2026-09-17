@@ -1203,4 +1203,5 @@
   <string name="context_compact_action">Compact context</string>
   <string name="context_compact_until_here">Compact up to here</string>
   <string name="context_usage_estimated">%1$s\nEstimated after compaction</string>
+    <string name="eval_run_title">运行评估</string>
 </resources>

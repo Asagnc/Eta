@@ -188,6 +188,12 @@ internal object AgentTerminalToolCatalog {
                                         .put("type", "integer")
                                         .put("description", "按行读取的结束行号；省略表示读到文件末尾。")
                                 )
+                                .put(
+                                    "max_chars",
+                                    JSONObject()
+                                        .put("type", "integer")
+                                        .put("description", "按行模式一次返回的最大字符数，200 到 32000，默认 16000；被截断时 truncated 为 true。仅行模式使用，字节模式看 max_bytes。")
+                                )
                         )
                         .put("required", JSONArray().put("path"))
                 )
@@ -252,7 +258,8 @@ internal object AgentTerminalToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "search_code",
-                    description = "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。",
+                    description = "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。" +
+                        "命中范围不清楚时先加 files_only=true 看分布，再对目标文件精读，比反复调整 pattern 更快。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -263,6 +270,8 @@ internal object AgentTerminalToolCatalog {
                                 .put("glob", JSONObject().put("type", "string").put("description", "文件名过滤，例如 *.kt；省略表示不过滤。"))
                                 .put("max_results", JSONObject().put("type", "integer").put("description", "最多返回的匹配行数，1 到 500，默认 50。"))
                                 .put("context_lines", JSONObject().put("type", "integer").put("description", "每条匹配附带的上下文行数，0 到 5，默认 0。"))
+                                .put("max_chars", JSONObject().put("type", "integer").put("description", "返回内容的最大字符数，200 到 32000，默认 8000；被截断时 truncated 为 true。"))
+                                .put("files_only", JSONObject().put("type", "boolean").put("description", "true 时只返回每个文件的命中行数，不返回内容：先用它看命中分布在哪些文件，再对目标文件精读。默认 false。"))
                         )
                         .put("required", JSONArray().put("pattern"))
                 )

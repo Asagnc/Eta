@@ -45,6 +45,7 @@ import io.github.mangi.eta.agent.terminal.LinuxDistribution
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
 import io.github.mangi.eta.agent.terminal.RootShellTerminalController
+import io.github.mangi.eta.agent.terminal.shellQuote
 import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AgentLogger
@@ -1134,7 +1135,7 @@ internal class AgentLocalTools(
                 path = args.optString("path"),
                 startLine = startLine.coerceAtLeast(1),
                 endLine = endLine.takeIf { it > 0 },
-                maxChars = 16_000
+                maxChars = args.optInt("max_chars", 16_000).coerceIn(200, 32_000)
             )
         }
         return terminalController.readFile(
@@ -1162,7 +1163,9 @@ internal class AgentLocalTools(
                 pattern = pattern,
                 glob = args.optString("glob").ifBlank { null },
                 maxResults = args.optInt("max_results", FileTextOperations.DEFAULT_SEARCH_RESULTS),
-                contextLines = args.optInt("context_lines", 0)
+                contextLines = args.optInt("context_lines", 0),
+                maxChars = args.optInt("max_chars", 8_000).coerceIn(200, 32_000),
+                filesOnly = args.optBoolean("files_only", false)
             ),
         )
         if (pattern == requested) return result
@@ -1811,21 +1814,59 @@ internal class AgentLocalTools(
             .split(',', ' ', '\n', '\t')
             .map { it.trim().lowercase(Locale.ROOT) }
             .filter { it.isNotBlank() }
-        val unsupported = requirements.filterNot { it in SUPPORTED_SKILL_REQUIREMENTS }
-        if (unsupported.isNotEmpty()) {
-            return errorResult(
-                "SKILL_REQUIREMENT_UNSUPPORTED",
-                "Skill 声明了不支持的 requires：${unsupported.joinToString("、")}；可选值只有 root 与 linux",
-            )
+        // root 与 linux 是特殊要求；其余按“环境里必须存在的命令”处理，执行前探测一次，
+        // 免得脚本跑到一半才发现缺工具。
+        val commandRequirements = requirements.filterNot { it in SUPPORTED_SKILL_REQUIREMENTS }
+        if (commandRequirements.isNotEmpty()) {
+            val probe = commandRequirements.joinToString("; ") { name ->
+                "command -v ${shellQuote(name)} >/dev/null 2>&1 || echo ${shellQuote(name)}"
+            }
+            val probeOutput = terminalController.runCommand(probe, cwd = null, timeoutSeconds = 15)
+            val missing = runCatching {
+                JSONObject(probeOutput).optString("stdout")
+                    .split("\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+            }.getOrDefault(emptyList())
+            if (missing.isNotEmpty()) {
+                return errorResult(
+                    "SKILL_REQUIREMENT_MISSING",
+                    "该 Skill 依赖的命令不在当前环境：${missing.joinToString("、")}；请先安装，或改用不依赖它的做法",
+                )
+            }
         }
         if ("root" in requirements && !rootAvailable()) {
             return errorResult("ROOT_REQUIRED", "该 Skill 声明 requires: root，当前没有 Root 授权，本次未执行")
+        }
+        val declaredInputs = frontmatter["inputs"].orEmpty()
+            .split(',', ' ', '\n', '\t')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        val providedInputs = args.optJSONObject("inputs")
+        if (declaredInputs.isNotEmpty()) {
+            val missingInputs = declaredInputs.filter { providedInputs?.optString(it).isNullOrBlank() }
+            if (missingInputs.isNotEmpty()) {
+                return errorResult(
+                    "SKILL_INPUTS_MISSING",
+                    "该 Skill 声明了 inputs：${declaredInputs.joinToString("、")}；" +
+                        "缺少 ${missingInputs.joinToString("、")}。请用 inputs 对象按名字给出，命令里的 {{名字}} 会被替换",
+                )
+            }
+        }
+        // 参数值一律做 shell 转义后再落进命令，避免值里的引号或分号改变命令结构。
+        val resolvedDeclared = if (declaredInputs.isEmpty()) {
+            declared
+        } else {
+            declaredInputs.fold(declared) { acc, name ->
+                val value = providedInputs?.optString(name).orEmpty()
+                if (value.isBlank()) acc else acc.replace("{{$name}}", shellQuote(value))
+            }
         }
         val extra = args.optString("arguments").trim()
         if (extra.length > MAX_SKILL_COMMAND_ARGUMENTS) {
             return errorResult("INVALID_ARGUMENT", "arguments 过长，最多 $MAX_SKILL_COMMAND_ARGUMENTS 字符")
         }
-        val command = if (extra.isBlank()) declared else "$declared $extra"
+        val command = if (extra.isBlank()) resolvedDeclared else "$resolvedDeclared $extra"
         val declaredTimeout = frontmatter["timeout_seconds"]?.trim()?.toIntOrNull()
         val timeout = args.optInt("timeout_seconds", declaredTimeout ?: DEFAULT_SKILL_COMMAND_TIMEOUT_SECONDS)
             .coerceIn(1, MAX_SKILL_COMMAND_TIMEOUT_SECONDS)
@@ -1864,7 +1905,7 @@ internal class AgentLocalTools(
             .put("environment", if (linux) "linux" else "android")
             .put("cwd", if (linux) JSONObject.NULL else entry.rootPath)
             .put("timeout_seconds", timeout)
-            .put("inputs", frontmatter["inputs"].orEmpty())
+            .put("inputs", declaredInputs.joinToString("、"))
             .put("outputs", frontmatter["outputs"].orEmpty())
             .put("skill_body_loaded", false)
             .put("output", if (outputJson == null) output else stdout)

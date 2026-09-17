@@ -109,7 +109,16 @@ internal object UserFileAccess {
         }
     }
 
-    fun searchCode(path: String, pattern: String, glob: String?, maxResults: Int, contextLines: Int): String = operation {
+    fun searchCode(
+        path: String,
+        pattern: String,
+        glob: String?,
+        maxResults: Int,
+        contextLines: Int,
+        maxChars: Int,
+        filesOnly: Boolean,
+    ): String = operation {
+        val budget = maxChars.coerceIn(200, 32_000)
         val root = resolve(path)
         val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
         val regex = runCatching { Regex(pattern) }.getOrNull()
@@ -117,10 +126,15 @@ internal object UserFileAccess {
         val nameFilter = glob?.takeIf { it.isNotBlank() }?.let { globToRegex(it) }
         val base = root.absolutePath.trimEnd('/')
         val results = mutableListOf<String>()
+        val perFile = linkedMapOf<String, Int>()
         var truncated = false
         val files = if (root.isFile) sequenceOf(root) else root.walkTopDown().maxDepth(MAX_SCAN_DEPTH).filter { it.isFile }
         for (file in files) {
-            if (results.size > limit) {
+            if (!filesOnly && results.size > limit) {
+                truncated = true
+                break
+            }
+            if (filesOnly && perFile.size > limit) {
                 truncated = true
                 break
             }
@@ -128,24 +142,45 @@ internal object UserFileAccess {
             if (file.length() > MAX_SCAN_BYTES) continue
             val relative = file.absolutePath.removePrefix("$base/")
             var lineNumber = 0
+            var hits = 0
             runCatching {
                 file.bufferedReader().useLines { lines ->
                     lines.forEach { line ->
                         lineNumber++
                         if (regex.containsMatchIn(line)) {
-                            results += "$relative:$lineNumber:$line"
-                            if (results.size > limit) return@useLines
+                            hits++
+                            if (!filesOnly) {
+                                results += "$relative:$lineNumber:$line"
+                                if (results.size > limit) return@useLines
+                            }
                         }
                     }
                 }
             }
+            if (filesOnly && hits > 0) perFile[relative] = hits
         }
-        JSONObject().put("ok", true).put("tool", "search_code").put("path", root.absolutePath)
+        val source = if (filesOnly) perFile.map { (file, count) -> "$file:$count" } else results
+        val builder = StringBuilder()
+        var emitted = 0
+        for (line in source.take(limit)) {
+            if (builder.length + line.length + 1 > budget) break
+            if (builder.isNotEmpty()) builder.append('\n')
+            builder.append(line)
+            emitted++
+        }
+        val clipped = truncated || source.size > limit || emitted < source.take(limit).size
+        JSONObject().put("ok", true).put("tool", "search_code")
+            .put("mode", if (filesOnly) "files_only" else "lines")
+            .put("path", root.absolutePath)
             .put("pattern", pattern)
             .put("glob", glob?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
-            .put("match_lines", minOf(results.size, limit))
-            .put("results", results.take(limit).joinToString("\n"))
-            .put("truncated", truncated || results.size > limit)
+            .put(if (filesOnly) "match_files" else "match_lines", emitted)
+            .put("results", builder.toString())
+            .put("truncated", clipped)
+            .put(
+                "hint",
+                if (clipped) "结果被截断：先 files_only=true 看命中分布，或缩小 path／加 glob／把 pattern 写具体。" else JSONObject.NULL,
+            )
     }
 
     fun list(path: String, showHidden: Boolean, limit: Int): String = operation {
