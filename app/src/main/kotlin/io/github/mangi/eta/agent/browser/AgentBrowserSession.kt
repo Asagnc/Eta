@@ -632,27 +632,21 @@ internal object AgentBrowserSession {
         return toolResult(envelope)
     }
 
-    /** Readability 注入过的页面 URL；导航会重置 JS 上下文，所以按 URL 判断是否要重新注入。 */
-    private var readabilityInjectedUrl: String? = null
-
     /**
-     * 把 Mozilla Readability 注入当前页面供正文提取使用。
-     * 注入失败（资源缺失或页面抛错）不影响启发式回退，因此这里吞掉异常。
+     * Mozilla Readability 的源码，随正文提取脚本一起下发。
+     *
+     * 不单独注入：注入到页面全局既依赖 Context、又会被导航重置，一旦静默失败就只能靠启发式。
+     * 放在同一个脚本里，函数声明与调用同处一个作用域，必定可用。
      */
-    private fun ensureReadabilityInjected(view: WebView) {
-        val ctx = appContext ?: return
-        val url = callOnMain { view.url } ?: return
-        if (url == readabilityInjectedUrl) return
-        val source = runCatching {
-            ctx.assets.open("browser/readability.js").bufferedReader().use { it.readText() }
-        }.getOrNull() ?: return
-        callOnMain { view.evaluateJavascript(source, null) }
-        readabilityInjectedUrl = url
+    private val readabilitySource: String by lazy {
+        runCatching {
+            appContext?.assets?.open("browser/readability.js")
+                ?.bufferedReader()?.use { it.readText() }
+        }.getOrNull().orEmpty()
     }
 
     private fun readPage(args: JSONObject, readable: Boolean): BrowserToolResult {
         val view = requirePage()
-        if (readable) ensureReadabilityInjected(view)
         val offset = args.optInt("offset", 0).coerceIn(0, 200_000)
         val maxChars = args.optInt("max_chars", DEFAULT_TEXT_CHARS)
             .coerceIn(256, MAX_TEXT_CHARS)
@@ -660,7 +654,10 @@ internal object AgentBrowserSession {
         val value = evaluateObject(
             view,
             if (readable) {
-                BrowserDomScripts.readable(offset, maxChars)
+                // Readability 与提取脚本放进同一次执行：单独注入依赖 Context、又会被导航重置，
+                // 一旦静默失败就只剩启发式。同作用域下函数声明必定可用。
+                val body = BrowserDomScripts.readable(offset, maxChars)
+                readabilitySource.takeIf { it.isNotBlank() }?.let { it + "\n" + body } ?: body
             } else {
                 BrowserDomScripts.text(selector, offset, maxChars)
             }
@@ -671,11 +668,14 @@ internal object AgentBrowserSession {
         if (readable && offset == 0) {
             val extracted = value.optInt("text_length", value.optString("text").length)
             if (extracted < MIN_READABLE_CHARS) {
+                val path = value.optString("extractor").ifBlank { "-" }
+                val where = value.optString("selector_used").ifBlank { "-" }
+                val visited = value.optInt("visited_nodes", -1)
                 throw BrowserFailure(
                     "EMPTY_EXTRACTION",
-                    "正文提取只得到 $extracted 个字符（阈值 $MIN_READABLE_CHARS）：页面可能尚未渲染，" +
-                        "或结构不在提取范围内。可先 wait_for_selector 等目标元素出现，再用 find_elements " +
-                        "定位，或改用 get_text 取整页文本。",
+                    "正文提取只得到 $extracted 个字符（阈值 $MIN_READABLE_CHARS；路径=$path，目标=$where，" +
+                        "遍历节点=$visited）：页面可能尚未渲染，或结构不在提取范围内。可先 wait_for_selector " +
+                        "等目标元素出现，再用 find_elements 定位，或改用 get_text 取整页文本。",
                 )
             }
         }

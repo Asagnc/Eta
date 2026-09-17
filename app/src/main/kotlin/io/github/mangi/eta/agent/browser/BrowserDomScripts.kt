@@ -384,14 +384,35 @@ internal object BrowserDomScripts {
           }
         } catch (error) { article = null; }
         var fromReadability = !!(article && article.content);
+        var extractor = fromReadability ? 'readability' : 'heuristic';
         var target = fromReadability ? markdownHolder(article.content) : readableTarget();
         if (!target || (!fromReadability && !visible(target))) throw new Error('TARGET_NOT_VISIBLE');
+        // Readability 的内容放在离屏容器里，而 emitMarkdown 会跳过不可见节点：不先放宽判定，
+        // 整棵子树都会被跳过、结果是 0 字符。读完立即还原。
+        var visibleBefore = visible;
+        if (fromReadability) {
+          visible = function (node) {
+            return node === target || (target && target.contains(node)) || visibleBefore(node);
+          };
+        }
         var state = markdownState();
         emitMarkdown(target, 0, state);
-        if (fromReadability && target && target.parentNode) {
-          target.parentNode.removeChild(target);
+        if (fromReadability) {
+          visible = visibleBefore;
+          if (target && target.parentNode) target.parentNode.removeChild(target);
         }
         var markdown = cleanBlock(state.parts.join(''), MAX_DOCUMENT_CHARS);
+        // 兜底：正文装配失手时退回整页可见文本（复用同一套可见性遍历，不直接读渲染文本属性）。宁可粒度粗，也不要交给调用方 0 字符。
+        if (!markdown && document.body) {
+          var bodyText = cleanBlock(
+            visibleText(document.body, MAX_DOCUMENT_CHARS, 8000, Date.now() + 750),
+            MAX_DOCUMENT_CHARS
+          );
+          if (bodyText) {
+            markdown = bodyText;
+            extractor = extractor + '+body-text';
+          }
+        }
         var total = markdown.length;
         var start = Math.min($offset, total);
         var end = Math.min(start + $maxChars, total);
@@ -405,6 +426,7 @@ internal object BrowserDomScripts {
           source_truncated: state.truncated,
           visited_nodes: state.visited,
           selector_used: selectorFor(target),
+          extractor: extractor,
           language: cleanInline(document.documentElement.lang, 32) || null,
           canonical_url: (function() {
             var item = document.querySelector('link[rel="canonical"]');
