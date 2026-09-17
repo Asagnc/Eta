@@ -391,9 +391,12 @@ internal object BrowserDomScripts {
         // 整棵子树都会被跳过、结果是 0 字符。读完立即还原。
         var visibleBefore = visible;
         if (fromReadability) {
-          visible = function (node) {
-            return node === target || (target && target.contains(node)) || visibleBefore(node);
-          };
+          // 放宽失败也不能让整次提取挂掉，所以包一层 try。
+          try {
+            visible = function (node) {
+              return node === target || (target && target.contains(node)) || visibleBefore(node);
+            };
+          } catch (error) { visible = visibleBefore; }
         }
         var state = markdownState();
         emitMarkdown(target, 0, state);
@@ -433,6 +436,7 @@ internal object BrowserDomScripts {
             return item ? absoluteUrl(item.getAttribute('href')) : null;
           })()
         };
+        return result;
         """.trimIndent()
 
     fun text(selector: String?, offset: Int, maxChars: Int): String {

@@ -645,6 +645,14 @@ internal object AgentBrowserSession {
         }.getOrNull().orEmpty()
     }
 
+    private fun readabilityPrelude(): String {
+        val source = readabilitySource
+        if (source.isBlank()) return ""
+        // 包一层 IIFE：既把 Readability 的顶层变量限制在自己的作用域里（不与提取脚本撞名），
+        // 又把构造函数交回来，供提取脚本直接使用。
+        return "var Readability = (function () {\n$source\nreturn Readability;\n})();\n"
+    }
+
     private fun readPage(args: JSONObject, readable: Boolean): BrowserToolResult {
         val view = requirePage()
         val offset = args.optInt("offset", 0).coerceIn(0, 200_000)
@@ -657,7 +665,7 @@ internal object AgentBrowserSession {
                 // Readability 与提取脚本放进同一次执行：单独注入依赖 Context、又会被导航重置，
                 // 一旦静默失败就只剩启发式。同作用域下函数声明必定可用。
                 val body = BrowserDomScripts.readable(offset, maxChars)
-                readabilitySource.takeIf { it.isNotBlank() }?.let { it + "\n" + body } ?: body
+                readabilityPrelude() + body
             } else {
                 BrowserDomScripts.text(selector, offset, maxChars)
             }
