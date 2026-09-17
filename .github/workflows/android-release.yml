@@ -127,9 +127,11 @@ jobs:
           echo "debug_path=$output_dir/app-debug.apk" >> "$GITHUB_OUTPUT"
 
           if [[ -f "$release_apk" ]]; then
-            # AGP 只会产出单一签名方案，这里用发布证书重签，显式固定为 V2+V3：
-            # minSdk 34 下 V1（JAR 签名）不参与任何安装校验；V4 是服务于增量安装的
-            # 独立 .idsig 文件、不嵌入 APK，都不开启。
+            # 用发布证书重签，显式固定为 V3：
+            # apksig 按 APK 的 minSdkVersion 挑选"有验证价值"的方案（实测 minSdk 21
+            # 的包默认签出 V1+V2+V3，minSdk 34 的包只签 V3）。V1 服务 API<24、
+            # V2 服务 API 24-27，对 minSdk 34 的 Eta 都没有验证场景；V4 是服务于
+            # 增量安装的独立 .idsig 文件、不嵌入 APK。
             zipalign_path="$(find "$ANDROID_HOME/build-tools" \
               -type f -name zipalign | sort -V | tail -n 1)"
             if [[ -z "$zipalign_path" ]]; then
@@ -143,7 +145,7 @@ jobs:
               --ks-key-alias "$ETA_RELEASE_KEY_ALIAS" \
               --key-pass "pass:$ETA_RELEASE_KEY_PASSWORD" \
               --v1-signing-enabled false \
-              --v2-signing-enabled true \
+              --v2-signing-enabled false \
               --v3-signing-enabled true \
               --out "$output_dir/app-release.apk" \
               "$output_dir/app-release-aligned.apk"
