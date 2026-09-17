@@ -66,38 +66,40 @@ jobs:
             > "$RUNNER_TEMP/eta-release.jks"
           echo "available=true" >> "$GITHUB_OUTPUT"
 
-      - name: 运行关键单测
-        run: |
-          ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" \
-            :app:testDebugUnitTest \
-            --tests "*ConversationRunPurgeTest*" \
-            --tests "*AgentUiHandoffPayloadMatchTest*" \
-            --tests "*AptEnvironmentInstallerTest*" \
-            --tests "*AgentModelFailureTest*" \
-            --tests "*AgentModelRetryTest*" \
-            --tests "*AnthropicMessagesProviderTest*" \
-            --tests "*OpenAiChatCompletionsProviderTest*" \
-            --tests "*AgentToolRequirementsTest*" \
-            --tests "*AgentToolCatalogTest*" \
-            --tests "*AgentToolSchemaContractTest*" \
-            --tests "*AgentRunStatsTest*" \
-            --tests "*SkillContentAuditTest*" \
-            --tests "*EvalToolSnapshotTest*" \
-            --tests "*AgentTraceFormatterTest*" \
-            --tests "*BrowserDomScriptsTest*" \
-            --tests "*ProviderComponentsTest*"
-
-      - name: 构建 APK
+      # 单测与打包放在同一次 Gradle 调用、同一个变体上：Kotlin 编译与 KSP 只跑一遍。
+      # 之前 debug 单测 + release 打包会把两个变体各编译一次，约占整个 job 的一半时间。
+      - name: 单测与构建
         env:
           ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
           ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
           ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
           ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
+          tests=(
+            --tests "*ConversationRunPurgeTest*"
+            --tests "*AgentUiHandoffPayloadMatchTest*"
+            --tests "*AptEnvironmentInstallerTest*"
+            --tests "*AgentModelFailureTest*"
+            --tests "*AgentModelRetryTest*"
+            --tests "*AnthropicMessagesProviderTest*"
+            --tests "*OpenAiChatCompletionsProviderTest*"
+            --tests "*AgentToolRequirementsTest*"
+            --tests "*AgentToolCatalogTest*"
+            --tests "*AgentToolSchemaContractTest*"
+            --tests "*AgentRunStatsTest*"
+            --tests "*SkillContentAuditTest*"
+            --tests "*EvalToolSnapshotTest*"
+            --tests "*AgentTraceFormatterTest*"
+            --tests "*BrowserDomScriptsTest*"
+            --tests "*ProviderComponentsTest*"
+          )
           if [[ "${{ steps.signing.outputs.available }}" == "true" ]]; then
-            ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" :app:assembleDebug :app:assembleRelease
+            ./gradlew --no-daemon --build-cache -PetaBuildNumber="${{ github.run_number }}" \
+              :app:testReleaseUnitTest :app:assembleRelease "${tests[@]}"
           else
-            ./gradlew --no-daemon --no-configuration-cache -PetaBuildNumber="${{ github.run_number }}" :app:assembleDebug
+            echo "::warning::未配置 Release 签名 Secrets，本次只构建 Debug 包。"
+            ./gradlew --no-daemon --build-cache -PetaBuildNumber="${{ github.run_number }}" \
+              :app:testDebugUnitTest :app:assembleDebug "${tests[@]}"
           fi
 
       - name: 验证并整理 APK
@@ -107,24 +109,17 @@ jobs:
           ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
           ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
-          debug_apk="app/build/outputs/apk/debug/app-debug.apk"
           release_apk="app/build/outputs/apk/release/app-release.apk"
           output_dir="$RUNNER_TEMP/apks"
           apksigner_path="$(find "$ANDROID_HOME/build-tools" \
             -type f -name apksigner | sort -V | tail -n 1)"
 
-          if [[ ! -f "$debug_apk" ]]; then
-            echo "::error::未找到 Debug APK。"
-            exit 1
-          fi
           if [[ -z "$apksigner_path" ]]; then
             echo "::error::未找到 apksigner。"
             exit 1
           fi
 
           mkdir -p "$output_dir"
-          cp "$debug_apk" "$output_dir/app-debug.apk"
-          echo "debug_path=$output_dir/app-debug.apk" >> "$GITHUB_OUTPUT"
 
           if [[ -f "$release_apk" ]]; then
             # 用发布证书重签，显式固定为 V3：
@@ -152,14 +147,6 @@ jobs:
             "$apksigner_path" verify -v --print-certs "$output_dir/app-release.apk"
             echo "release_path=$output_dir/app-release.apk" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: 上传 Debug APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          path: ${{ steps.apk.outputs.debug_path }}
-          archive: false
-          if-no-files-found: error
-          retention-days: 14
 
       - name: 上传 Release APK
         if: steps.signing.outputs.available == 'true'
