@@ -62,7 +62,13 @@ internal class AgentRunMessageProjector(
         val notice = SystemNoticeMessageUi(
             id = "assistant-$runId-retry-${event.round}",
             code = SystemNoticeCode.ModelRetry,
-            detail = event.displayMessage,
+            // detail 随消息落库到 conversation_messages.result_summary，
+            // 附上原因码后，事后不清会话也能查出这次为什么重试。
+            detail = if (event.reasonCode.isBlank()) {
+                event.displayMessage
+            } else {
+                "${event.displayMessage}（原因：${event.reasonCode}）"
+            },
         )
         return finalized.filterNot { it.id == notice.id } + notice
     }

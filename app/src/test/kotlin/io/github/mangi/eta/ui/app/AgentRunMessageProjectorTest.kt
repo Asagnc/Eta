@@ -29,6 +29,9 @@ class AgentRunMessageProjectorTest {
         assertEquals(listOf("半截", "完整回答"), resumed.filterIsInstance<AgentMessageUi>().map { it.content })
         assertFalse(resumed.filterIsInstance<AgentMessageUi>().first().isStreaming)
         assertEquals(SystemNoticeCode.ModelRetry, resumed.filterIsInstance<SystemNoticeMessageUi>().single().code)
+        assertTrue(
+            resumed.filterIsInstance<SystemNoticeMessageUi>().single().detail.orEmpty().contains("MODEL_TIMEOUT"),
+        )
         assertTrue(projector.resetForReplay("retry-run", resumed).isEmpty())
     }
 
