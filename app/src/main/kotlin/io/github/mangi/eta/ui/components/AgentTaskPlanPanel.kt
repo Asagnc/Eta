@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ internal fun AgentTaskPlanPanel(
     if (items.isEmpty()) return
     var expanded by rememberSaveable { mutableStateOf(true) }
     val completed = items.count { it.status == AgentTaskPlanStatus.COMPLETED }
+    val interrupted = items.count { it.status == AgentTaskPlanStatus.INTERRUPTED }
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         insideMargin = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
@@ -59,7 +61,11 @@ internal fun AgentTaskPlanPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "任务进度 $completed/${items.size}",
+                text = if (interrupted > 0) {
+                    "任务进度 $completed/${items.size} · 已中断"
+                } else {
+                    "任务进度 $completed/${items.size}"
+                },
                 style = MiuixTheme.textStyles.body2,
                 fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onSurfaceContainer,
@@ -98,8 +104,13 @@ private fun AgentTaskPlanRow(item: AgentTaskPlanItemUi) {
                 tint = MiuixTheme.colorScheme.primary,
             )
 
-            // 运行中止时仍留在进行中的项：不带图标，文字行保留原文，只是不再显示「进行中」。
-            AgentTaskPlanStatus.INTERRUPTED -> Spacer(modifier = Modifier.size(14.dp))
+            // 运行中止时留在进行中的项：用警告图标标出来，跟「未开始」区分开。
+            AgentTaskPlanStatus.INTERRUPTED -> Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
 
             // 未开始的一项不配图标，留出同宽空位保持各行文字对齐。
             AgentTaskPlanStatus.PENDING -> Spacer(modifier = Modifier.size(14.dp))
