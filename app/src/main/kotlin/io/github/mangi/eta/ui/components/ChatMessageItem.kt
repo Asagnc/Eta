@@ -312,17 +312,9 @@ internal fun ChatMessageItem(
     onSelectReplyCandidate: (String, Int) -> Unit = { _, _ -> },
     /** 思考过程被手动展开或折叠时回调，供聊天列表暂停自动跟底。 */
     onThinkingToggle: () -> Unit = {},
-    /** 长按消息可把该消息之前的历史压缩掉；为 null 时不提供长按菜单。 */
+    /** 长按/点按消息可把该消息之前的历史压缩掉；为 null 时不提供该动作。 */
     onCompactUntilHere: ((String) -> Unit)? = null,
 ) {
-    var compactMenuExpanded by remember { mutableStateOf(false) }
-    Box(
-        modifier = if (onCompactUntilHere != null) {
-            Modifier.combinedClickable(onClick = {}, onLongClick = { compactMenuExpanded = true })
-        } else {
-            Modifier
-        },
-    ) {
     when (message) {
         is UserMessageUi -> Column(
             modifier = Modifier.fillMaxWidth(),
@@ -334,6 +326,7 @@ internal fun ChatMessageItem(
                 isEditing = isEditing,
                 onEdit = { onEditMessage(message.id) },
                 onDelete = { onDeleteMessage(message.id) },
+                onCompactUntilHere = onCompactUntilHere?.let { action -> { action(message.id) } },
                 modifier = modifier,
             )
             MessageTimestamp(message.timestamp)
@@ -352,6 +345,7 @@ internal fun ChatMessageItem(
                 onRegenerate = { onRegenerateMessage(message.id) },
                 onEdit = { onEditMessage(message.id) },
                 onSelectCandidate = { onSelectReplyCandidate(message.id, it) },
+                onCompactUntilHere = onCompactUntilHere?.let { action -> { action(message.id) } },
                 modifier = modifier,
             )
             MessageTimestamp(message.timestamp)
@@ -409,19 +403,6 @@ internal fun ChatMessageItem(
         )
         is ToolSummaryMessageUi -> ToolSummaryInline(message = message, modifier = modifier, compact = compact)
         is SuggestionChipsMessageUi -> SuggestionChipsRow(message = message, onSuggestionClick = onSuggestionClick, modifier = modifier)
-    }
-        DropdownMenu(
-            expanded = compactMenuExpanded,
-            onDismissRequest = { compactMenuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.context_compact_until_here)) },
-                onClick = {
-                    compactMenuExpanded = false
-                    onCompactUntilHere?.invoke(message.id)
-                },
-            )
-        }
     }
 }
 
@@ -587,6 +568,8 @@ private fun UserMessageBubble(
     isEditing: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    /** 只压缩这条消息之前的历史；为 null 时不显示该动作。 */
+    onCompactUntilHere: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     @Suppress("DEPRECATION")
@@ -637,6 +620,16 @@ private fun UserMessageBubble(
                                 onDelete()
                             },
                         )
+                        if (onCompactUntilHere != null) {
+                            MessageTooltipAction(
+                                icon = Icons.Rounded.Compress,
+                                label = stringResource(R.string.context_compact_until_here),
+                                onClick = {
+                                    tooltipState.dismiss()
+                                    onCompactUntilHere()
+                                },
+                            )
+                        }
                     }
                 }
             },
@@ -812,6 +805,8 @@ private fun AgentMessageBlock(
     onRegenerate: () -> Unit,
     onEdit: () -> Unit = {},
     onSelectCandidate: (Int) -> Unit = {},
+    /** 只压缩这条消息之前的历史；为 null 时不显示该动作。 */
+    onCompactUntilHere: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     @Suppress("DEPRECATION")
@@ -941,6 +936,23 @@ private fun AgentMessageBlock(
                                 modifier = Modifier.size(15.dp),
                                 tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
                             )
+                        }
+                    }
+                    if (onCompactUntilHere != null) {
+                        TooltipBox(text = stringResource(R.string.context_compact_until_here), enabled = messageActionsEnabled) {
+                            IconButton(
+                                onClick = onCompactUntilHere,
+                                enabled = messageActionsEnabled,
+                                minWidth = 30.dp,
+                                minHeight = 30.dp,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Compress,
+                                    contentDescription = stringResource(R.string.context_compact_until_here),
+                                    modifier = Modifier.size(15.dp),
+                                    tint = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.75f),
+                                )
+                            }
                         }
                     }
                     TooltipBox(text = stringResource(R.string.ui_delete_3755f5), enabled = messageActionsEnabled) {
