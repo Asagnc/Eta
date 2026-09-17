@@ -354,6 +354,8 @@ internal class AgentLoop(
             ?: AgentContextPruner.copyOf(messages)
         val pruned = AgentContextPruner.prune(base, config.toolResultKeep)
         runStats?.updatePrunedToolResults(pruned)
+        // 每轮请求都把当前时间重新附到最后一条用户消息上，让模型据此判断「现在」。
+        AgentRequestClock.attach(base)
         return base
     }
 
@@ -368,7 +370,7 @@ internal class AgentLoop(
         val used = context.budget.estimate(messages, roundTools)
         if (used < window * percent / 100) return null
         runStats?.recordContextNotice()
-        return "上下文已用约 ${used * 100 / window}%（$used/$window token），后续请精简输出与工具调用。"
+        return "上下文估算已用约 ${used * 100 / window}%（估算 $used／窗口 $window token），后续请精简输出与工具调用。"
     }
 
     private fun AgentModelClient.ToolResult.withContextNotice(notice: String): AgentModelClient.ToolResult =

@@ -36,4 +36,14 @@ internal object AgentHttpClient {
             .writeTimeout(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .build()
     }
+
+    /**
+     * 网络切换（Wi‑Fi ↔ 移动数据）后，连接池里的空闲连接仍绑定在旧网络上，
+     * 复用时会直接抛「连接被关闭/重置」类异常。系统切换网络不会通知 OkHttp，
+     * 由调用方在网络变化时主动清空连接池。
+     * [modelClient] 由 [client] 派生、共享同一个连接池，清一次即可。
+     */
+    fun evictConnections() {
+        runCatching { client.connectionPool.evictAll() }
+    }
 }

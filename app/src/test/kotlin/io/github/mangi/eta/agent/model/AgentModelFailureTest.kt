@@ -1,5 +1,8 @@
 package io.github.mangi.eta.agent.model
 
+import java.net.ProtocolException
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -37,6 +40,19 @@ class AgentModelFailureTest {
         assertNull(failure("MODEL_NOT_AVAILABLE", "模型不可用：deepseek-flash").droppableField())
         assertNull(failure("INVALID_REQUEST", "参数无效").droppableField())
         assertNull(failure("RATE_LIMITED", "请求过于频繁").droppableField())
+    }
+
+    @Test
+    fun `closed tls connection is treated as a retryable network interruption`() {
+        val failure = AgentModelFailure.transport(SSLException("connection closed"))
+        assertEquals("MODEL_CONNECTION_FAILED", failure?.code)
+        assertEquals(true, failure?.retryable)
+    }
+
+    @Test
+    fun `handshake and protocol failures stay non retryable`() {
+        assertNull(AgentModelFailure.transport(SSLHandshakeException("PKIX path building failed")))
+        assertNull(AgentModelFailure.transport(ProtocolException("unexpected end of stream")))
     }
 
     private fun failure(code: String, message: String) = AgentModelFailure(code, false, message)

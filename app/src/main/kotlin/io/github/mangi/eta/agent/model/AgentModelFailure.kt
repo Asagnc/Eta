@@ -4,8 +4,11 @@ import org.json.JSONObject
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ProtocolException
+import java.security.cert.CertificateException
 import java.util.Locale
 import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /** Provider 边界只分类失败；重试预算与上下文由 Loop 持有。 */
 internal class AgentModelFailure(
@@ -130,12 +133,26 @@ internal class AgentModelFailure(
                 "模型请求等待超时（连接或写入超时，或读取响应等待超过 ${AgentHttpClient.MODEL_READ_TIMEOUT_MS / 60_000} 分钟）。",
                 failure,
             )
-            is SSLException, is ProtocolException -> null
+            is SSLException -> if (failure.isHandshakeFailure()) null else AgentModelFailure(
+                "MODEL_CONNECTION_FAILED", true,
+                "模型连接中断（TLS 连接被关闭或重置，常见于切换网络或长时间空闲后复用旧连接），请检查网络后重试。",
+                failure,
+            )
+            is ProtocolException -> null
             is IOException -> AgentModelFailure(
                 "MODEL_CONNECTION_FAILED", true, "模型连接中断或暂时无法建立，请检查网络与服务商状态。", failure,
             )
             else -> null
         }
+
+        /**
+         * 只有握手/证书类 SSL 失败才需要人工处理、不该自动重试；
+         * 连接被关闭、被重置这类由网络切换或空闲后复用旧连接引起的 SSLException 属于传输中断，按可重试的连接失败处理。
+         */
+        private fun SSLException.isHandshakeFailure(): Boolean =
+            this is SSLHandshakeException ||
+                this is SSLPeerUnverifiedException ||
+                cause is CertificateException
 
         private fun isContextOverflow(error: JSONObject?): Boolean {
             if (error == null) return false

@@ -277,8 +277,8 @@ internal object AgentModelClient {
         val deviceSensitiveActionTools: Boolean = false,
         /** 同批只读工具的并发上限；调整它需要用 eval 扫 2/4/8 找性价比拐点，而不是凭感觉改。 */
         val maxParallelToolCalls: Int = 4,
-        /** 子智能体默认关闭：它会引入额外的模型开销，只在需要并行检索时开启。 */
-        val subAgentTools: Boolean = false,
+        /** 子智能体是否对模型可见；实际是否启用由 Prefs 的 agent_subagents_enabled 与本字段共同决定。 */
+        val subAgentTools: Boolean = true,
         /** 请求视图里保留完整内容的最新工具结果条数；0 表示只保留最后一条，负数表示不清理。 */
         val toolResultKeep: Int = 6,
         /** 上下文占用提示的触发百分比，0 表示关闭该提示。 */
