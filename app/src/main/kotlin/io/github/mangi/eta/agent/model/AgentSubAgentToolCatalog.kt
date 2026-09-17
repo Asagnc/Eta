@@ -63,9 +63,8 @@ internal object AgentSubAgentToolCatalog {
                                         )
                                 )
                         )
-                        .put("required", JSONArray().put("task"))
                 )
-            )
+                .put("required", JSONArray().put("task")))
             .put(
                 AgentToolSchema.function(
                     name = MULTI_PERSPECTIVE,
@@ -97,6 +96,20 @@ internal object AgentSubAgentToolCatalog {
                                     .put("type", "string")
                                     .put("maxLength", 4_000)
                                     .put("description", "可选补充要求（输出格式、判定标准），三个角色共用。")
+                            )
+                            .put(
+                                "scope",
+                                JSONObject()
+                                    .put("type", "string")
+                                    .put(
+                                        "enum",
+                                        JSONArray().put("quick").put("compare").put("deep"),
+                                    )
+                                    .put(
+                                        "description",
+                                        "规模档位，决定每个角色的轮数与 token 预算：quick 快速核对；" +
+                                            "compare 一般对照（默认）；deep 需要深挖的多视角审视。",
+                                    )
                             )
                         )
                         .put("required", JSONArray().put("topic").put("roles")))

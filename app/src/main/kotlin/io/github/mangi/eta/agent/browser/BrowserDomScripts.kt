@@ -388,11 +388,14 @@ internal object BrowserDomScripts {
         if (!target || (!fromReadability && !visible(target))) throw new Error('TARGET_NOT_VISIBLE');
         var state = markdownState();
         emitMarkdown(target, 0, state);
+        if (fromReadability && target && target.parentNode) {
+          target.parentNode.removeChild(target);
+        }
         var markdown = cleanBlock(state.parts.join(''), MAX_DOCUMENT_CHARS);
         var total = markdown.length;
         var start = Math.min($offset, total);
         var end = Math.min(start + $maxChars, total);
-        return {
+        var result = {
           text: markdown.slice(start, end),
           text_length: total,
           returned_chars: end - start,
