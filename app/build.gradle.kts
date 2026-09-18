@@ -183,7 +183,6 @@ val robolectricTestClasses = listOf(
     "RootlessDeviceToolsTest",
     "AgentImageCodecTest",
     "AgentRuntimeWireTest",
-    "BrenoRequestImagesTest",
     "EtaDatabaseMigrationTest",
     "AgentMemoryStoreTest",
     "AppearanceSettingsRepositoryTest",
@@ -209,18 +208,20 @@ val robolectricTestClasses = listOf(
 )
 
 /**
- * 扩到全量单测后暴露出来的既有失败（与本次改动无关），先排除以保证 CI 信号有效；
+ * 扩到全量单测后暴露出来的既有失败（与本次改动无关），先排除保证 CI 信号有效；
  * 逐个修好之后从这里移除：
- *   AgentImageCodecTest、AgentRuntimeWireTest、BrenoRequestImagesTest —— 图片编解码断言：
- *     切到 graphicsMode=NATIVE 也没修好，Robolectric 的编码结果与真机仍不一致（格式/字节数），
- *     需要逐个核对「测试期望」与「Robolectric 下的真实行为」到底哪个不对；
+ *   AgentImageCodecTest、AgentRuntimeWireTest —— 图片编解码断言：Robolectric 下的编码
+ *     结果与真机不一致（格式串、字节数、尺寸），需要逐个核对「测试期望」与
+ *     「Robolectric 真实行为」到底哪个不对；
  *   EtaDatabaseMigrationTest、AgentConversationStoreTest —— Room + Robolectric 环境差异；
  *   ToolCatalogUiTest —— 工具图标映射断言。
+ *
+ * 试过用 graphicsMode=NATIVE 把 Bitmap 换成真实实现：这两类没修好，
+ * BreenoRequestImagesTest 反而从通过变成失败，因此已还原、不保留该配置。
  */
 val knownFailingTestClasses = listOf(
     "AgentImageCodecTest",
     "AgentRuntimeWireTest",
-    "BrenoRequestImagesTest",
     "EtaDatabaseMigrationTest",
     "AgentConversationStoreTest",
     "ToolCatalogUiTest",
