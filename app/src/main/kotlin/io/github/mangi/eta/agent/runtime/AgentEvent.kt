@@ -29,7 +29,13 @@ internal sealed interface AgentEvent {
             }
 
         val displayMessage: String get() = when (phase) {
-            PHASE_STARTED -> reasonText?.let { "$RUNNING_DETAIL（$it）" } ?: RUNNING_DETAIL
+            PHASE_STARTED -> when (reasonCode) {
+                // 声明窗口比服务端实际接受的大时，进度条永远到不了触发线；
+                // 这里顺带给出可操作的建议，而不只是解释现象。
+                REASON_OVERFLOW -> "$RUNNING_DETAIL（模型报告上下文超出容量，声明窗口可能偏大；" +
+                    "可在模型设置里把上下文窗口改成约 ${compactionTokenCount(tokensBefore)} 量级）"
+                else -> reasonText?.let { "$RUNNING_DETAIL（$it）" } ?: RUNNING_DETAIL
+            }
             PHASE_COMPLETED -> "上下文已压缩：约 ${compactionTokenCount(tokensBefore)} → " +
                 "${compactionTokenCount(tokensAfter ?: 0)} tokens" +
                 (reasonText?.let { "（$it）" } ?: "")

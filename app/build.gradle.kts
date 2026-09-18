@@ -167,13 +167,11 @@ val robolectricTestClasses = listOf(
     "ScrollGestureContractTest",
     "McpProtocolValidationTest",
     "McpRunContextTest",
-    "AgentImageCodecTest",
     "AgentContextPersistenceTest",
     "AgentHistoryRetentionTest",
     "AgentRunArchiveStoreTest",
     "AgentRunCheckpointStoreTest",
     "AgentRuntimeResultStoreTest",
-    "AgentRuntimeWireTest",
     "ConversationRunPurgeTest",
     "SkillPackageInstallerTest",
     "SkillRecoveryJournalTest",
@@ -193,7 +191,6 @@ val robolectricTestClasses = listOf(
     "ModelRepositoryTest",
     "NotificationHistoryRepositoryTest",
     "ProviderRepositoryTest",
-    "BreenoRequestImagesTest",
     "HyperOsLongPressGestureTest",
     "HyperOsScreenSearchRequestTest",
     "ContextualSearchCallerPolicyTest",
@@ -212,15 +209,11 @@ val robolectricTestClasses = listOf(
  * 扩到全量单测后暴露出来的既有失败（与本次改动无关），先排除以保证 CI 信号有效；
  * 逐个修好之后从这里移除。共同点是断言依赖真机 Bitmap / Room / Compose 行为，
  * Robolectric 下不成立：
- *   AgentImageCodecTest、BreenoRequestImagesTest、AgentRuntimeWireTest —— 图片编解码断言
  *   EtaDatabaseMigrationTest、AgentConversationStoreTest —— Room + Robolectric 环境差异
  *   ToolCatalogUiTest —— 工具图标映射断言
  */
 val knownFailingTestClasses = listOf(
-    "AgentImageCodecTest",
-    "AgentRuntimeWireTest",
     "EtaDatabaseMigrationTest",
-    "BreenoRequestImagesTest",
     "AgentConversationStoreTest",
     "ToolCatalogUiTest",
 )

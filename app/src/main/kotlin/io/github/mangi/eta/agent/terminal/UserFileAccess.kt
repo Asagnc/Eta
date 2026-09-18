@@ -9,12 +9,19 @@ internal object UserFileAccess {
     private const val MAX_SCAN_BYTES = 512 * 1024L
     private const val MAX_SCAN_DEPTH = 8
 
+    /** Linux 工具环境工作目录的别名；普通身份下它与 userWorkspacePath 指向同一份目录。 */
+    private const val WORKSPACE_ALIAS = "/workspace"
+
     fun resolve(path: String): File {
         val workspace = File(TerminalRuntime.userWorkspacePath)
         val raw = path.trim().ifBlank { workspace.absolutePath }
         val file = when {
             raw == "~" -> workspace
             raw.startsWith("~/") -> File(workspace, raw.removePrefix("~/"))
+            // 免 Root 身份下文件工具也在 Android 命名空间里执行，而 /workspace 是 Linux 环境
+            // 工作目录的写法：直接当绝对路径会落到允许范围之外被拒。
+            raw == WORKSPACE_ALIAS -> workspace
+            raw.startsWith("$WORKSPACE_ALIAS/") -> File(workspace, raw.removePrefix("$WORKSPACE_ALIAS/"))
             raw.startsWith('/') -> File(raw)
             else -> File(workspace, raw)
         }.canonicalFile
