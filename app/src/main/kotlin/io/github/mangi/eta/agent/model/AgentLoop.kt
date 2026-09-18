@@ -88,7 +88,12 @@ internal class AgentLoop(
     }
 
     fun compactOnly(untilMessageId: String? = null): Result {
-        context.compact(tools, force = true, untilMessageId = untilMessageId)
+        context.compact(
+            tools,
+            force = true,
+            untilMessageId = untilMessageId,
+            reasonCode = AgentEvent.ContextCompaction.REASON_MANUAL,
+        )
         return Result("", "", emptySet())
     }
 
@@ -107,7 +112,7 @@ internal class AgentLoop(
             val roundTools = if (purpose.allowsTools) toolsForRound?.invoke() ?: tools else JSONArray()
             toolCallValidator = AgentToolCallValidator(roundTools)
             publishTranscript()
-            context.compact(roundTools)
+            context.compact(roundTools, reasonCode = AgentEvent.ContextCompaction.REASON_TRIGGER_RATIO)
             var requestMessages = requestMessagesFor(roundTools)
             var requestEstimate = AgentContextBudget.rawEstimate(requestMessages, roundTools)
             var roundInputTokens: Int? = null
@@ -148,7 +153,11 @@ internal class AgentLoop(
                             overflowAttempts >= AgentContextBudget.MAX_OVERFLOW_ATTEMPTS) throw failure
                         overflowAttempts++
                         accumulatedReasoning.setLength(reasoningLengthBeforeRound)
-                        context.compact(roundTools, force = true)
+                        context.compact(
+                            roundTools,
+                            force = true,
+                            reasonCode = AgentEvent.ContextCompaction.REASON_OVERFLOW,
+                        )
                         requestMessages = roleplayContext?.projectMessages(messages, roundTools) ?: messages
                         requestEstimate = AgentContextBudget.rawEstimate(requestMessages, roundTools)
                         roundInputTokens = null
@@ -240,7 +249,13 @@ internal class AgentLoop(
             }
 
             publishTranscript()
-            if (purpose.allowsTools) context.compact(roundTools, final = true)
+            if (purpose.allowsTools) {
+                context.compact(
+                    roundTools,
+                    final = true,
+                    reasonCode = AgentEvent.ContextCompaction.REASON_FINAL,
+                )
+            }
             runStats?.takeIf { !it.isEmpty }?.let { stats ->
                 onEvent(AgentEvent.RunStatsReported(stats.snapshot().toString()))
                 stats.selfReview()?.let { review -> onEvent(AgentEvent.SelfReview(review)) }
@@ -366,7 +381,9 @@ internal class AgentLoop(
     private fun contextPressureNotice(roundTools: JSONArray): String? {
         val percent = config.contextNoticePercent
         if (percent <= 0) return null
-        val window = context.budget.windowTokens?.takeIf { it > 0 } ?: return null
+        // 用有效窗口：模型声明的窗口可能远大于服务端实际允许的规模（中转站虚标），
+        // 只按声明值提示会让「显示不到一半就压缩」反复出现。
+        val window = context.budget.effectiveWindow ?: return null
         val used = context.budget.estimate(messages, roundTools)
         if (used < window * percent / 100) return null
         runStats?.recordContextNotice()

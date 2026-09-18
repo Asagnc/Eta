@@ -22,14 +22,21 @@ internal class AgentEvalCoordinator(
     private val appContext = context.applicationContext
     private val store = AgentEvalReportStore(appContext)
 
-    /** 私有目录里放过 `evals/tasks.json` 就用它，否则用内置任务集。 */
-    fun availableTasks(): List<AgentEvalTask> {
+    /**
+     * 私有目录里放过 `evals/tasks.json` 就用它，否则用内置任务集。
+     *
+     * tier 非空时只保留该层任务：light 是 2–3 轮就能过的快速用例，日常回归只跑这一层，
+     * 免得一次评估既慢又贵；full 是完整任务集，需要时再跑。
+     */
+    fun availableTasks(tier: String? = null): List<AgentEvalTask> {
         val file = store.taskSetFile()
-        if (file.isFile) {
+        val all = if (file.isFile) {
             val parsed = AgentEvalTaskSet.parse(file.readText())
-            if (parsed.isNotEmpty()) return parsed
+            if (parsed.isNotEmpty()) parsed else AgentEvalTaskSet.BUILT_IN
+        } else {
+            AgentEvalTaskSet.BUILT_IN
         }
-        return AgentEvalTaskSet.BUILT_IN
+        return if (tier.isNullOrBlank()) all else all.filter { it.tier == tier }
     }
 
     fun recentReports(limit: Int = 10): List<AgentEvalReport> = store.recent(limit)
@@ -43,6 +50,22 @@ internal class AgentEvalCoordinator(
         store.save(report)
         store.prune()
         return report
+    }
+
+    /**
+     * 服务端不可用（HTTP 5xx、网关超时、连接被断开）不是任务本身的问题：
+     * 归到 EVAL_INFRA_UNAVAILABLE，汇总时单列，不参与通过率。
+     */
+    private fun classifyRunFailure(error: String): String {
+        val text = error.lowercase()
+        return when {
+            "503" in text || "502" in text || "504" in text -> EVAL_INFRA_UNAVAILABLE
+            "模型服务暂时不可用" in error -> EVAL_INFRA_UNAVAILABLE
+            "timeout" in text || "timed out" in text -> EVAL_INFRA_UNAVAILABLE
+            "connection reset" in text || "connection closed" in text -> EVAL_INFRA_UNAVAILABLE
+            "连接已断开" in error -> EVAL_INFRA_UNAVAILABLE
+            else -> "EVAL_RUN_FAILED"
+        }
     }
 
     /**
@@ -78,7 +101,7 @@ internal class AgentEvalCoordinator(
             statsJson = statsRef.get().orEmpty(),
             elapsedMs = System.currentTimeMillis() - startedAt,
             completed = result.ok,
-            failureCode = if (result.ok) null else "EVAL_RUN_FAILED",
+            failureCode = if (result.ok) null else classifyRunFailure(result.error.orEmpty()),
             note = result.error.orEmpty(),
         ).copy(usedTools = if (usedTools.isEmpty()) emptySet() else usedTools)
     }

@@ -21,12 +21,14 @@ internal object AgentEvalTaskSet {
             category = "device",
             prompt = "看一下手机现在的电量、内存和存储占用，再说说还能不能装下一个 8GB 的游戏。",
             expectTools = listOf("device_status", "top_storage_apps", "get_current_context", "get_health_summary"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "current-time-place",
             category = "device",
             prompt = "现在几点？我大概在哪个位置？",
             expectTools = listOf("get_current_context", "get_current_location", "device_status"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "locate-concurrency-constant",
@@ -63,12 +65,14 @@ internal object AgentEvalTaskSet {
             category = "ui",
             prompt = "现在屏幕上都有哪些可以点的按钮？列出来就行。",
             expectTools = listOf("observe_screen", "tap_element", "read_image", "wait_for_text"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "open-wechat",
             category = "ui",
             prompt = "帮我打开微信。",
             expectTools = listOf("search_apps", "launch_app", "open_uri"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "plan-and-track",
@@ -82,12 +86,14 @@ internal object AgentEvalTaskSet {
             category = "memory",
             prompt = "我之前把 Eta 的构建命令记在哪了？",
             expectTools = listOf("memory_get", "search_code", "read_file"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "self-run-stats",
             category = "meta",
             prompt = "看一下这次 run 到现在调了多少次工具，哪一类最多。",
             expectTools = listOf("run_stats", "search_code", "list_directory"),
+            tier = AgentEvalTask.TIER_LIGHT,
         ),
         AgentEvalTask(
             id = "logcat-model-failure",
@@ -119,6 +125,7 @@ internal object AgentEvalTaskSet {
                         .mapNotNull { toolIndex -> tools.optString(toolIndex).takeIf { it.isNotBlank() } }
                 },
                 maxRounds = item.optInt("max_rounds", DEFAULT_MAX_ROUNDS).coerceIn(1, 40),
+                tier = item.optString("tier").trim().takeIf { it.isNotBlank() } ?: AgentEvalTask.TIER_FULL,
             )
         }
     }

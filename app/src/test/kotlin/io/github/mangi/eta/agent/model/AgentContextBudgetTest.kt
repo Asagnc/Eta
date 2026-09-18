@@ -51,4 +51,20 @@ class AgentContextBudgetTest {
         assertFalse(budget.shouldCompact(10_000_000))
         assertEquals(null, budget.windowTokens)
     }
+
+    @Test
+    fun `overflow ceiling shrinks the effective window`() {
+        val budget = AgentContextBudget(1_000_000)
+        assertTrue(budget.shouldCompact(900_000))
+
+        // 服务端在 460K 就拒收：声明窗口不可信，之后按实测上限触发。
+        budget.noteOverflow(460_000)
+        assertEquals(460_000, budget.effectiveWindow)
+        assertFalse("刚压缩完不该立刻再触发", budget.shouldCompact(400_000))
+        assertTrue(budget.shouldCompact(414_000))
+
+        // 再遇到更小的上限时取更小的那个。
+        budget.noteOverflow(300_000)
+        assertEquals(300_000, budget.effectiveWindow)
+    }
 }

@@ -89,6 +89,11 @@ fun AgentToolsScreen(
                     summary = evaluationSummary(state.evaluation),
                     onClick = { onAction(AgentToolsAction.RunEvaluation) },
                 )
+                ArrowPreference(
+                    title = stringResource(R.string.eval_run_full_title),
+                    summary = stringResource(R.string.eval_run_full_summary),
+                    onClick = { onAction(AgentToolsAction.RunFullEvaluation) },
+                )
             }
         }
         groups.forEach { group ->

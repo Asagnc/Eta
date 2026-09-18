@@ -41,6 +41,7 @@ import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.eval.AgentEvalCoordinator
+import io.github.mangi.eta.agent.eval.AgentEvalTask
 import io.github.mangi.eta.ui.model.AgentEvaluationUi
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
@@ -163,7 +164,11 @@ internal class AgentAppState(
      * 每个任务都是一次真实 run（消耗真实 token），所以同一时间只允许一次；
      * 进度写回工具页状态，报告由协调器落盘到 App 私有目录。
      */
-    fun startEvaluation() {
+    /**
+     * @param full 是否跑完整任务集。默认只跑 light 层：日常回归用 6 个 2–3 轮就能过的快速用例，
+     *   一次评估的 token 与耗时都降下来；需要全量对比时再走完整入口。
+     */
+    fun startEvaluation(full: Boolean = false) {
         if (toolsState.evaluation.running) return
         scope.launch {
             // 读取配置是 suspend 的，先在本协程里取一次；评测期间沿用同一份配置。
@@ -175,7 +180,8 @@ internal class AgentAppState(
                 return@launch
             }
             val coordinator = AgentEvalCoordinator(appContext, config)
-            val tasks = coordinator.availableTasks()
+            val tier = if (full) null else AgentEvalTask.TIER_LIGHT
+            val tasks = coordinator.availableTasks(tier)
             if (tasks.isEmpty()) {
                 toolsState = toolsState.copy(evaluation = AgentEvaluationUi(summary = "没有可用的评测任务集"))
                 return@launch
@@ -204,7 +210,10 @@ internal class AgentAppState(
                     finishedCount = report.results.size,
                     passedCount = report.passedCount,
                     summary = buildString {
-                        append("上次：${report.passedCount}/${report.results.size} 通过")
+                        append("上次：${report.passedCount}/${report.judgedResults.size} 通过")
+                        if (report.invalidCount > 0) {
+                            append("，${report.invalidCount} 个因服务端不可用未计入")
+                        }
                         val failures = report.failureBreakdown()
                         if (failures.isNotEmpty()) {
                             append("（")

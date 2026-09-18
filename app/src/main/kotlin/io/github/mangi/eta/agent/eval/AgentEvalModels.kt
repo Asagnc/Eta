@@ -17,7 +17,17 @@ internal data class AgentEvalTask(
     val expectTools: List<String> = emptyList(),
     /** 轮次上限：超过它说明这条路走得太绕，即使最终跑通也算不达标。 */
     val maxRounds: Int = 8,
-)
+    /**
+     * 任务规模。light 是 2–3 轮就能过的快速用例，日常回归只跑这一层；
+     * full 需要多步检索或系统操作，单独跑，避免一次评估既慢又贵。
+     */
+    val tier: String = TIER_FULL,
+) {
+    companion object {
+        const val TIER_LIGHT = "light"
+        const val TIER_FULL = "full"
+    }
+}
 
 /** 执行一个任务后拿到的原始指标；判定留给 [AgentEvalRunner]，便于单独验证规则。 */
 internal data class AgentEvalRawOutcome(
@@ -88,9 +98,16 @@ internal data class AgentEvalReport(
     val finishedAt: Long,
     val results: List<AgentEvalTaskResult>,
 ) {
-    val passedCount: Int get() = results.count { it.passed }
-    val passRate: Double get() = if (results.isEmpty()) 0.0 else passedCount.toDouble() / results.size
-    val averageRounds: Double get() = if (results.isEmpty()) 0.0 else results.sumOf { it.rounds }.toDouble() / results.size
+    /** 基础设施不可用造成的无效样本：token 确实消耗了，但不能算任务失败。 */
+    val invalidResults: List<AgentEvalTaskResult> get() = results.filter { it.failureCode == EVAL_INFRA_UNAVAILABLE }
+    val invalidCount: Int get() = invalidResults.size
+    /** 参与判定的样本：通过率与平均轮次只看这些。 */
+    val judgedResults: List<AgentEvalTaskResult>
+        get() = results.filterNot { it.failureCode == EVAL_INFRA_UNAVAILABLE }
+    val passedCount: Int get() = judgedResults.count { it.passed }
+    val passRate: Double get() = if (judgedResults.isEmpty()) 0.0 else passedCount.toDouble() / judgedResults.size
+    val averageRounds: Double
+        get() = if (judgedResults.isEmpty()) 0.0 else judgedResults.sumOf { it.rounds }.toDouble() / judgedResults.size
     val totalInputTokens: Long get() = results.sumOf { it.inputTokens }
     val totalOutputTokens: Long get() = results.sumOf { it.outputTokens }
     val totalToolCalls: Int get() = results.sumOf { it.toolCalls }
@@ -118,6 +135,7 @@ internal data class AgentEvalReport(
             .put("started_at", startedAt)
             .put("finished_at", finishedAt)
             .put("task_count", results.size)
+            .put("invalid_count", invalidCount)
             .put("passed_count", passedCount)
             .put("pass_rate", passRate)
             .put("average_rounds", averageRounds)
@@ -145,7 +163,10 @@ internal data class AgentEvalReport(
     }
 }
 
-internal const val EVAL_REPORT_VERSION = 1
+internal const val EVAL_REPORT_VERSION = 2
+
+/** 服务端不可用造成的无效样本：单独归因，不参与通过率。 */
+internal const val EVAL_INFRA_UNAVAILABLE = "EVAL_INFRA_UNAVAILABLE"
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (!has(key) || isNull(key)) null else optString(key).takeIf { it.isNotBlank() }

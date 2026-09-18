@@ -18,10 +18,21 @@ internal sealed interface AgentEvent {
         val tokensAfter: Int? = null,
         val reasonCode: String = "",
     ) : AgentEvent {
+        /** 面向用户的原因说明；未知原因码返回 null，此时退回通用文案。 */
+        val reasonText: String?
+            get() = when (reasonCode) {
+                REASON_TRIGGER_RATIO -> "上下文已接近窗口上限"
+                REASON_OVERFLOW -> "模型报告上下文超出容量"
+                REASON_MANUAL -> "手动压缩"
+                REASON_FINAL -> "运行结束整理"
+                else -> null
+            }
+
         val displayMessage: String get() = when (phase) {
-            PHASE_STARTED -> RUNNING_DETAIL
+            PHASE_STARTED -> reasonText?.let { "$RUNNING_DETAIL（$it）" } ?: RUNNING_DETAIL
             PHASE_COMPLETED -> "上下文已压缩：约 ${compactionTokenCount(tokensBefore)} → " +
-                "${compactionTokenCount(tokensAfter ?: 0)} tokens"
+                "${compactionTokenCount(tokensAfter ?: 0)} tokens" +
+                (reasonText?.let { "（$it）" } ?: "")
             else -> "上下文压缩失败，原始上下文已保留。"
         }
         override fun toLogLine(): String =
@@ -30,7 +41,12 @@ internal sealed interface AgentEvent {
         companion object {
             const val PHASE_STARTED = "started"
             const val PHASE_COMPLETED = "completed"
-            /** 进行中的展示文案同时是 UI 判定运行态的依据，改动必须与 UI 侧同步。 */
+            /** 触发压缩的原因码：与失败码共用同一字段。 */
+            const val REASON_TRIGGER_RATIO = "CONTEXT_TRIGGER_RATIO"
+            const val REASON_OVERFLOW = "CONTEXT_OVERFLOW"
+            const val REASON_MANUAL = "CONTEXT_MANUAL"
+            const val REASON_FINAL = "CONTEXT_FINAL"
+            /** 进行中的展示文案前缀；UI 的运行态判定用 phase，不依赖这里的完整文案。 */
             const val RUNNING_DETAIL = "正在压缩上下文…"
         }
     }

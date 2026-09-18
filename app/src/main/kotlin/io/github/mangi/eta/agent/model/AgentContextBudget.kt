@@ -11,6 +11,32 @@ internal class AgentContextBudget(private val window: Int?) {
     val windowTokens: Int?
         get() = window
 
+    /**
+     * 服务端实际拒收过的上下文规模。中转站与自建网关常虚标窗口（声明 1M，几百 K 就报
+     * 上下文超限），只信声明值会让「显示不到一半就压缩」反复出现；这里记下实测上限，
+     * 之后的触发判断与占用提示都按 声明窗口 与 实测上限 的较小值算。
+     */
+    private var overflowCeiling: Int? = null
+
+    /** 触发判断与占用提示实际使用的窗口。 */
+    val effectiveWindow: Int?
+        get() {
+            val declared = window?.takeIf { it > 0 }
+            val ceiling = overflowCeiling?.takeIf { it > 0 }
+            return when {
+                declared == null -> ceiling
+                ceiling == null -> declared
+                else -> minOf(declared, ceiling)
+            }
+        }
+
+    /** 服务端报告上下文超限时记下当时的规模，多次取最小。 */
+    fun noteOverflow(tokens: Int) {
+        if (tokens <= 0) return
+        val current = overflowCeiling
+        overflowCeiling = if (current == null) tokens else minOf(current, tokens)
+    }
+
     private var calibration = 1.0
     private var observedInputTokens = 0
 
@@ -39,9 +65,9 @@ internal class AgentContextBudget(private val window: Int?) {
     }
 
     fun shouldCompact(tokens: Int): Boolean =
-        window?.takeIf { it > 0 }?.let { tokens >= it * TRIGGER_RATIO } == true
+        effectiveWindow?.let { tokens >= it * TRIGGER_RATIO } == true
 
-    fun exceedsWindow(tokens: Int): Boolean = window?.takeIf { it > 0 }?.let { tokens >= it } == true
+    fun exceedsWindow(tokens: Int): Boolean = effectiveWindow?.let { tokens >= it } == true
 
     companion object {
         /**

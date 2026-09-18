@@ -59,8 +59,11 @@ internal class AgentContextSession(
         force: Boolean = false,
         final: Boolean = false,
         untilMessageId: String? = null,
+        reasonCode: String = "",
     ) {
         val before = budget.estimate(messages, roundTools)
+        // 服务端已经拒收过这个规模：记下实测上限，之后按更小的窗口触发，避免反复撞墙。
+        if (reasonCode == AgentEvent.ContextCompaction.REASON_OVERFLOW) budget.noteOverflow(before)
         if (!force && !budget.shouldCompact(before)) {
             try {
                 publishSnapshot()
@@ -74,7 +77,11 @@ internal class AgentContextSession(
             return
         }
         val operation = java.util.UUID.randomUUID().toString()
-        onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_STARTED, before))
+        onEvent(
+            AgentEvent.ContextCompaction(
+                operation, AgentEvent.ContextCompaction.PHASE_STARTED, before, reasonCode = reasonCode,
+            ),
+        )
         try {
             var candidate = messages
             var attempts = 0
@@ -101,7 +108,7 @@ internal class AgentContextSession(
             while (messages.length() > 0) messages.remove(messages.length() - 1)
             for (index in 0 until candidate.length()) messages.put(candidate.getJSONObject(index))
             onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_COMPLETED, before,
-                budget.estimate(messages, roundTools)))
+                budget.estimate(messages, roundTools), reasonCode = reasonCode))
         } catch (failure: Exception) {
             runController.throwIfCancelled()
             onEvent(AgentEvent.ContextCompaction(operation, "failed", before,
