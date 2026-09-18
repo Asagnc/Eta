@@ -118,6 +118,10 @@
         "type": "object",
         "properties": {
           "path": {"type": "string"},
+          "max_chars": {
+            "description": "按行模式一次返回的最大字符数，200 到 32000，默认 16000；被截断时 truncated 为 true。仅行模式使用，字节模式看 max_bytes。",
+            "type": "integer"
+          },
           "offset_bytes": {
             "description": "从第几个字节开始，默认 0。",
             "type": "integer"
@@ -167,7 +171,7 @@
     },
     {
       "name": "search_code",
-      "description": "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。",
+      "description": "在文件或目录里按正则检索内容，返回 文件:行号:内容。适合在代码库或日志目录里定位关键词，输出比在 terminal 里拼 grep 更紧凑可控。命中范围不清楚时先加 files_only=true 看分布，再对目标文件精读，比反复调整 pattern 更快。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -175,8 +179,16 @@
             "description": "文件或目录路径，默认 /data/local/tmp/eta。",
             "type": "string"
           },
+          "files_only": {
+            "description": "true 时只返回每个文件的命中行数，不返回内容：先用它看命中分布在哪些文件，再对目标文件精读。默认 false。",
+            "type": "boolean"
+          },
           "context_lines": {
             "description": "每条匹配附带的上下文行数，0 到 5，默认 0。",
+            "type": "integer"
+          },
+          "max_chars": {
+            "description": "返回内容的最大字符数，200 到 32000，默认 8000；被截断时 truncated 为 true。",
             "type": "integer"
           },
           "pattern": {
@@ -481,6 +493,11 @@
             "description": "Installed Skill id, name, or SKILL.md path.",
             "type": "string",
             "maxLength": 500
+          },
+          "inputs": {
+            "description": "按 Skill 声明的 inputs 逐个传参；命令里的 {{名字}} 会被替换为对应值（已做 shell 转义）。缺必填项会直接报错。",
+            "additionalProperties": {"type": "string"},
+            "type": "object"
           },
           "arguments": {
             "description": "附加到声明命令末尾的参数串，由该环境的 Shell 解析；默认空。",
