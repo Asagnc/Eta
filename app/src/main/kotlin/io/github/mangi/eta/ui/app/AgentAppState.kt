@@ -203,9 +203,17 @@ internal class AgentAppState(
                     taskCount = report.results.size,
                     finishedCount = report.results.size,
                     passedCount = report.passedCount,
-                    summary = "上次：${report.passedCount}/${report.results.size} 通过，" +
-                        "平均 ${"%.1f".format(report.averageRounds)} 轮，" +
-                        "输入 ${report.totalInputTokens} / 输出 ${report.totalOutputTokens} token",
+                    summary = buildString {
+                        append("上次：${report.passedCount}/${report.results.size} 通过")
+                        val failures = report.failureBreakdown()
+                        if (failures.isNotEmpty()) {
+                            append("（")
+                            append(failures.entries.joinToString("、") { "${it.key}×${it.value}" })
+                            append("）")
+                        }
+                        append("，平均 ${"%.1f".format(report.averageRounds)} 轮，")
+                        append("输入 ${report.totalInputTokens} / 输出 ${report.totalOutputTokens} token")
+                    },
                 ),
             )
         }

@@ -59,7 +59,7 @@ internal class AgentEvalCoordinator(
                 prompt = task.prompt,
                 config = config,
                 images = emptyList(),
-                operation = EVAL_RUN_OPERATION,
+                operation = AgentRuntimeWire.OP_EVAL,
             ),
             onEvent = { event ->
                 when (event) {
@@ -78,8 +78,4 @@ internal class AgentEvalCoordinator(
         ).copy(usedTools = if (usedTools.isEmpty()) emptySet() else usedTools)
     }
 
-    companion object {
-        /** 评估 run 的操作标识：归档里能一眼区分它和用户真实对话。 */
-        const val EVAL_RUN_OPERATION = "eval"
-    }
 }
