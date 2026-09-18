@@ -24,6 +24,8 @@ internal class RootShellTerminalController(
 ) : AutoCloseable {
     private companion object {
         const val DEFAULT_CWD = "/data/local/tmp/eta"
+
+        /** Linux 工具环境的工作目录；它与 DEFAULT_CWD 指向同一份目录（chroot 里 bind 过去）。 */
         const val LINUX_DEFAULT_CWD = "/workspace"
         const val USER_STORAGE = "/storage/emulated/0"
         const val DEFAULT_TIMEOUT_SECONDS = 30
@@ -1280,6 +1282,10 @@ internal class RootShellTerminalController(
         val effective = when {
             raw == "~" -> USER_STORAGE
             raw.startsWith("~/") -> USER_STORAGE + "/" + raw.removePrefix("~/")
+            // Linux 工具环境的工作目录与 Android 侧的 DEFAULT_CWD 是同一份目录（chroot 里 bind 过去），
+            // 但设备侧文件工具在 Android 命名空间里执行：直接把 /workspace/... 交给 shell 只会得到 can't open。
+            raw == LINUX_DEFAULT_CWD -> DEFAULT_CWD
+            raw.startsWith("$LINUX_DEFAULT_CWD/") -> DEFAULT_CWD + "/" + raw.removePrefix("$LINUX_DEFAULT_CWD/")
             raw.startsWith("/") -> raw
             else -> "$DEFAULT_CWD/$raw"
         }

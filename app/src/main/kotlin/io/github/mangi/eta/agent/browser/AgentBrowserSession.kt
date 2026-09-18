@@ -689,7 +689,25 @@ internal object AgentBrowserSession {
         }
         val envelope = mergeValue(baseEnvelope(action, true, "ok"), value)
             .put("content_format", if (readable) "markdown" else "text")
-        return toolResult(elideRepeatedRead(action, offset, maxChars, value, envelope))
+        return toolResult(elideRepeatedRead(action, offset, maxChars, value, withUnreadHint(value, envelope)))
+    }
+
+    /**
+     * 正文没读完时，把「还有多少、怎么继续」直接写进正文末尾。
+     * 这些信息本来只落在 JSON 字段里，只看 text 就开始回答的调用方会漏掉后半篇。
+     */
+    private fun withUnreadHint(value: JSONObject, envelope: JSONObject): JSONObject {
+        val text = value.optString("text")
+        val total = value.optInt("text_length", 0)
+        val next = if (value.isNull("next_offset")) -1 else value.optInt("next_offset", -1)
+        val hint = when {
+            next > 0 -> "\n\n[正文共 $total 字符，本次返回 ${text.length} 字符；" +
+                "要继续读请再调用本工具并传 offset=$next]"
+            value.optBoolean("source_truncated") ->
+                "\n\n[正文共 $total 字符，本次已返回全部；页面更长，超出提取上限的部分读不到]"
+            else -> null
+        } ?: return envelope
+        return envelope.put("text", text + hint)
     }
 
     private fun findElements(args: JSONObject): BrowserToolResult {
