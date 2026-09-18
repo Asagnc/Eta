@@ -52,6 +52,7 @@ internal class AgentEvalCoordinator(
     private fun executeTask(task: AgentEvalTask, runId: String): AgentEvalRawOutcome {
         val statsRef = AtomicReference<String>()
         val usedTools = linkedSetOf<String>()
+        val trace = mutableListOf<String>()
         val startedAt = System.currentTimeMillis()
         val result = AgentRuntimeClient(appContext, AndroidAgentLogger).run(
             request = AgentRuntimeWire.RunRequest(
@@ -64,11 +65,15 @@ internal class AgentEvalCoordinator(
             onEvent = { event ->
                 when (event) {
                     is AgentEvent.RunStatsReported -> statsRef.set(event.statsJson)
-                    is AgentEvent.ToolStarted -> usedTools += event.name
+                    is AgentEvent.ToolStarted -> {
+                        usedTools += event.name
+                        trace += "round=${event.round} tool=${event.name} args=${event.argsPreview}"
+                    }
                     else -> Unit
                 }
             },
         )
+        store.saveTrace(task.id, trace)
         return AgentEvalMetrics.fromStats(
             statsJson = statsRef.get().orEmpty(),
             elapsedMs = System.currentTimeMillis() - startedAt,

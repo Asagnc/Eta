@@ -214,8 +214,12 @@ internal object AgentPromptBuilder {
             }
             appendLine()
             append(
-                "只把上面的索引当作目录；需要某个 skill 的具体步骤、脚本或引用时，先调用 skills_read 读取对应 SKILL.md，" +
-                    "正文引用其他文本资源时再调用 skills_read_resource；不要为了读取 Skill 资源而开启终端，也不要凭索引臆测正文细节。"
+                "只把上面的索引当作目录。只有在任务确实需要某个 skill 独有的东西时才调用 skills_read：" +
+                    "它声明的命令、它记录的环境约定、或它引用的模板文件。" +
+                    "能用通用工具直接完成的任务（查设备状态、读写文件、跑一条命令、改一处代码）不要读 Skill——" +
+                    "先读再判断会白花一轮上下文。" +
+                    "正文之外还需要其它文本资源时再调用 skills_read_resource；" +
+                    "不要为了读取 Skill 资源而开启终端，也不要凭索引臆测正文细节。"
             )
         }
         return systemMessage(body)

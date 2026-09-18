@@ -139,7 +139,7 @@ class AgentPromptBuilderTest {
         assertTrue(skillMessage.contains("path=/skills/screen-audit/SKILL.md"))
         assertTrue(skillMessage.contains("capabilities=scripts, assets"))
         assertTrue(skillMessage.contains("description=检查屏幕 并输出 结论"))
-        assertTrue(skillMessage.contains("先调用 skills_read"))
+        assertTrue(skillMessage.contains("才调用 skills_read"))
         assertEquals("读取网页", messages.getJSONObject(3).getString("content"))
     }
 

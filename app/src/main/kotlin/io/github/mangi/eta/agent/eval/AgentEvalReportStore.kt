@@ -16,6 +16,14 @@ internal class AgentEvalReportStore(context: Context) {
     /** 任务集覆盖：私有目录里放了 `evals/tasks.json` 就优先用它。 */
     fun taskSetFile(): File = File(root, "tasks.json")
 
+    /** 单个任务的过程痕迹：每次工具调用一行，用来回答“轮次花在哪条链路上”。 */
+    fun saveTrace(taskId: String, lines: List<String>): File? {
+        if (lines.isEmpty()) return null
+        val dir = File(root, "traces").apply { mkdirs() }
+        return File(dir, "${taskId.replace('/', '_')}.txt")
+            .also { file -> file.writeText(lines.joinToString("\n")) }
+    }
+
     fun save(report: AgentEvalReport): File {
         val file = File(root, "report-${report.startedAt}.json")
         file.writeText(report.toJson().toString())

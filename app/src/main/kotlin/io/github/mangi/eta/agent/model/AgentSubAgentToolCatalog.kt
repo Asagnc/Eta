@@ -19,8 +19,10 @@ internal object AgentSubAgentToolCatalog {
                 AgentToolSchema.function(
                     name = DELEGATE,
                     description = "把一个可以独立完成的子任务交给受限子智能体：它有自己的上下文，只能用文件检索类工具，" +
-                        "只回一份摘要，过程不进入当前上下文。适合同时要翻很多文件、多个方向都查一遍的检索型子任务；" +
-                        "需要写文件、跑命令或操作设备时不要用它。",
+                        "只回一份摘要，过程不进入当前上下文。它的价值是隔离上下文，不是加速。" +
+                        "所以任务必须窄到一个能直接回答的问题（例如“某个常量定义在哪个文件哪一行”），" +
+                        "并在 context 里写明要什么格式的输出。" +
+                        "需要多步追踪、写文件、跑命令或操作设备时自己查，不要派发——任务写宽了，子智能体会把预算耗在探索上，最后拿不出结论。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(
@@ -69,7 +71,9 @@ internal object AgentSubAgentToolCatalog {
                 AgentToolSchema.function(
                     name = MULTI_PERSPECTIVE,
                     description = "并行派生多个互相隔离的角色，各自独立作答，再由当前 loop 汇总对照。" +
-                        "角色之间不共享中间推理，否则会退化成同一份意见的不同措辞；汇总与校验由调用方负责。",
+                        "每个角色要对同一个问题给出同一格式的结论，否则无法逐条对照。" +
+                        "角色之间不共享中间推理，否则会退化成同一份意见的不同措辞；汇总与校验由调用方负责。" +
+                        "需要写文件、跑命令或操作设备时不要用它，它只做分析与判断。",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put("properties", JSONObject()
