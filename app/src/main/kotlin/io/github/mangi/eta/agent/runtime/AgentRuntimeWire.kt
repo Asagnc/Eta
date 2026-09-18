@@ -699,6 +699,8 @@ internal object AgentRuntimeWire {
                 putString(KEY_TYPE, "usage_received")
                 putInt("round", event.round)
                 putTokenUsage(event.usage)
+                event.estimatedContextTokens?.let { putInt("usage_estimated", it) }
+                event.windowTokens?.let { putInt("usage_window", it) }
             }
 
             is AgentEvent.UserSupplementReceived -> {
@@ -867,6 +869,8 @@ internal object AgentRuntimeWire {
         "usage_received" -> AgentEvent.UsageReceived(
             round = bundle.getInt("round"),
             usage = bundle.getTokenUsage(),
+            estimatedContextTokens = bundle.optionalInt("usage_estimated"),
+            windowTokens = bundle.optionalInt("usage_window"),
         )
 
         "user_supplement_received" -> AgentEvent.UserSupplementReceived(

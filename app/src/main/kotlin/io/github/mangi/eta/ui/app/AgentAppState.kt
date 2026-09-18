@@ -280,6 +280,7 @@ internal class AgentAppState(
                     withContext(Dispatchers.Main) {
                         modelPickerState = pickerState.copy(
                             isChanging = modelPickerState.isChanging,
+                            contextWindowHint = modelPickerState.contextWindowHint,
                         )
                         applyReasoningCapabilities(capabilities)
                     }
@@ -2189,7 +2190,14 @@ internal class AgentAppState(
             }
 
             is AgentEvent.UsageReceived -> {
-                updateAssistantUsage(runId, event.round, event.usage.toUi())
+                updateAssistantUsage(
+                    runId,
+                    event.round,
+                    event.usage.toUi(estimatedContextTokens = event.estimatedContextTokens),
+                )
+                if (event.windowTokens != null) {
+                    modelPickerState = modelPickerState.copy(contextWindowHint = event.windowTokens)
+                }
             }
 
             is AgentEvent.UserSupplementReceived -> {
@@ -3022,9 +3030,13 @@ private fun agentBooleanForUi(key: String): Boolean {
     return Prefs.isEnabled(key)
 }
 
-private fun AgentTokenUsage.toUi(): TokenUsageUi =
+/**
+ * 上下文用量取「服务端回报」与「本地估算」的较大值：前者受提示缓存与网关改写影响可能偏小，
+ * 只按它显示会让进度条长期低于压缩触发线，两边口径对不上。
+ */
+private fun AgentTokenUsage.toUi(estimatedContextTokens: Int? = null): TokenUsageUi =
     TokenUsageUi(
-        contextTokens = contextTokens,
+        contextTokens = maxOf(contextTokens ?: 0, estimatedContextTokens ?: 0).takeIf { it > 0 },
         inputTokens = inputTokens,
         outputTokens = outputTokens,
         reasoningTokens = reasoningTokens,

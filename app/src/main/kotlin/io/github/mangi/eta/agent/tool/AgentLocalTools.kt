@@ -513,7 +513,12 @@ internal class AgentLocalTools(
             is AgentMemoryWriteResult.Conflict -> JSONObject()
                 .put("ok", false)
                 .put("code", "MEMORY_CONFLICT")
-                .put("message", "记忆已发生变化，请先调用 memory_get 获取最新内容")
+                .put(
+                    "message",
+                    "记忆已被其他写入更新（当前 ${result.snapshot.byteSize} 字节 / " +
+                        "${result.snapshot.lineCount} 行）。直接用本次响应里的 revision 重试同一处写入；" +
+                        "只有当要改的内容本身也变了，才需要重新读取全文。",
+                )
                 .put("revision", result.snapshot.revision)
                 .put("bytes", result.snapshot.byteSize)
                 .put("line_count", result.snapshot.lineCount)

@@ -153,3 +153,65 @@ dependencies {
     testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
 }
+
+/**
+ * Robolectric 的 native runtime 官方只提供 x86_64 Linux 与 macOS arm64 构建，
+ * 本机（chroot aarch64）跑这批测试会在启动时直接报
+ * "The Robolectric native runtime is not supported on Linux (aarch64)"。
+ * 这里在 aarch64 上自动跳过它们，完整测试集留给 CI（x86_64）跑。
+ *
+ * 新增带 @RunWith(RobolectricTestRunner::class) 的测试时，把类名补进下面的清单。
+ */
+val robolectricTestClasses = listOf(
+    "AgentFileReferenceGatewayTest",
+    "ScrollGestureContractTest",
+    "McpProtocolValidationTest",
+    "McpRunContextTest",
+    "AgentImageCodecTest",
+    "AgentContextPersistenceTest",
+    "AgentHistoryRetentionTest",
+    "AgentRunArchiveStoreTest",
+    "AgentRunCheckpointStoreTest",
+    "AgentRuntimeResultStoreTest",
+    "AgentRuntimeWireTest",
+    "ConversationRunPurgeTest",
+    "SkillPackageInstallerTest",
+    "SkillRecoveryJournalTest",
+    "SkillRuntimeTest",
+    "AgentLocalSkillInstallAuthorizationTest",
+    "AgentLocalSkillInstallIntegrationTest",
+    "AgentLocalSkillResourceToolTest",
+    "AgentLocalToolsPermissionTest",
+    "RootlessDeviceToolsTest",
+    "EtaDatabaseMigrationTest",
+    "AgentMemoryStoreTest",
+    "AppearanceSettingsRepositoryTest",
+    "CharacterMemoryRepositoryTest",
+    "CharacterRepositoryTest",
+    "EtaBackupRepositoryTest",
+    "LinuxEnvironmentSettingsRepositoryTest",
+    "ModelRepositoryTest",
+    "NotificationHistoryRepositoryTest",
+    "ProviderRepositoryTest",
+    "BreenoRequestImagesTest",
+    "HyperOsLongPressGestureTest",
+    "HyperOsScreenSearchRequestTest",
+    "ContextualSearchCallerPolicyTest",
+    "XiaoAiHandoffTest",
+    "MainActivityTaskPolicyTest",
+    "AgentConversationStoreTest",
+    "EnhancementSettingsHistoryTest",
+    "LocaleResourcesTest",
+    "StartupSplashTest",
+    "ToolCatalogUiTest",
+    "WorkspaceFileStoreTest",
+    "SmoothTextRevealCoordinatorTest",
+)
+
+tasks.withType<Test>().configureEach {
+    if (System.getProperty("os.arch") == "aarch64") {
+        filter {
+            robolectricTestClasses.forEach { excludeTestsMatching("*$it") }
+        }
+    }
+}

@@ -46,6 +46,9 @@ internal class RootShellTerminalController(
     /** grep 是否支持 GNU 的 --include；null 表示尚未探测。 */
     private var grepIncludeSupport: Boolean? = null
 
+    /** 设备上静态 ripgrep 的绝对路径；空串表示已探测过但不存在。 */
+    private var ripgrepPathCache: String? = null
+
     fun runCommand(command: String, cwd: String?, timeoutSeconds: Int): String {
         return runCommand(
             command = command,
@@ -1024,21 +1027,29 @@ internal class RootShellTerminalController(
         if (pattern.isEmpty()) return errorJson("INVALID_ARGUMENT", "pattern 不能为空")
         val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
         val budget = maxChars.coerceIn(200, 32_000)
-        // Android 自带的 grep 是 BusyBox 版，不认 GNU 的 --include；带 glob 时退回 find 预筛文件，
-        // 并用 -H 保持 "路径:行号:内容" 的输出格式（单文件时 grep 默认不加文件名前缀）。
+        // 优先用 ripgrep（设备上放了静态版时）：它比 BusyBox grep 快一个量级，且原生支持 glob。
+        // 退一步用 GNU grep 的 --include；Android 自带的 BusyBox grep 不认这个选项，
+        // 此时退回 find 预筛文件，并用 -H 保持 "路径:行号:内容" 的输出格式。
         val globArg = glob?.takeIf { it.isNotBlank() }
-        val useFind = globArg != null && !grepSupportsInclude()
-        val include = if (globArg != null && !useFind) " --include=${shellQuote(globArg)}" else ""
+        val rg = ripgrepPath()
+        val useFind = rg == null && globArg != null && !grepSupportsInclude()
+        val include = if (rg == null && globArg != null && !useFind) {
+            " --include=${shellQuote(globArg)}"
+        } else {
+            ""
+        }
         val base = safePath.trimEnd('/')
 
         if (filesOnly) {
             // 先只回文件名与命中行数：用来决定接下来精读哪个文件，而不是把全部命中行读回来。
-            val fileCommand = if (useFind) {
-                "find ${shellQuote(safePath)} -type f -name ${shellQuote(checkNotNull(globArg))} -exec " +
+            val fileCommand = when {
+                rg != null -> rgPrefix(rg, globArg) +
+                    " --count-matches ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+                    " | head -n ${limit + 1}"
+                useFind -> "find ${shellQuote(safePath)} -type f -name ${shellQuote(checkNotNull(globArg))} -exec " +
                     "grep -H -c -I -E ${shellQuote(pattern)} {} +" +
                     " | grep -v ':0$' | head -n ${limit + 1}"
-            } else {
-                "grep -rc -I -E$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+                else -> "grep -rc -I -E$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
                     " | grep -v ':0$' | head -n ${limit + 1}"
             }
             val fileResult = runSuText(fileCommand, timeoutSeconds = 30)
@@ -1075,12 +1086,14 @@ internal class RootShellTerminalController(
         }
 
         val context = contextLines.coerceIn(0, 5).let { if (it > 0) " -C $it" else "" }
-        val command = if (useFind) {
-            "find ${shellQuote(safePath)} -type f -name ${shellQuote(checkNotNull(globArg))} -exec " +
+        val command = when {
+            rg != null -> rgPrefix(rg, globArg) +
+                " --line-number$context ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+                " | head -n ${limit + 1}"
+            useFind -> "find ${shellQuote(safePath)} -type f -name ${shellQuote(checkNotNull(globArg))} -exec " +
                 "grep -H -n -I -E$context ${shellQuote(pattern)} {} +" +
                 " | head -n ${limit + 1}"
-        } else {
-            "grep -rn -I -E$context$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
+            else -> "grep -rn -I -E$context$include ${shellQuote(pattern)} ${shellQuote(safePath)}" +
                 " | head -n ${limit + 1}"
         }
         val result = runSuText(command, timeoutSeconds = 30)
@@ -1112,6 +1125,27 @@ internal class RootShellTerminalController(
                 if (clipped) "结果被截断：先 files_only=true 看命中分布，或缩小 path／加 glob／把 pattern 写具体。" else JSONObject.NULL,
             )
             .toString()
+    }
+
+    /**
+     * 设备上放了静态 ripgrep（默认 /data/local/tmp/eta/tools/rg）时优先用它：
+     * BusyBox 的 grep 既不认 --include，也没有 rg 的 glob 与忽略规则处理，速度也差一个量级。
+     * 探测结果缓存一次，缺失时静默退回 grep / find 路径。
+     */
+    private fun ripgrepPath(): String? {
+        ripgrepPathCache?.let { return it.ifBlank { null } }
+        val candidate = "$DEFAULT_CWD/tools/rg"
+        val probe = runSuText("test -x ${shellQuote(candidate)} && echo yes || echo no", timeoutSeconds = 10)
+        val path = candidate.takeIf { probe.output.trim() == "yes" }
+        ripgrepPathCache = path.orEmpty()
+        logger.info("Agent terminal action=search_code capability=ripgrep available=${path != null}")
+        return path
+    }
+
+    /** rg 的公共参数：关掉会干扰「路径:行号:内容」解析的输出格式，glob 交给 rg 自己处理。 */
+    private fun rgPrefix(rg: String, glob: String?): String {
+        val globFlag = glob?.let { " --glob ${shellQuote(it)}" }.orEmpty()
+        return "${shellQuote(rg)} --no-heading --color never$globFlag"
     }
 
     /**

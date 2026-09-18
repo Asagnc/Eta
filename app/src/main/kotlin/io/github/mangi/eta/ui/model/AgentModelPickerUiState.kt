@@ -12,6 +12,11 @@ internal data class AgentModelPickerUiState(
     val providerGroups: List<AgentModelProviderGroupUi> = emptyList(),
     val selectedModel: AgentModelOptionUi? = null,
     val isChanging: Boolean = false,
+    /**
+     * 运行期实测的有效上下文窗口（声明窗口与服务端实际接受规模的较小值）。
+     * 声明窗口虚标时，用它算进度条才能和压缩触发口径一致。
+     */
+    val contextWindowHint: Int? = null,
 )
 
 @Immutable
@@ -111,6 +116,7 @@ internal fun defaultExpandedModelProviderIds(selectedModel: AgentModelOptionUi?)
 internal fun latestContextUsage(
     messages: List<AgentChatMessageUi>,
     selectedModel: AgentModelOptionUi?,
+    windowHint: Int? = null,
 ): AgentContextUsageUi {
     val lastUsage = messages.asReversed().asSequence().mapNotNull { message ->
         when (message) {
@@ -119,7 +125,10 @@ internal fun latestContextUsage(
             else -> null
         }
     }.firstOrNull()
-    return AgentContextUsageUi(lastUsage?.first, selectedModel?.contextWindow, lastUsage?.second ?: false)
+    // 窗口优先用运行期实测值：模型声明的窗口可能远大于服务端实际允许的规模，
+    // 只按声明值算会让进度条永远到不了压缩触发线。
+    val window = windowHint ?: selectedModel?.contextWindow
+    return AgentContextUsageUi(lastUsage?.first, window, lastUsage?.second ?: false)
 }
 
 internal fun contextUsageProgress(contextTokens: Int?, contextWindow: Int?): Float? {

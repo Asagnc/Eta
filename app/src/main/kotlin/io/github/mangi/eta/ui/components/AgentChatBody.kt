@@ -165,8 +165,8 @@ internal fun AgentChatBody(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val isKeyboardVisible = imeBottomPx > 0
     val browserSnapshot by AgentBrowserSession.snapshots.collectAsState()
-    val contextUsage = remember(messages, modelPickerState.selectedModel) {
-        latestContextUsage(messages, modelPickerState.selectedModel)
+    val contextUsage = remember(messages, modelPickerState.selectedModel, modelPickerState.contextWindowHint) {
+        latestContextUsage(messages, modelPickerState.selectedModel, modelPickerState.contextWindowHint)
     }
 
     val visibleMessages = remember(messages, messageEdit?.targetMessageId, messageEdit?.preserveFollowingMessages) {

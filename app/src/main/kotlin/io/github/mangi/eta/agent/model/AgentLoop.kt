@@ -142,7 +142,7 @@ internal class AgentLoop(
                                 ) {
                                     accumulatedReasoning.append(providerEvent.delta)
                                 }
-                                providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
+                                providerEvent.toAgentEvent(attemptRound, roundTools)?.let(onEvent)
                             },
                             discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
                         )
@@ -609,7 +609,7 @@ internal class AgentLoop(
         }
     }
 
-    private fun ProviderEvent.toAgentEvent(round: Int): AgentEvent? =
+    private fun ProviderEvent.toAgentEvent(round: Int, roundTools: JSONArray): AgentEvent? =
         when (this) {
             ProviderEvent.RequestStarted -> AgentEvent.ProviderRequestStarted(round)
             is ProviderEvent.ResponseHeaders -> AgentEvent.ProviderResponseStarted(round, httpCode)
@@ -636,7 +636,14 @@ internal class AgentLoop(
                 contentChars = content.length,
                 replacementContent = content.takeIf { replaceContent },
             )
-            is ProviderEvent.Usage -> AgentEvent.UsageReceived(round = round, usage = usage)
+            is ProviderEvent.Usage -> AgentEvent.UsageReceived(
+                round = round,
+                usage = usage,
+                // 服务端回报的 total_tokens 可能明显小于实际发出的规模（提示缓存、网关改写），
+                // 只按它显示会让进度条长期偏低，这里把本地估算一并带上供展示与统计取较大值。
+                estimatedContextTokens = context.budget.estimate(messages, roundTools).takeIf { it > 0 },
+                windowTokens = context.budget.effectiveWindow,
+            )
             is ProviderEvent.HostedToolStarted -> AgentEvent.HostedToolStarted(
                 round = round,
                 toolCallId = id,

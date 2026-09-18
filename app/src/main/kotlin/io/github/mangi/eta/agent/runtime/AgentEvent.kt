@@ -149,10 +149,19 @@ internal sealed interface AgentEvent {
 
     data class UsageReceived(
         val round: Int,
-        val usage: AgentTokenUsage
+        val usage: AgentTokenUsage,
+        /**
+         * 本轮请求的本地上下文估算。服务端回报的 total_tokens 有时明显小于实际发出的规模
+         * （提示缓存、网关改写），只按它显示会让进度条长期偏低；展示与统计取两者较大值。
+         */
+        val estimatedContextTokens: Int? = null,
+        /** 触发压缩实际使用的窗口：声明窗口与服务端实测上限的较小值。 */
+        val windowTokens: Int? = null,
     ) : AgentEvent {
         override fun toLogLine(): String =
-            "usage_received round=$round, ctx=${usage.contextTokens}, in=${usage.inputTokens}, out=${usage.outputTokens}, reasoning=${usage.reasoningTokens}, cache=${usage.cachedTokens}"
+            "usage_received round=$round, ctx=${usage.contextTokens}, est=$estimatedContextTokens, " +
+                "window=$windowTokens, in=${usage.inputTokens}, out=${usage.outputTokens}, " +
+                "reasoning=${usage.reasoningTokens}, cache=${usage.cachedTokens}"
     }
 
     data class UserSupplementReceived(
