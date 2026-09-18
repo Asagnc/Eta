@@ -73,10 +73,42 @@ internal class AgentEvalCoordinator(
      * 快照缺失或 run 本身失败都按失败原因回报，不影响后续任务继续跑。
      */
     private fun executeTask(task: AgentEvalTask, runId: String): AgentEvalRawOutcome {
+        val startedAt = System.currentTimeMillis()
+        var attempt = 0
+        while (true) {
+            val outcome = attemptTask(task, if (attempt == 0) runId else "$runId-r$attempt")
+            val failureCode = if (outcome.ok) null else classifyRunFailure(outcome.error)
+            val canRetry = failureCode == EVAL_INFRA_UNAVAILABLE && attempt < INFRA_RETRY_DELAYS_MS.size
+            if (!canRetry) {
+                store.saveTrace(task.id, outcome.trace)
+                return AgentEvalMetrics.fromStats(
+                    statsJson = outcome.statsJson,
+                    elapsedMs = System.currentTimeMillis() - startedAt,
+                    completed = outcome.ok,
+                    failureCode = failureCode,
+                    note = outcome.error,
+                ).copy(usedTools = outcome.usedTools)
+            }
+            // 服务端 5xx、网关超时属于外部抖动，重试一次往往就恢复了；只有重试后仍然失败
+            // 才归为无效样本，免得把「中转站抖了一下」记成任务不达标。
+            attempt++
+            Thread.sleep(INFRA_RETRY_DELAYS_MS[attempt - 1])
+        }
+    }
+
+    private class AttemptOutcome(
+        val ok: Boolean,
+        val error: String,
+        val statsJson: String,
+        val usedTools: Set<String>,
+        val trace: List<String>,
+    )
+
+    /** 跑一轮并把度量收齐；重试策略在 [executeTask] 里，这里不做判断。 */
+    private fun attemptTask(task: AgentEvalTask, runId: String): AttemptOutcome {
         val statsRef = AtomicReference<String>()
         val usedTools = linkedSetOf<String>()
         val trace = mutableListOf<String>()
-        val startedAt = System.currentTimeMillis()
         val result = AgentRuntimeClient(appContext, AndroidAgentLogger).run(
             request = AgentRuntimeWire.RunRequest(
                 runId = runId,
@@ -96,14 +128,18 @@ internal class AgentEvalCoordinator(
                 }
             },
         )
-        store.saveTrace(task.id, trace)
-        return AgentEvalMetrics.fromStats(
+        return AttemptOutcome(
+            ok = result.ok,
+            error = result.error.orEmpty(),
             statsJson = statsRef.get().orEmpty(),
-            elapsedMs = System.currentTimeMillis() - startedAt,
-            completed = result.ok,
-            failureCode = if (result.ok) null else classifyRunFailure(result.error.orEmpty()),
-            note = result.error.orEmpty(),
-        ).copy(usedTools = if (usedTools.isEmpty()) emptySet() else usedTools)
+            usedTools = if (usedTools.isEmpty()) emptySet() else usedTools,
+            trace = trace,
+        )
+    }
+
+    private companion object {
+        /** 服务端不可用时的重试间隔；数组长度就是重试次数。 */
+        val INFRA_RETRY_DELAYS_MS = longArrayOf(3_000, 8_000)
     }
 
 }

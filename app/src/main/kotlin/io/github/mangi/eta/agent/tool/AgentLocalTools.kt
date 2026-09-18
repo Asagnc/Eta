@@ -503,12 +503,28 @@ internal class AgentLocalTools(
             "clear" -> AgentMemoryMutation.Clear(revision)
             else -> error("不支持的记忆写入模式")
         }
-        when (val result = AgentMemoryRepository.mutate(mutation)) {
+        val firstAttempt = AgentMemoryRepository.mutate(mutation)
+        // append 不依赖行号：并发写入插入的内容与本次追加可以共存，直接按最新 revision 重试一次，
+        // 省掉调用方「再读一遍、再写一遍」的往返。replace_range / clear 依赖行号，
+        // 冲突时必须让调用方重新定位，不能替它猜。
+        val retried = firstAttempt is AgentMemoryWriteResult.Conflict && mutation is AgentMemoryMutation.Append
+        val result = if (retried) {
+            AgentMemoryRepository.mutate(
+                AgentMemoryMutation.Append(
+                    revision = (firstAttempt as AgentMemoryWriteResult.Conflict).snapshot.revision,
+                    content = mutation.content,
+                ),
+            )
+        } else {
+            firstAttempt
+        }
+        when (result) {
             is AgentMemoryWriteResult.Success -> JSONObject()
                 .put("ok", true)
                 .put("revision", result.snapshot.revision)
                 .put("bytes", result.snapshot.byteSize)
                 .put("line_count", result.snapshot.lineCount)
+                .put("retried", retried)
                 .toString()
             is AgentMemoryWriteResult.Conflict -> JSONObject()
                 .put("ok", false)

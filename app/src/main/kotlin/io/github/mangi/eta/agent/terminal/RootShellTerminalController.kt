@@ -955,7 +955,17 @@ internal class RootShellTerminalController(
         return when (val outcome = FileTextOperations.replace(original, oldText, newText, replaceAll)) {
             is FileTextOperations.ReplaceOutcome.NotFound -> errorJson(
                 "EDIT_NOT_FOUND",
-                "没有匹配 old_text 的文本（文件共 ${outcome.totalLines} 行）；请先用 read_file 核对原文",
+                buildString {
+                    append("没有匹配 old_text 的文本（文件共 ${outcome.totalLines} 行）")
+                    val snippet = FileTextOperations.nearestSnippet(original, oldText)
+                    if (snippet.isBlank()) {
+                        append("；文件为空，或 old_text 与任何一行都没有公共前缀，请用 read_file 核对")
+                    } else {
+                        append("。最接近的原文（行号\\t内容）：\n")
+                        append(snippet)
+                        append("\n请按上面的原文修正 old_text 后重试")
+                    }
+                },
             )
             is FileTextOperations.ReplaceOutcome.Ambiguous -> errorJson(
                 "EDIT_NOT_UNIQUE",

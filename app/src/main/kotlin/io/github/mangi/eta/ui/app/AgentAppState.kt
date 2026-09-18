@@ -190,7 +190,7 @@ internal class AgentAppState(
                 evaluation = AgentEvaluationUi(running = true, taskCount = tasks.size),
             )
             val report = withContext(Dispatchers.IO) {
-                coordinator.run(tasks, label = "manual") { index, total, result ->
+                coordinator.run(tasks, label = if (full) "manual-full" else "manual-light") { index, total, result ->
                     scope.launch(Dispatchers.Main) {
                         toolsState = toolsState.copy(
                             evaluation = toolsState.evaluation.copy(

@@ -18,7 +18,14 @@ internal class AgentContextSession(
     private val transcriptSize: () -> Int = { 0 },
     private val roleplay: Boolean = false,
 ) {
-    val budget = AgentContextBudget(config.contextWindow)
+    private val ceilingKey = AgentContextCeilingStore.keyFor(config.providerId, config.model)
+    val budget = AgentContextBudget(
+        window = config.contextWindow,
+        initialCeiling = AgentContextCeilingStore.ceilingFor(ceilingKey, config.contextWindow),
+        onCeilingLearned = { tokens ->
+            AgentContextCeilingStore.record(ceilingKey, config.contextWindow, tokens)
+        },
+    )
     private var compacted = false
     private var consumedSupplementCount = 0
     private var consumedUserTurns = (systemCount until messages.length()).sumOf {

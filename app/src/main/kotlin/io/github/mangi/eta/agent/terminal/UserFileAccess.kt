@@ -9,6 +9,14 @@ internal object UserFileAccess {
     private const val MAX_SCAN_BYTES = 512 * 1024L
     private const val MAX_SCAN_DEPTH = 8
 
+    /**
+     * 检索时跳过的目录：免 Root 通道是纯 Kotlin 遍历，不像 root 通道那样能用 ripgrep
+     * 自动尊重 .gitignore，不剪枝就会把构建产物和依赖目录整棵读一遍。
+     */
+    private val IGNORED_DIRECTORIES = setOf(
+        ".git", ".gradle", ".idea", ".kotlin", "build", "node_modules", "dist",
+    )
+
     /** Linux 工具环境工作目录的别名；普通身份下它与 userWorkspacePath 指向同一份目录。 */
     private const val WORKSPACE_ALIAS = "/workspace"
 
@@ -99,7 +107,20 @@ internal object UserFileAccess {
         when (val outcome = FileTextOperations.replace(original, oldText, newText, replaceAll)) {
             is FileTextOperations.ReplaceOutcome.NotFound -> JSONObject().put("ok", false)
                 .put("code", "EDIT_NOT_FOUND")
-                .put("message", "没有匹配 old_text 的文本（文件共 ${outcome.totalLines} 行）")
+                .put(
+                    "message",
+                    buildString {
+                        append("没有匹配 old_text 的文本（文件共 ${outcome.totalLines} 行）")
+                        val snippet = FileTextOperations.nearestSnippet(original, oldText)
+                        if (snippet.isBlank()) {
+                            append("；文件为空，或 old_text 与任何一行都没有公共前缀，请用 read_file 核对")
+                        } else {
+                            append("。最接近的原文（行号\\t内容）：\n")
+                            append(snippet)
+                            append("\n请按上面的原文修正 old_text 后重试")
+                        }
+                    },
+                )
             is FileTextOperations.ReplaceOutcome.Ambiguous -> JSONObject().put("ok", false)
                 .put("code", "EDIT_NOT_UNIQUE")
                 .put("message", "old_text 命中 ${outcome.lines.size} 处（行 ${outcome.lines.joinToString("、")}）")
@@ -135,7 +156,14 @@ internal object UserFileAccess {
         val results = mutableListOf<String>()
         val perFile = linkedMapOf<String, Int>()
         var truncated = false
-        val files = if (root.isFile) sequenceOf(root) else root.walkTopDown().maxDepth(MAX_SCAN_DEPTH).filter { it.isFile }
+        val files = if (root.isFile) {
+            sequenceOf(root)
+        } else {
+            root.walkTopDown()
+                .maxDepth(MAX_SCAN_DEPTH)
+                .onEnter { directory -> directory == root || directory.name !in IGNORED_DIRECTORIES }
+                .filter { it.isFile }
+        }
         for (file in files) {
             if (!filesOnly && results.size > limit) {
                 truncated = true

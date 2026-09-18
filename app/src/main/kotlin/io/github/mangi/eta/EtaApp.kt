@@ -13,6 +13,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
+import io.github.mangi.eta.agent.model.AgentContextCeilingStore
 import io.github.mangi.eta.data.repository.McpServerRepository
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import io.github.mangi.eta.data.repository.ProviderRepository
@@ -56,6 +57,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         }
         PredictiveBackController.apply(applicationInfo, predictiveBackEnabled)
         AgentMemoryRepository.init(this)
+        AgentContextCeilingStore.init(this)
         // 网络切换后连接池里的旧连接会直接失效，注册监听以便主动清空。
         AgentNetworkWatcher.register(this)
         ProviderRepository.init(this)

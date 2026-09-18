@@ -81,6 +81,47 @@ internal object FileTextOperations {
         return lines
     }
 
+    /**
+     * oldText 未命中时，挑一段最接近的原文回给调用方：按行比对与 oldText 首行的公共前缀长度
+     * 取最佳行，带上前后各 [radius] 行与真实行号。
+     *
+     * 这样一次失败的替换里就带着可直接改写的原文，不必再花一轮 read_file 去核对——
+     * 之前只回报"没有匹配"，调用方往往要重读整个文件才能定位差在哪。
+     */
+    fun nearestSnippet(content: String, oldText: String, radius: Int = 2, maxChars: Int = 800): String {
+        val lines = linesOf(content)
+        if (lines.isEmpty()) return ""
+        val needle = oldText.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return ""
+        var bestIndex = -1
+        var bestScore = 0
+        lines.forEachIndexed { index, line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return@forEachIndexed
+            val score = commonPrefixLength(trimmed, needle)
+            if (score > bestScore) {
+                bestScore = score
+                bestIndex = index
+            }
+        }
+        if (bestIndex < 0) return ""
+        val start = (bestIndex - radius).coerceAtLeast(0)
+        val end = (bestIndex + radius).coerceAtMost(lines.size - 1)
+        val builder = StringBuilder()
+        for (index in start..end) {
+            val rendered = "${index + 1}\t${lines[index]}\n"
+            if (builder.length + rendered.length > maxChars) break
+            builder.append(rendered)
+        }
+        return builder.toString().trimEnd('\n')
+    }
+
+    private fun commonPrefixLength(a: String, b: String): Int {
+        val limit = minOf(a.length, b.length)
+        var index = 0
+        while (index < limit && a[index] == b[index]) index++
+        return index
+    }
+
     fun replace(content: String, oldText: String, newText: String, replaceAll: Boolean): ReplaceOutcome {
         val totalLines = linesOf(content).size
         if (oldText.isEmpty()) return ReplaceOutcome.NotFound(totalLines)

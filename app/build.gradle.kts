@@ -155,80 +155,25 @@ dependencies {
 }
 
 /**
+ * 需要 Robolectric 的测试类：直接扫描测试源码里是否出现 RobolectricTestRunner。
+ *
  * Robolectric 的 native runtime 官方只提供 x86_64 Linux 与 macOS arm64 构建，
  * 本机（chroot aarch64）跑这批测试会在启动时直接报
  * "The Robolectric native runtime is not supported on Linux (aarch64)"。
  * 这里在 aarch64 上自动跳过它们，完整测试集留给 CI（x86_64）跑。
  *
- * 新增带 @RunWith(RobolectricTestRunner::class) 的测试时，把类名补进下面的清单。
+ * 原先手工维护类名清单，已经因为拼写和误删两次静默失效（名单里的类照旧执行、
+ * 或者该跳过的没跳过），改成扫描后不会再漏。
  */
-val robolectricTestClasses = listOf(
-    "AgentFileReferenceGatewayTest",
-    "ScrollGestureContractTest",
-    "McpProtocolValidationTest",
-    "McpRunContextTest",
-    "AgentContextPersistenceTest",
-    "AgentHistoryRetentionTest",
-    "AgentRunArchiveStoreTest",
-    "AgentRunCheckpointStoreTest",
-    "AgentRuntimeResultStoreTest",
-    "ConversationRunPurgeTest",
-    "SkillPackageInstallerTest",
-    "SkillRecoveryJournalTest",
-    "SkillRuntimeTest",
-    "AgentLocalSkillInstallAuthorizationTest",
-    "AgentLocalSkillInstallIntegrationTest",
-    "AgentLocalSkillResourceToolTest",
-    "AgentLocalToolsPermissionTest",
-    "RootlessDeviceToolsTest",
-    "AgentImageCodecTest",
-    "AgentRuntimeWireTest",
-    "EtaDatabaseMigrationTest",
-    "AgentMemoryStoreTest",
-    "AppearanceSettingsRepositoryTest",
-    "CharacterMemoryRepositoryTest",
-    "CharacterRepositoryTest",
-    "EtaBackupRepositoryTest",
-    "LinuxEnvironmentSettingsRepositoryTest",
-    "ModelRepositoryTest",
-    "NotificationHistoryRepositoryTest",
-    "ProviderRepositoryTest",
-    "HyperOsLongPressGestureTest",
-    "HyperOsScreenSearchRequestTest",
-    "ContextualSearchCallerPolicyTest",
-    "XiaoAiHandoffTest",
-    "MainActivityTaskPolicyTest",
-    "AgentConversationStoreTest",
-    "EnhancementSettingsHistoryTest",
-    "LocaleResourcesTest",
-    "StartupSplashTest",
-    "ToolCatalogUiTest",
-    "WorkspaceFileStoreTest",
-    "SmoothTextRevealCoordinatorTest",
-)
+val robolectricTestClasses = fileTree("src/test") { include("**/*.kt") }
+    .files
+    .filter { it.readText().contains("RobolectricTestRunner") }
+    .map { it.nameWithoutExtension }
+    .sorted()
 
-/**
- * 扩到全量单测后暴露出来的既有失败（与本次改动无关），先排除保证 CI 信号有效；
- * 逐个修好之后从这里移除：
- *   AgentImageCodecTest、AgentRuntimeWireTest —— 图片编解码断言：Robolectric 下的编码
- *     结果与真机不一致（格式串、字节数、尺寸），需要逐个核对「测试期望」与
- *     「Robolectric 真实行为」到底哪个不对；
- *   BreenoRequestImagesTest.inlineImageIsNoLongerRejectedByBinderStringBudget ——
- *     resolve() 会走 AgentImageCodec.fromTransferReference 真正解码图片，而用例喂的是
- *     "A".repeat(300_000) 这种非法 base64，解不出图就返回 unreadableReferenceFailure；
- *     即「内联 data URI 不受 binder 字符串预算限制」这个意图没有对应的成功路径，
- *     要么用例改用合法的大图，要么实现要允许不解码直接透传；
- *   EtaDatabaseMigrationTest、AgentConversationStoreTest —— Room + Robolectric 环境差异；
- *   ToolCatalogUiTest —— 工具图标映射断言。
- *
- * 试过用 graphicsMode=NATIVE 把 Bitmap 换成真实实现：图片两类没修好；BreenoRequestImagesTest
- * 在 NATIVE 与 LEGACY 两种模式下都失败，说明它是真实的实现/用例分歧，不是图形模式导致的，
- * 因此已还原该配置、不保留 robolectric.properties。
- */
 val knownFailingTestClasses = listOf(
     "AgentImageCodecTest",
     "AgentRuntimeWireTest",
-    "BreenoRequestImagesTest",
     "EtaDatabaseMigrationTest",
     "AgentConversationStoreTest",
     "ToolCatalogUiTest",

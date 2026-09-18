@@ -99,8 +99,16 @@ internal object AgentImageCodec {
             val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT).size }.getOrDefault(0)
             if (bytes <= 0 || bytes > MAX_AGENT_IMAGE_BYTES) return null
             val raw = runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull() ?: return null
-            return AgentModelImageEncoder.screen(raw, source, trimmed.substring("data:".length).substringBefore(";"))
-                ?: return null
+            val mime = trimmed.substring("data:".length).substringBefore(";")
+            // 缩放转码是尽力而为的优化：编解码器不可用（或内容不是标准图片）时保留原始
+            // data URI 透传，而不是把整条请求判成「图片读不出来」。
+            return AgentModelImageEncoder.screen(raw, source, mime)
+                ?: AgentModelClient.ModelImage(
+                    reference = trimmed,
+                    mimeType = mime.ifBlank { "image/*" },
+                    bytes = raw.size,
+                    source = source,
+                )
         }
 
         if (context != null) {

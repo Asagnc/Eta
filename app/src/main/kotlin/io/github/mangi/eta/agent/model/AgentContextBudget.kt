@@ -6,7 +6,13 @@ import org.json.JSONObject
 import kotlin.math.ceil
 
 /** usage 只校准同一模型的请求估算，不把累计计费用量当作窗口占用。 */
-internal class AgentContextBudget(private val window: Int?) {
+internal class AgentContextBudget(
+    private val window: Int?,
+    /** 上次学到的实测上限；由持久化层传入，避免每次新会话都要先撞一次墙。 */
+    initialCeiling: Int? = null,
+    /** 学到更小的上限时回调，供持久化层记录。 */
+    private val onCeilingLearned: ((Int) -> Unit)? = null,
+) {
     /** 模型上下文窗口；为空表示当前 provider 没有声明窗口，此时不做占用提示。 */
     val windowTokens: Int?
         get() = window
@@ -16,7 +22,7 @@ internal class AgentContextBudget(private val window: Int?) {
      * 上下文超限），只信声明值会让「显示不到一半就压缩」反复出现；这里记下实测上限，
      * 之后的触发判断与占用提示都按 声明窗口 与 实测上限 的较小值算。
      */
-    private var overflowCeiling: Int? = null
+    private var overflowCeiling: Int? = initialCeiling?.takeIf { it > 0 }
 
     /** 触发判断与占用提示实际使用的窗口。 */
     val effectiveWindow: Int?
@@ -34,7 +40,11 @@ internal class AgentContextBudget(private val window: Int?) {
     fun noteOverflow(tokens: Int) {
         if (tokens <= 0) return
         val current = overflowCeiling
-        overflowCeiling = if (current == null) tokens else minOf(current, tokens)
+        val updated = if (current == null) tokens else minOf(current, tokens)
+        if (updated != current) {
+            overflowCeiling = updated
+            onCeilingLearned?.invoke(updated)
+        }
     }
 
     private var calibration = 1.0

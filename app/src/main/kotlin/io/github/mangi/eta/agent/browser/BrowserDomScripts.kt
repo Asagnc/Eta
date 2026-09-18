@@ -13,7 +13,7 @@ internal object BrowserDomScripts {
         (function() {
           var MAX_FIELD_CHARS = 240;
           var MAX_URL_CHARS = 320;
-          var MAX_DOCUMENT_CHARS = 200000;
+          var MAX_DOCUMENT_CHARS = 400000;
           var MAX_SELECTOR_CHARS = 240;
 
           function boundedString(value, limit) {
