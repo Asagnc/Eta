@@ -37,6 +37,15 @@ internal object AgentEvalMetrics {
         val usedTools = (0 until tools.length())
             .mapNotNull { index -> tools.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() } }
             .toSet()
+        val toolCallDetail = (0 until tools.length())
+            .mapNotNull { index -> tools.optJSONObject(index) }
+            .mapNotNull { tool ->
+                val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                name to tool.optInt("calls")
+            }
+            .filter { (_, calls) -> calls > 0 }
+            .sortedByDescending { (_, calls) -> calls }
+            .toMap()
         return AgentEvalRawOutcome(
             rounds = stats.optInt("rounds"),
             inputTokens = tokens.optLong("input"),
@@ -44,6 +53,7 @@ internal object AgentEvalMetrics {
             toolCalls = stats.optInt("tool_calls"),
             toolFailures = stats.optInt("tool_failures"),
             usedTools = usedTools,
+            toolCallDetail = toolCallDetail,
             completed = completed,
             elapsedMs = elapsedMs,
             failureCode = failureCode,

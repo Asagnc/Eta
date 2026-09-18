@@ -578,21 +578,33 @@ internal class AgentStructuredDeviceTools(
         return ok("read_sms_code").put("items", items).put("count", items.length()).toString()
     }
 
+    /** 单引号包裹并转义内部单引号：日志关键词里常带引号等特殊字符。 */
+    private fun quoteForShell(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
     private fun getLogcat(args: JSONObject): String {
         val maxLines = args.optInt("max_lines", 200).coerceIn(20, 500)
         val query = args.optString("query").trim()
-        val result = root.execute(
-            "logcat -d -v threadtime -t $maxLines",
-            maxOutputBytes = 512 * 1024,
-        )
+        // 关键词必须先在设备侧筛。只取“最近 maxLines 行再在本地过滤”时，目标不在这个窗口里就永远找不到，
+        // 换关键词只会反复拿到同一批日志——这正是日志类任务轮次居高不下的原因。
+        val windowLines = args.optInt("window_lines", 5_000).coerceIn(500, 50_000)
+        val command = buildString {
+            append("logcat -d -v threadtime -t ").append(windowLines)
+            if (query.isNotBlank()) {
+                append(" | grep -i -F ").append(quoteForShell(query))
+            }
+            append(" | tail -n ").append(maxLines)
+        }
+        val result = root.execute(command, maxOutputBytes = 1024 * 1024)
         if (!result.ok) return rootError(result)
         val lines = result.stdout.lineSequence()
-            .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+            .filter { it.isNotBlank() }
             .take(maxLines)
             .toList()
         return ok("get_logcat")
             .put("lines", JSONArray(lines))
             .put("count", lines.size)
+            .put("window_lines", windowLines)
+            .put("query", query)
             .put("truncated", result.truncated)
             .toString()
     }

@@ -37,7 +37,7 @@ class PrefsDefaultsTest {
     fun numericDefaultsAreDeclaredSeparatelyFromBooleanSwitches() {
         assertEquals(
             mapOf(
-                Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 4,
+                Prefs.Keys.AGENT_PARALLEL_TOOL_LIMIT to 8,
                 Prefs.Keys.AGENT_TOOL_RESULT_KEEP to 6,
                 Prefs.Keys.AGENT_CONTEXT_NOTICE_PERCENT to 60,
             ),

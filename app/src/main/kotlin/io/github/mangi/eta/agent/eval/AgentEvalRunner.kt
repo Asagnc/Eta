@@ -63,6 +63,7 @@ internal class AgentEvalRunner(
             elapsedMs = raw.elapsedMs,
             failureCode = failureCode,
             note = raw.note,
+            toolCallDetail = raw.toolCallDetail,
         )
     }
 }

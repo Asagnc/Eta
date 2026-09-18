@@ -27,6 +27,8 @@ internal data class AgentEvalRawOutcome(
     val toolCalls: Int,
     val toolFailures: Int,
     val usedTools: Set<String>,
+    /** 每类工具的调用次数，按次数从多到少；用来定位“绕远路”发生在哪条链路上。 */
+    val toolCallDetail: Map<String, Int> = emptyMap(),
     val completed: Boolean,
     val elapsedMs: Long,
     val failureCode: String? = null,
@@ -45,6 +47,7 @@ internal data class AgentEvalTaskResult(
     val elapsedMs: Long,
     val failureCode: String?,
     val note: String,
+    val toolCallDetail: Map<String, Int> = emptyMap(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("task_id", taskId)
@@ -57,6 +60,7 @@ internal data class AgentEvalTaskResult(
         .put("elapsed_ms", elapsedMs)
         .put("failure_code", failureCode ?: JSONObject.NULL)
         .put("note", note)
+        .put("tool_detail", JSONObject(toolCallDetail as Map<*, *>))
 
     companion object {
         fun fromJson(json: JSONObject): AgentEvalTaskResult = AgentEvalTaskResult(
@@ -70,6 +74,9 @@ internal data class AgentEvalTaskResult(
             elapsedMs = json.optLong("elapsed_ms"),
             failureCode = json.optStringOrNull("failure_code"),
             note = json.optString("note"),
+            toolCallDetail = json.optJSONObject("tool_detail")?.let { detail ->
+                detail.keys().asSequence().associateWith { key -> detail.optInt(key) }
+            }.orEmpty(),
         )
     }
 }

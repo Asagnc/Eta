@@ -181,10 +181,12 @@ internal object AgentDeviceToolCatalog {
             .put(
                 function(
                     "get_logcat",
-                    "读取最近系统日志。query 只在已读取日志中做文本过滤，不会进入 Shell。",
+                    "读取系统日志。给了 query 时按关键词在设备侧过滤：先取 window_lines 行窗口，再筛出命中行。" +
+                        "没找到目标时优先调大 window_lines，而不是反复换关键词。",
                     properties(
-                        "query" to string("可选过滤文本", 200),
-                        "max_lines" to integer("最多日志行数，默认 200", 20, 500),
+                        "query" to string("可选过滤文本，按固定字符串、忽略大小写匹配", 200),
+                        "max_lines" to integer("最多返回日志行数，默认 200", 20, 500),
+                        "window_lines" to integer("在多少行日志窗口内搜索，默认 5000；目标较早时调大它", 500, 50_000),
                     ),
                 ),
             )
