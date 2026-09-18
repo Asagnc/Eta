@@ -64,7 +64,9 @@ class AgentContextPrunerTest {
                 JSONObject()
                     .put("role", "tool")
                     .put("tool_call_id", "call-$index")
-                    .put("content", "工具结果 ${index + 1}：" + "y".repeat(400)),
+                    // 保护区按 token 划分（最近 40k token 内的工具结果不裁剪），
+                    // 内容要足够大才能落到保护区之外，否则一条也裁不掉。
+                    .put("content", "工具结果 ${index + 1}：" + "y".repeat(150_000)),
             )
         }
     }

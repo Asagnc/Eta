@@ -38,15 +38,17 @@ class AgentSubAgentRunnerTest {
     }
 
     @Test
-    fun tokenBudgetStopsTheSubAgentBeforeAnyModelRequest() {
-        val provider = FakeProvider(mutableListOf(finalMessage("不该被调用")))
+    fun exhaustedBudgetStillAsksOnceForAConclusionWithoutTools() {
+        // 预算在第一轮之前就用完时，不再发起带工具的正式轮次，
+        // 但仍会追一次「收回工具、只要结论」的收尾请求，避免整次委派零产出。
+        val provider = FakeProvider(mutableListOf(finalMessage("预算内能给出的结论")))
         val outcome = runner(provider, mutableListOf(), tokenBudget = 1).run(
             AgentSubAgentRunner.Request(role = "检索", brief = "任意任务"),
         )
 
-        assertFalse(outcome.ok)
-        assertEquals("SUB_AGENT_BUDGET_EXCEEDED", outcome.errorCode)
-        assertTrue(provider.requests.isEmpty())
+        assertTrue(outcome.ok)
+        assertEquals(1, provider.requests.size)
+        assertTrue("收尾请求不应再带工具", provider.requests.single().tools.length() == 0)
     }
 
     @Test
@@ -125,7 +127,9 @@ private open class FakeProvider(
         strictTools = false,
         parallelToolCalls = false,
     )
-    val requests = mutableListOf<ProviderRequest>()
+    // runAll 会并发调用 complete，普通 MutableList 并发 add 会丢元素，
+    // 表现成「明明发过请求，first {} 却找不到」的偶发失败。
+    val requests = java.util.concurrent.CopyOnWriteArrayList<ProviderRequest>()
 
     override fun complete(
         request: ProviderRequest,

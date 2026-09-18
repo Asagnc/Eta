@@ -38,6 +38,7 @@ class AgentRuntimePolicyTest {
                 deviceSensitiveReadTools = true,
                 deviceSensitiveActionTools = true,
                 thinking = true,
+                subAgents = true,
             ),
             AgentRuntimePolicy.permissions(preferences),
         )

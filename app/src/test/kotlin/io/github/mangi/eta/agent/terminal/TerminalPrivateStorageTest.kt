@@ -4,6 +4,7 @@ import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -19,7 +20,8 @@ class TerminalPrivateStorageTest {
         val marker = File(oldRootfs, LinuxEnvironmentPaths.READY_MARKER).apply { writeText("existing-root-environment") }
         assertTrue(legacy.setWritable(false, false))
         try {
-            assertFalse(legacy.canWrite())
+            // root 身份下权限位不生效，这条用例「父目录不可写」的前提不成立，直接跳过。
+            Assume.assumeFalse(legacy.canWrite())
             val workspace = TerminalPrivateStorage.workspace(files)
             val environment = TerminalPrivateStorage.prootEnvironment(files, LinuxDistribution.DEBIAN)
 
