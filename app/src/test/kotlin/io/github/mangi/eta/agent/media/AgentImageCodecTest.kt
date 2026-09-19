@@ -26,10 +26,14 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
+// 这些用例断言真实编码结果（webp 无损、jpeg 上限、像素与尺寸），
+// Robolectric 默认的 LEGACY 图形模式里 Bitmap 是空壳，必然对不上。
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AgentImageCodecTest {
     @Test
     fun screenCopyUsesFullResolutionLosslessWebp() {

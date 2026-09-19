@@ -125,5 +125,13 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "read_file" -> Icons.Rounded.Description
     "write_file" -> Icons.Rounded.EditNote
     "list_directory" -> Icons.Rounded.FolderOpen
+    "edit_file" -> Icons.Rounded.EditNote
+    "search_code", "find_files" -> Icons.AutoMirrored.Rounded.ManageSearch
+    "run_sequence" -> Icons.Rounded.PlayArrow
+    "save_flow" -> Icons.Rounded.Layers
+    "use_flow" -> Icons.Rounded.TouchApp
+    "drag" -> Icons.Rounded.OpenWith
+    "task_plan" -> Icons.Rounded.Schedule
+    "skills_run" -> Icons.Rounded.Extension
     else -> if (toolId.startsWith("mcp_")) Icons.Rounded.Extension else Icons.Rounded.Build
 }

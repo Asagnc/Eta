@@ -171,15 +171,18 @@ val robolectricTestClasses = fileTree("src/test") { include("**/*.kt") }
     .map { it.nameWithoutExtension }
     .sorted()
 
-val knownFailingTestClasses = listOf(
-    "AgentImageCodecTest",
-    "AgentRuntimeWireTest",
-    "EtaDatabaseMigrationTest",
-    "AgentConversationStoreTest",
-    "ToolCatalogUiTest",
-)
+val knownFailingTestClasses = emptyList<String>()
 
 tasks.withType<Test>().configureEach {
+    // 失败时把断言消息与栈打全：只报 "AssertionError at X.kt:71" 的话，
+    // 在本地跑不了 Robolectric（aarch64 无 native runtime）时只能靠 CI 日志定位。
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+        showExceptions = true
+        showCauses = true
+    }
     filter {
         if (System.getProperty("os.arch") == "aarch64") {
             robolectricTestClasses.forEach { excludeTestsMatching("*$it") }

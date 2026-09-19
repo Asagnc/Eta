@@ -20,9 +20,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
+// 图片相关的用例要真的编码/解码 PNG 并比对字节，LEGACY 图形模式下 Bitmap 是空壳。
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AgentRuntimeWireTest {
     @Test
     fun replyRewriteTargetSurvivesRequestResultAndDrain() {
