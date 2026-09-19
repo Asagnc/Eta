@@ -77,6 +77,12 @@ class AnthropicMessagesProviderTest {
             assertEquals("tool_1", response.assistantMessage.getJSONArray("tool_calls").getJSONObject(0).getString("id"))
             assertEquals(listOf("开始分析，", "需要工具。", "继续分析。"), events.filterIsInstance<ProviderEvent.BlockDelta>()
                 .filter { it.kind == AssistantBlockKind.THINKING }.map { it.delta })
+            // 回放用的块序列按响应顺序记录：第二段思考没有签名，回放时会被整块略过。
+            val layout = response.assistantMessage.getJSONArray("provider_blocks")
+            assertEquals(listOf("thinking", "tool_use", "thinking", "text"), blockTypes(layout))
+            assertEquals("opaque-signature", layout.getJSONObject(0).getString("signature"))
+            assertEquals("", layout.getJSONObject(2).getString("signature"))
+            assertEquals("tool_1", layout.getJSONObject(1).getString("id"))
         }
     }
 
@@ -98,8 +104,154 @@ class AnthropicMessagesProviderTest {
             assertEquals("", response.assistantMessage.getString("reasoning_content"))
             assertEquals("答案", response.assistantMessage.getString("content"))
             assertTrue(events.filterIsInstance<ProviderEvent.BlockDelta>().none { it.kind == AssistantBlockKind.THINKING })
+            // 脱敏思考块没有可见文本，但必须连 data 一起留下来供回放。
+            val layout = response.assistantMessage.getJSONArray("provider_blocks")
+            assertEquals(listOf("thinking", "redacted_thinking", "text"), blockTypes(layout))
+            assertEquals("opaque-signature", layout.getJSONObject(0).getString("signature"))
+            assertEquals("opaque-data", layout.getJSONObject(1).getString("data"))
         }
     }
+
+    @Test
+    fun thinkingBlocksWithoutSignatureAreOmittedInsteadOfReplayedWithPlaceholder() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = providerRequest(baseUrl).copy(
+                    messages = JSONArray()
+                        .put(JSONObject().put("role", "user").put("content", "看下设备"))
+                        .put(
+                            JSONObject()
+                                .put("role", "assistant")
+                                .put("content", "先查一下")
+                                .put("reasoning_content", "这一段思考没有签名")
+                                .put("tool_calls", JSONArray().put(toolCallJson("call_1")))
+                        )
+                        .put(JSONObject().put("role", "tool").put("tool_call_id", "call_1").put("content", "ok")),
+                ),
+                runController = AgentRunController(),
+            )
+
+            val body = requestBody.get()
+            assertFalse(body.contains("eta-thinking-placeholder"))
+            val messages = JSONObject(body).getJSONArray("messages")
+            val assistant = messages.getJSONObject(1)
+            assertEquals(listOf("text", "tool_use"), blockTypes(assistant.getJSONArray("content")))
+            // 历史里不再出现任何回放的思考块。
+            for (index in 0 until messages.length()) {
+                val content = messages.getJSONObject(index).optJSONArray("content") ?: continue
+                assertTrue(blockTypes(content).none { it == "thinking" || it == "redacted_thinking" })
+            }
+        }
+    }
+
+    @Test
+    fun signedThinkingWithoutVisibleTextIsReplayedVerbatim() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = providerRequest(baseUrl).copy(
+                    messages = JSONArray()
+                        .put(JSONObject().put("role", "user").put("content", "继续"))
+                        .put(
+                            JSONObject()
+                                .put("role", "assistant")
+                                .put("content", "答案")
+                                .put("reasoning_content", "")
+                                .put("reasoning_signature", "opaque-signature")
+                        )
+                        .put(JSONObject().put("role", "user").put("content", "接着来")),
+                ),
+                runController = AgentRunController(),
+            )
+
+            val content = JSONObject(requestBody.get())
+                .getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+            assertEquals(listOf("thinking", "text"), blockTypes(content))
+            assertEquals("opaque-signature", content.getJSONObject(0).getString("signature"))
+            assertEquals("", content.getJSONObject(0).getString("thinking"))
+        }
+    }
+
+    @Test
+    fun recordedBlockLayoutIsReplayedInOriginalOrder() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                request = providerRequest(baseUrl).copy(
+                    messages = interleavedThinkingHistory(),
+                ),
+                runController = AgentRunController(),
+            )
+
+            val content = JSONObject(requestBody.get())
+                .getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+            assertEquals(
+                listOf("thinking", "tool_use", "thinking", "redacted_thinking", "text"),
+                blockTypes(content),
+            )
+            assertEquals("第一段", content.getJSONObject(0).getString("thinking"))
+            assertEquals("signature-1", content.getJSONObject(0).getString("signature"))
+            assertEquals("call_1", content.getJSONObject(1).getString("id"))
+            assertEquals("第二段", content.getJSONObject(2).getString("thinking"))
+            assertEquals("signature-2", content.getJSONObject(2).getString("signature"))
+            assertEquals("opaque-data", content.getJSONObject(3).getString("data"))
+            assertEquals("先查状态", content.getJSONObject(4).getString("text"))
+        }
+    }
+
+    @Test
+    fun droppingThinkingBlocksStripsSignedAndRedactedBlocksOnly() {
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            val request = providerRequest(baseUrl)
+            AnthropicMessagesProvider.complete(
+                request = request.copy(
+                    messages = interleavedThinkingHistory(),
+                    dropThinkingBlocks = true,
+                ),
+                runController = AgentRunController(),
+            )
+
+            val content = JSONObject(requestBody.get())
+                .getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+            assertEquals(listOf("tool_use", "text"), blockTypes(content))
+            assertEquals("call_1", content.getJSONObject(0).getString("id"))
+            assertEquals("先查状态", content.getJSONObject(1).getString("text"))
+        }
+    }
+
+    /** 带工具调用的 assistant 轮次：两段思考被工具调用隔开，中间还夹一个脱敏思考块。 */
+    private fun interleavedThinkingHistory() = JSONArray()
+        .put(JSONObject().put("role", "user").put("content", "看下设备"))
+        .put(
+            JSONObject()
+                .put("role", "assistant")
+                .put("content", "先查状态")
+                .put("reasoning_content", "第一段第二段")
+                .put("reasoning_signature", "signature-1")
+                .put("tool_calls", JSONArray().put(toolCallJson("call_1")))
+                .put(
+                    "provider_blocks",
+                    JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("type", "thinking")
+                                .put("thinking", "第一段")
+                                .put("signature", "signature-1")
+                        )
+                        .put(JSONObject().put("type", "tool_use").put("id", "call_1"))
+                        .put(
+                            JSONObject()
+                                .put("type", "thinking")
+                                .put("thinking", "第二段")
+                                .put("signature", "signature-2")
+                        )
+                        .put(JSONObject().put("type", "redacted_thinking").put("data", "opaque-data"))
+                        .put(JSONObject().put("type", "text"))
+                )
+        )
+        .put(JSONObject().put("role", "tool").put("tool_call_id", "call_1").put("content", "ok"))
 
     @Test
     fun rejectsUnclosedThinkingBlockEvenWhenMessageStopArrives() {
@@ -415,6 +567,9 @@ class AnthropicMessagesProviderTest {
             )
         }
     }
+
+    private fun blockTypes(content: JSONArray) =
+        (0 until content.length()).map { content.getJSONObject(it).getString("type") }
 
     private fun toolCallJson(id: String) =
         JSONObject()

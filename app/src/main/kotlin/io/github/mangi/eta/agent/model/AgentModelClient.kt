@@ -310,6 +310,8 @@ internal object AgentModelClient {
         val toolCallId: String = "",
         val reasoningContent: String = "",
         val reasoningSignature: String = "",
+        /** 响应阶段收到的内容块序列（Anthropic 渠道）；回放历史时按原样回传，缺失则退回重建。 */
+        val providerBlocksJson: String = "",
         val toolCallsJson: String = "",
         val contextSummary: Boolean = false,
         val compactedUserTurns: Int = 0,

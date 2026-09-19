@@ -52,6 +52,11 @@ internal data class ProviderRequest(
     val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     /** 上游点名拒收、且省略后不改变模型行为的字段；重试时从请求体里去掉。 */
     val dropFields: Set<String> = emptySet(),
+    /**
+     * 上游拒收历史里回放的思考块（签名无效 / 块被改写）时置位：
+     * 按官方修法剥掉全部 thinking 与 redacted_thinking 块后再试一次。
+     */
+    val dropThinkingBlocks: Boolean = false,
 ) {
     val effectiveConfig: AgentModelClient.ModelConfig get() = if (!purpose.allowsTools) {
         config.copy(hostedWebSearchEnabled = false, extraBodyJson = "", customBody = emptyList())

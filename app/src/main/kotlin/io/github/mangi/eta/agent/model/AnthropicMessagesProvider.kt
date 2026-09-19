@@ -61,7 +61,13 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .url(ProviderUrls.anthropicMessagesUrl(config.baseUrl))
             .headers(headers)
             .post(
-                buildRequestJson(config, request.messages, request.effectiveTools, request.purpose)
+                buildRequestJson(
+                    config = config,
+                    messages = request.messages,
+                    tools = request.effectiveTools,
+                    purpose = request.purpose,
+                    dropThinkingBlocks = request.dropThinkingBlocks,
+                )
                     .dropRejectedFields(request.dropFields)
                     .toString()
                     .toRequestBody(JSON_MEDIA_TYPE)
@@ -98,6 +104,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         messages: JSONArray,
         tools: JSONArray,
         purpose: ProviderRequestPurpose,
+        dropThinkingBlocks: Boolean,
     ): JSONObject {
         val systemParts = mutableListOf<String>()
         val anthropicMessages = JSONArray()
@@ -124,7 +131,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     anthropicMessages.put(
                         JSONObject()
                             .put("role", "assistant")
-                            .put("content", convertAssistantContent(message))
+                            .put("content", convertAssistantContent(message, dropThinkingBlocks))
                     )
                 }
                 "tool" -> {
@@ -196,44 +203,148 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             else -> JSONArray().put(JSONObject().put("type", "text").put("text", providerMessageText(content)))
         }
 
-    private fun convertAssistantContent(message: JSONObject): JSONArray {
-        val content = JSONArray()
-        // 思考模式的上游要求历史里带工具调用的 assistant 消息把 thinking 块原样回传，
-        // 缺失会直接返回 400。signature 用响应阶段保存的真值；为空说明该轮没有签名
-        // （例如渠道不回传签名），此时退回占位串，占位只对不校验签名的中转有效。
-        providerMessageText(message.opt("reasoning_content"))
-            .takeIf { it.isNotBlank() && it != "null" }
-            ?.let { reasoning ->
-                val signature = message.optString("reasoning_signature")
-                    .ifBlank { THINKING_SIGNATURE_PLACEHOLDER }
-                content.put(
-                    JSONObject()
-                        .put("type", "thinking")
-                        .put("thinking", reasoning)
-                        .put("signature", signature)
-                )
+    /**
+     * 回放 assistant 轮次的内容块。
+     *
+     * Anthropic 要求历史里的 thinking / redacted_thinking 块原样回传：改写、丢块、只留第一个
+     * 签名都会被拒（`Invalid \`signature\` in \`thinking\` block`、`thinking blocks cannot be
+     * modified`）。所以优先按响应阶段记录的块序列回放；没有块序列的旧消息按常规字段重建，且
+     * 签名缺失的思考块整块不发——占位签名对官方与严格渠道是必然 400，adaptive thinking 下省略
+     * 历史思考块是允许的。[dropThinkingBlocks] 是上游已拒收回放思考块时的兜底：剥掉全部思考块
+     * 再试一次。
+     */
+    private fun convertAssistantContent(message: JSONObject, dropThinkingBlocks: Boolean): JSONArray {
+        val layout = message.optJSONArray(PROVIDER_BLOCKS_KEY)
+            ?: return rebuiltAssistantContent(message, dropThinkingBlocks)
+        return replayedAssistantContent(message, layout, dropThinkingBlocks)
+            .takeIf { it.length() > 0 }
+            ?: rebuiltAssistantContent(message, dropThinkingBlocks)
+    }
+
+    /** 块序列完整时按原顺序回放；text / tool_use 的载荷仍取常规字段。 */
+    private fun replayedAssistantContent(
+        message: JSONObject,
+        layout: JSONArray,
+        dropThinkingBlocks: Boolean,
+    ): JSONArray {
+        val blocks = mutableListOf<JSONObject>()
+        val text = providerMessageText(message.opt("content")).takeIf { it.isNotBlank() && it != "null" }
+        val toolCalls = message.optJSONArray("tool_calls")
+        val usedCallIds = mutableSetOf<String>()
+        var textPlaced = false
+        for (index in 0 until layout.length()) {
+            val entry = layout.optJSONObject(index) ?: continue
+            when (entry.optString("type")) {
+                "thinking" -> thinkingContentBlock(
+                    thinking = entry.optString("thinking"),
+                    signature = entry.optString("signature"),
+                    dropThinkingBlocks = dropThinkingBlocks,
+                )?.let(blocks::add)
+                "redacted_thinking" -> redactedThinkingContentBlock(
+                    data = entry.optString("data"),
+                    dropThinkingBlocks = dropThinkingBlocks,
+                )?.let(blocks::add)
+                "text" -> if (!textPlaced && text != null) {
+                    textPlaced = true
+                    blocks.add(textContentBlock(text))
+                }
+                "tool_use" -> toolUseContentBlock(
+                    toolCalls = toolCalls,
+                    usedCallIds = usedCallIds,
+                    callId = entry.optString("id"),
+                )?.let(blocks::add)
             }
+        }
+        // 块序列被改写时补齐载荷：思考块后补文本，缺失的 tool_use 追加在末尾，避免 tool_result 找不到对应的工具调用。
+        if (!textPlaced && text != null) {
+            val firstPayload = blocks.indexOfFirst { it.optString("type") !in THINKING_BLOCK_TYPES }
+            blocks.add(if (firstPayload < 0) blocks.size else firstPayload, textContentBlock(text))
+        }
+        if (toolCalls != null) {
+            for (index in 0 until toolCalls.length()) {
+                val toolCall = toolCalls.optJSONObject(index) ?: continue
+                if (toolCall.optJSONObject("function") == null) continue
+                val callId = toolCall.optString("id").ifBlank { "tool_call_$index" }
+                if (usedCallIds.add(callId)) blocks.add(toolUseContentBlock(toolCall, callId))
+            }
+        }
+        return JSONArray().also { content -> blocks.forEach(content::put) }
+    }
+
+    /** 没有块序列的旧消息（或其它渠道写入的历史）：按常规字段重建。 */
+    private fun rebuiltAssistantContent(message: JSONObject, dropThinkingBlocks: Boolean): JSONArray {
+        val content = JSONArray()
+        val signature = message.optString("reasoning_signature")
+        if (!dropThinkingBlocks && signature.isNotBlank()) {
+            thinkingContentBlock(
+                thinking = providerMessageText(message.opt("reasoning_content")).takeIf { it != "null" }.orEmpty(),
+                signature = signature,
+                dropThinkingBlocks = false,
+            )?.let(content::put)
+        }
         providerMessageText(message.opt("content"))
             .takeIf { it.isNotBlank() && it != "null" }
-            ?.let { content.put(JSONObject().put("type", "text").put("text", it)) }
+            ?.let { content.put(textContentBlock(it)) }
         val toolCalls = message.optJSONArray("tool_calls")
         if (toolCalls != null) {
             for (index in 0 until toolCalls.length()) {
                 val toolCall = toolCalls.optJSONObject(index) ?: continue
-                val function = toolCall.optJSONObject("function") ?: continue
-                content.put(
-                    JSONObject()
-                        .put("type", "tool_use")
-                        .put("id", toolCall.optString("id").ifBlank { "tool_call_$index" })
-                        .put("name", function.optString("name"))
-                        .put("input", parseJsonObject(function.optString("arguments")))
-                )
+                if (toolCall.optJSONObject("function") == null) continue
+                content.put(toolUseContentBlock(toolCall, toolCall.optString("id").ifBlank { "tool_call_$index" }))
             }
         }
         if (content.length() == 0) {
-            content.put(JSONObject().put("type", "text").put("text", ""))
+            content.put(textContentBlock(""))
         }
         return content
+    }
+
+    private fun thinkingContentBlock(
+        thinking: String,
+        signature: String,
+        dropThinkingBlocks: Boolean,
+    ): JSONObject? =
+        if (dropThinkingBlocks || signature.isBlank()) {
+            null
+        } else {
+            JSONObject()
+                .put("type", "thinking")
+                .put("thinking", thinking)
+                .put("signature", signature)
+        }
+
+    private fun redactedThinkingContentBlock(data: String, dropThinkingBlocks: Boolean): JSONObject? =
+        if (dropThinkingBlocks || data.isBlank()) {
+            null
+        } else {
+            JSONObject().put("type", "redacted_thinking").put("data", data)
+        }
+
+    private fun textContentBlock(text: String): JSONObject =
+        JSONObject().put("type", "text").put("text", text)
+
+    private fun toolUseContentBlock(
+        toolCalls: JSONArray?,
+        usedCallIds: MutableSet<String>,
+        callId: String,
+    ): JSONObject? {
+        if (toolCalls == null || callId.isBlank()) return null
+        for (index in 0 until toolCalls.length()) {
+            val toolCall = toolCalls.optJSONObject(index) ?: continue
+            val storedId = toolCall.optString("id").ifBlank { "tool_call_$index" }
+            if (storedId != callId) continue
+            return if (usedCallIds.add(storedId)) toolUseContentBlock(toolCall, storedId) else null
+        }
+        return null
+    }
+
+    private fun toolUseContentBlock(toolCall: JSONObject, callId: String): JSONObject {
+        val function = toolCall.optJSONObject("function")
+        return JSONObject()
+            .put("type", "tool_use")
+            .put("id", callId)
+            .put("name", function?.optString("name").orEmpty())
+            .put("input", parseJsonObject(function?.optString("arguments").orEmpty()))
     }
 
     private fun convertTools(tools: JSONArray): JSONArray? {
@@ -303,7 +414,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             !sawMessageStop
         }
         if (!sawMessageStop) throw AgentModelFailure.incompleteStream("Anthropic SSE 流未正常结束")
-        if (blocks.values.any { it.type in setOf("text", "thinking", "tool_use") && !it.stopped }) {
+        if (blocks.values.any { it.type in setOf("text", "thinking", "redacted_thinking", "tool_use") && !it.stopped }) {
             throw AgentModelFailure.incompleteStream("Anthropic SSE 内容块未正常结束")
         }
 
@@ -331,7 +442,38 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                         }
                     )
                 }
+                // 记下这一轮的块序列：回放历史时 thinking / redacted_thinking 块必须原样回传，
+                // 内容、签名、顺序任何一处不符都会被上游判 400。
+                val toolCallIds = toolCalls
+                    .mapIndexed { position, block -> block.index to block.id.ifBlank { "tool_call_$position" } }
+                    .toMap()
+                providerBlockLayout(blocks.values.sortedBy { it.index }, toolCallIds)
+                    .takeIf { it.length() > 0 }
+                    ?.let { message.put(PROVIDER_BLOCKS_KEY, it) }
             }
+    }
+
+    /** 按响应顺序记录块序列：思考块连内容与签名一起存，text / tool_use 只占位（载荷仍走常规字段）。 */
+    private fun providerBlockLayout(
+        blocks: List<AnthropicBlock>,
+        toolCallIds: Map<Int, String>,
+    ): JSONArray = JSONArray().also { layout ->
+        blocks.forEach { block ->
+            val entry = when (block.type) {
+                "thinking" -> JSONObject()
+                    .put("type", "thinking")
+                    .put("thinking", block.thinking.toString())
+                    .put("signature", block.signature.toString())
+                "redacted_thinking" -> JSONObject()
+                    .put("type", "redacted_thinking")
+                    .put("data", block.redacted)
+                "text" -> JSONObject().put("type", "text")
+                "tool_use" -> toolCallIds[block.index]
+                    ?.let { callId -> JSONObject().put("type", "tool_use").put("id", callId) }
+                else -> null
+            }
+            entry?.let(layout::put)
+        }
     }
 
     private fun processEvent(
@@ -402,6 +544,10 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                         block.optString("signature").takeIf { it.isNotEmpty() }
                             ?.let { item.signature.append(it) }
                         appendVisibleDelta(item, (block.opt("thinking") as? String).orEmpty())
+                    }
+                    "redacted_thinking" -> {
+                        // 脱敏过的思考块只有 data、没有内容可见：只做记录，回放时必须原样带上。
+                        item.redacted = block.optString("data")
                     }
                     "tool_use" -> onEvent(
                         ProviderEvent.BlockStart(
@@ -478,9 +624,9 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         }
     }
 
-    // 部分中转不校验 thinking 块的签名内容，缺失真签名时用它兜底；
-    // 官方 Anthropic 渠道会校验签名，必须依赖解析阶段保存的真值。
-    private const val THINKING_SIGNATURE_PLACEHOLDER = "eta-thinking-placeholder"
+    /** 响应阶段记录下来的内容块序列：回放历史时按这段序列原样回传思考块。 */
+    private const val PROVIDER_BLOCKS_KEY = "provider_blocks"
+    private val THINKING_BLOCK_TYPES = setOf("thinking", "redacted_thinking")
 
     private data class AnthropicBlock(
         val index: Int,
@@ -488,6 +634,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         var id: String = "",
         var name: String = "",
         var stopped: Boolean = false,
+        var redacted: String = "",
         val text: StringBuilder = StringBuilder(),
         val thinking: StringBuilder = StringBuilder(),
         val signature: StringBuilder = StringBuilder(),

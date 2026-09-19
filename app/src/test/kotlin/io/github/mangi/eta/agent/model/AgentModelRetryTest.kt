@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import org.json.JSONArray
@@ -129,6 +130,40 @@ class AgentModelRetryTest {
     }
 
     @Test
+    fun retriesOnceWithoutReplayedThinkingBlocksWhenUpstreamRejectsSignatures() {
+        val events = mutableListOf<AgentEvent>()
+        val observed = mutableListOf<Boolean>()
+        var calls = 0
+        val result = complete(
+            retry = AgentModelRetry { _, _ -> fail("剥掉思考块的重试不该退避等待") },
+            provider = provider { request, _ ->
+                observed += request.dropThinkingBlocks
+                if (calls++ == 0) throw signatureRejection()
+                response()
+            },
+            onEvent = events::add,
+        )
+
+        assertEquals(listOf(false, true), observed)
+        assertEquals(2, result.round)
+        assertEquals("完成", result.response.assistantMessage.getString("content"))
+        assertEquals(1, events.filterIsInstance<AgentEvent.ModelRetryScheduled>().size)
+
+        // 剥掉思考块后仍被拒收：不再循环重试，直接把上游错误交给上层。
+        var repeated = 0
+        assertThrows(AgentModelFailure::class.java) {
+            complete(
+                retry = AgentModelRetry { _, _ -> fail("剥掉思考块的重试不该退避等待") },
+                provider = provider { _, _ ->
+                    repeated++
+                    throw signatureRejection()
+                },
+            )
+        }
+        assertEquals(2, repeated)
+    }
+
+    @Test
     fun classifiesTransientFailuresWithoutRetryingPermanentFailures() {
         for (status in listOf(408, 429, 500, 502, 503, 504, 529)) {
             assertTrue(AgentModelFailure.http(status, "").retryable)
@@ -170,6 +205,7 @@ class AgentModelRetryTest {
         provider: AgentProviderClient,
         controller: AgentRunController = AgentRunController(),
         onProviderEvent: (Int, ProviderEvent) -> Unit = { _, _ -> },
+        onEvent: (AgentEvent) -> Unit = {},
     ) = retry.complete(
         initialRound = 1,
         request = ProviderRequest(
@@ -178,9 +214,14 @@ class AgentModelRetryTest {
         ),
         provider = provider,
         controller = controller,
-        onEvent = {},
+        onEvent = onEvent,
         onProviderEvent = onProviderEvent,
         discardAttemptReasoning = {},
+    )
+
+    private fun signatureRejection() = AgentModelFailure.http(
+        400,
+        """{"message":"***.***.content.0: Invalid `signature` in `thinking` block","reason":"THINKING_SIGNATURE_INVALID"}""",
     )
 
     private fun emptyResponse(reason: String) = ProviderResponse(

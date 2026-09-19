@@ -32,6 +32,18 @@ internal class AgentModelFailure(
         return normalized.takeIf { it in DROPPABLE_FIELDS }
     }
 
+    /**
+     * 上游拒绝回放的思考块：签名无效（`Invalid `signature` in `thinking` block`），或最新
+     * assistant 轮次里的 thinking / redacted_thinking 块被判定改写。官方给出的修法是把历史里的
+     * 思考块全部剥掉后重试一次，所以这两类失败允许自动恢复。
+     */
+    fun rejectsThinkingReplay(): Boolean {
+        val text = message.orEmpty()
+        if (SIGNATURE_REJECTED_PATTERN.containsMatchIn(text)) return true
+        return text.contains("cannot be modified", ignoreCase = true) &&
+            text.contains("thinking", ignoreCase = true)
+    }
+
     companion object {
         private val transientStatus = setOf(408, 429, 500, 502, 503, 504, 524, 529)
         private val TOOL_CHOICE_CODES = setOf(
@@ -46,6 +58,12 @@ internal class AgentModelFailure(
             // 提示缓存只影响计费与延迟，去掉不改变模型行为。
             "cache_control",
         )
+        /**
+         * 服务端原文形如 "Invalid `signature` in `thinking` block"，其后可能跟着说明块被改写的
+         * 句子（措辞会变），只匹配这段稳定前缀。
+         */
+        private val SIGNATURE_REJECTED_PATTERN =
+            Regex("""invalid\s+`?signature`?\s+in\s+`?thinking`?\s+block""", RegexOption.IGNORE_CASE)
         private val REJECTED_FIELD_PATTERNS = listOf(
             Regex("""未知(?:请求)?字段[：:\s]+([A-Za-z0-9_.-]+)"""),
             Regex("""不支持(?:的)?(?:参数|字段)[：:\s]+([A-Za-z0-9_.-]+)"""),

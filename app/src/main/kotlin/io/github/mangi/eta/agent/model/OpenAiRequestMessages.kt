@@ -14,6 +14,8 @@ internal object OpenAiRequestMessages {
             for (index in 0 until source.length()) {
                 val message = source.optJSONObject(index) ?: continue
                 if (message.optString("role") !in SYSTEM_ROLES) messages.put(JSONObject(message.toString()).apply {
+                    // provider_blocks 是 Anthropic 渠道回放思考块用的，OpenAI 格式没有对应结构。
+                    remove("provider_blocks")
                     remove("_eta_context_summary")
                     remove("_eta_compacted_users")
                     remove("_eta_summary_through_user")

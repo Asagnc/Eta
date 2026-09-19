@@ -38,6 +38,30 @@ class AgentConversationCodecTest {
     }
 
     @Test
+    fun providerBlockLayoutSurvivesDurableRoundTrip() {
+        val layout = JSONArray()
+            .put(JSONObject().put("type", "thinking").put("thinking", "先分析").put("signature", "sig-1"))
+            .put(JSONObject().put("type", "tool_use").put("id", "call-1"))
+            .put(JSONObject().put("type", "redacted_thinking").put("data", "opaque-data"))
+            .put(JSONObject().put("type", "text"))
+        val assistant = JSONObject()
+            .put("role", "assistant")
+            .put("content", "看下设备")
+            .put("reasoning_content", "先分析")
+            .put("reasoning_signature", "sig-1")
+            .put("provider_blocks", layout)
+
+        val replayed = AgentConversationCodec.toJsonObject(AgentConversationCodec.durableMessage(assistant))
+
+        assertEquals(layout.toString(), replayed.getJSONArray("provider_blocks").toString())
+        // 没有块序列的历史（其它渠道 / 旧版本写入）不会凭空多出这个键。
+        val plain = AgentConversationCodec.toJsonObject(
+            AgentConversationCodec.durableMessage(JSONObject().put("role", "assistant").put("content", "答案")),
+        )
+        assertFalse(plain.has("provider_blocks"))
+    }
+
+    @Test
     fun durableImageObservationNeverPersistsBase64Payload() {
         val message = AgentConversationCodec.durableMessage(
             AgentConversationCodec.userMessage(

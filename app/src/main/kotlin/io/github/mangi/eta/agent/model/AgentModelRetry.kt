@@ -100,6 +100,15 @@ internal class AgentModelRetry(
                     round += 1
                     continue
                 }
+                if (classified.rejectsThinkingReplay() && !activeRequest.dropThinkingBlocks) {
+                    // 上游拒收历史里回放的思考块（签名无效或被改写）：按官方修法剥掉全部
+                    // thinking / redacted_thinking 块再试一次，不占用瞬时错误的重试预算。
+                    onEvent(AgentEvent.ModelRetryScheduled(round, retries + 1, MAX_RETRIES, 0, classified.code))
+                    activeRequest = activeRequest.copy(dropThinkingBlocks = true)
+                    discardAttemptReasoning()
+                    round += 1
+                    continue
+                }
                 if (!classified.retryable) throw classified
                 if (retries == MAX_RETRIES) {
                     throw AgentModelFailure(
