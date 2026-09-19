@@ -93,12 +93,37 @@ class AgentModelRetryTest {
         assertTrue(exhausted.message.orEmpty().contains("已重试 2 次"))
         assertTrue(exhausted.message.orEmpty().contains("finish_reason=stop"))
 
-        var truncatedCalls = 0
-        complete(AgentModelRetry { _, _ -> fail("长度截断的空响应不该重试") }, provider { _, _ ->
-            truncatedCalls++
+        // 有明确原因的空态不走空响应重试：内容过滤交给上层的提示，长度截断走输出上限提升。
+        var filteredCalls = 0
+        complete(AgentModelRetry { _, _ -> fail("内容过滤的空响应不该重试") }, provider { _, _ ->
+            filteredCalls++
+            emptyResponse("content_filter")
+        })
+        assertEquals(1, filteredCalls)
+    }
+
+    @Test
+    fun raisesOutputBudgetWhenTheRoundIsCutOffByOutputLimit() {
+        val requestedLimits = mutableListOf<Int?>()
+        val retry = AgentModelRetry { _, _ -> fail("输出上限提升不该走退避等待") }
+        val result = complete(retry, provider { request, _ ->
+            requestedLimits += request.config.maxOutputTokens
+            if (requestedLimits.size == 1) emptyResponse("length") else response()
+        })
+        assertEquals(listOf(null, 32_768), requestedLimits)
+        assertEquals(2, result.round)
+        assertEquals("完成", result.response.assistantMessage.getString("content"))
+    }
+
+    @Test
+    fun raisesOutputBudgetForEachTruncatedRoundThenGivesUp() {
+        val requestedLimits = mutableListOf<Int?>()
+        val result = complete(AgentModelRetry { _, _ -> fail("输出上限提升不该走退避等待") }, provider { request, _ ->
+            requestedLimits += request.config.maxOutputTokens
             emptyResponse("length")
         })
-        assertEquals(1, truncatedCalls)
+        assertEquals(listOf(null, 32_768, 131_072), requestedLimits)
+        assertEquals(AssistantStopReason.OUTPUT_LIMIT, result.response.stopReason)
     }
 
     @Test

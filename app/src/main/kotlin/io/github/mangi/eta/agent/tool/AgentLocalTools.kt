@@ -1199,7 +1199,9 @@ internal class AgentLocalTools(
     }
 
     /**
-     * 用 shell 的 find 复用既有文件通道，只返回匹配到的路径。
+     * 按文件名 glob 找文件。路径归一化、存在性提示与 ripgrep 通道都交给 terminal controller，
+     * 这样 /workspace、~、相对路径的行为和 search_code 完全一致（此前直接拼 shell find，
+     * /workspace/... 会被当成不存在的目录）。
      *
      * glob 与 path 里出现 Shell 元字符时直接拒绝，不把模型给的字符串拼进命令行。
      */
@@ -1214,27 +1216,7 @@ internal class AgentLocalTools(
             return errorResult("INVALID_ARGUMENT", "path 不能包含引号、分号、管道等 Shell 字符")
         }
         val limit = args.optInt("limit", DEFAULT_FIND_LIMIT).coerceIn(1, MAX_FIND_LIMIT)
-        val output = terminalController.runCommand(
-            command = "find '$path' -name '$glob' -type f | head -n $limit",
-            cwd = null,
-            timeoutSeconds = FIND_TIMEOUT_SECONDS,
-        )
-        val parsed = runCatching { JSONObject(output) }.getOrNull()
-        val stderr = parsed?.optString("stderr").orEmpty()
-        val files = parsed?.optString("stdout").orEmpty()
-            .lines()
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-        val stderrNotice = stderr.take(500)
-        val ok = (parsed?.optBoolean("ok") ?: true) && !(files.isEmpty() && stderrNotice.isNotBlank())
-        return JSONObject()
-            .put("ok", ok)
-            .put("path", path)
-            .put("glob", glob)
-            .put("count", files.size)
-            .put("files", JSONArray(files))
-            .apply { if (stderrNotice.isNotBlank()) put("stderr", stderrNotice) }
-            .toString()
+        return terminalController.findFiles(path = path, glob = glob, limit = limit)
     }
 
     /** BusyBox 的 grep -E 不支持 PCRE 语法；报错时直接给出可用写法，省掉一轮试错。 */

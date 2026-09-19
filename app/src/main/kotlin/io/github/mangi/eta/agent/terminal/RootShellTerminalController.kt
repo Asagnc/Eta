@@ -1022,6 +1022,51 @@ internal class RootShellTerminalController(
         return builder.toString() to emitted
     }
 
+    /**
+     * 按文件名 glob 找文件。与 search_code 共用同一条路径归一化与 ripgrep 通道，
+     * 这样 /workspace、~、相对路径在两种身份下语义一致；起始目录不存在时直接回可操作的
+     * 路径提示，而不是把 find 的原始报错抛给模型（曾把 /workspace/... 当成不存在的目录）。
+     */
+    fun findFiles(path: String, glob: String, limit: Int): String {
+        if (!rootAvailable()) return UserFileAccess.findFiles(path, glob, limit)
+        if (glob.isBlank()) return errorJson("INVALID_ARGUMENT", "glob 不能为空")
+        val safePath = normalizePath(path.ifBlank { DEFAULT_CWD })
+        PathHints.missingPathMessage(java.io.File(safePath))?.let { return errorJson("PATH_NOT_FOUND", it) }
+        val capped = limit.coerceIn(1, 200)
+        val rg = ripgrepPath()
+        val command = (
+            if (rg != null) rgPrefix(rg, glob) + " --files " + shellQuote(safePath)
+            else "find " + shellQuote(safePath) + " -type f -name " + shellQuote(glob)
+            ) + " | head -n ${capped + 1}"
+        val result = runSuText(command, timeoutSeconds = 30)
+        if (result.output.isBlank() && result.stderr.isNotBlank()) {
+            logger.warn("Agent terminal action=find_files outcome=failed errorChars=${result.stderr.length}")
+            return errorJson("FIND_FAILED", result.stderr.take(500))
+        }
+        val found = result.output.removeSuffix("\n")
+            .let { if (it.isEmpty()) emptyList() else it.split("\n") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        val truncated = found.size > capped
+        logger.info(
+            "Agent terminal action=find_files outcome=succeeded files=${minOf(found.size, capped)} " +
+                "truncated=$truncated",
+        )
+        return JSONObject()
+            .put("ok", true)
+            .put("tool", "find_files")
+            .put("path", safePath)
+            .put("glob", glob)
+            .put("count", minOf(found.size, capped))
+            .put("files", JSONArray(found.take(capped)))
+            .put("truncated", truncated)
+            .put(
+                "hint",
+                if (truncated) "文件数超过上限；缩小 path、加严 glob 或提高 limit。" else JSONObject.NULL,
+            )
+            .toString()
+    }
+
     fun searchCode(
         path: String,
         pattern: String,
@@ -1037,6 +1082,7 @@ internal class RootShellTerminalController(
             )
         }
         val safePath = normalizePath(path.ifBlank { DEFAULT_CWD })
+        PathHints.missingPathMessage(java.io.File(safePath))?.let { return errorJson("PATH_NOT_FOUND", it) }
         if (pattern.isEmpty()) return errorJson("INVALID_ARGUMENT", "pattern 不能为空")
         val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
         val budget = maxChars.coerceIn(200, 32_000)

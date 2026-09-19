@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.terminal
 
 import java.io.File
 import java.io.RandomAccessFile
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** 普通身份只访问终端工作区、免 Root 环境和 Android 已授权的共享存储。 */
@@ -148,6 +149,9 @@ internal object UserFileAccess {
     ): String = operation {
         val budget = maxChars.coerceIn(200, 32_000)
         val root = resolve(path)
+        PathHints.missingPathMessage(root)?.let {
+            return@operation JSONObject().put("ok", false).put("code", "PATH_NOT_FOUND").put("message", it)
+        }
         val limit = maxResults.coerceIn(1, FileTextOperations.MAX_SEARCH_RESULTS)
         val regex = runCatching { Regex(pattern) }.getOrNull()
             ?: throw IllegalArgumentException("正则表达式无效")
@@ -218,6 +222,38 @@ internal object UserFileAccess {
             )
     }
 
+    /** 免 Root 通道的 find_files：与 root 通道返回同一份结构与同一套路径提示。 */
+    fun findFiles(path: String, glob: String, limit: Int): String = operation {
+        val root = resolve(path)
+        PathHints.missingPathMessage(root)?.let {
+            return@operation JSONObject().put("ok", false).put("tool", "find_files")
+                .put("code", "PATH_NOT_FOUND").put("message", it)
+        }
+        val regex = globToRegex(glob)
+        val capped = limit.coerceIn(1, 200)
+        val found = mutableListOf<String>()
+        val files = if (root.isFile) {
+            sequenceOf(root)
+        } else {
+            root.walkTopDown()
+                .maxDepth(MAX_SCAN_DEPTH)
+                .onEnter { directory -> directory == root || directory.name !in IGNORED_DIRECTORIES }
+                .filter { it.isFile }
+        }
+        for (file in files) {
+            if (found.size > capped) break
+            if (regex.matches(file.name)) found += file.absolutePath
+        }
+        val truncated = found.size > capped
+        JSONObject().put("ok", true).put("tool", "find_files").put("path", root.absolutePath)
+            .put("glob", glob).put("count", minOf(found.size, capped))
+            .put("files", JSONArray(found.take(capped))).put("truncated", truncated)
+            .put(
+                "hint",
+                if (truncated) "文件数超过上限；缩小 path、加严 glob 或提高 limit。" else JSONObject.NULL,
+            )
+    }
+
     fun list(path: String, showHidden: Boolean, limit: Int): String = operation {
         val directory = resolve(path)
         val entries = requireNotNull(directory.listFiles()) { "目录不可读取" }
@@ -229,9 +265,25 @@ internal object UserFileAccess {
             .put("entries_text", text.take(16_000))
     }
 
-    /** 文件名 glob：* 与 ? 通配，其余字符按字面匹配。 */
-    private fun globToRegex(glob: String): Regex =
-        Regex("^" + Regex.escape(glob).replace("\\*", ".*").replace("\\?", ".") + "$")
+    /**
+     * 文件名 glob：* 与 ? 通配，其余字符按字面匹配。
+     * 逐字符拼接而不是「先 Regex.escape 再替换」：Regex.escape 把整串包进 \Q...\E，
+     * 里面的 * 不再是可替换的 "\*"，规则就永远匹配不上真实文件名。
+     */
+    private fun globToRegex(glob: String): Regex {
+        val pattern = buildString {
+            append('^')
+            for (char in glob) {
+                when (char) {
+                    '*' -> append(".*")
+                    '?' -> append('.')
+                    else -> append(Regex.escape(char.toString()))
+                }
+            }
+            append('$')
+        }
+        return Regex(pattern)
+    }
 
     private inline fun operation(block: () -> JSONObject): String = try {
         block().toString()
@@ -239,8 +291,8 @@ internal object UserFileAccess {
         error("FILE_ACCESS_DENIED", "文件不可访问，请检查路径和文件授权")
     } catch (_: SecurityException) {
         error("FILE_ACCESS_DENIED", "文件访问未授权")
-    } catch (_: IllegalArgumentException) {
-        error("INVALID_PATH", "路径或文件参数不在允许范围内")
+    } catch (failure: IllegalArgumentException) {
+        error("INVALID_PATH", failure.message?.takeIf { it.isNotBlank() } ?: "路径或文件参数不在允许范围内")
     }
 
     private fun error(code: String, message: String): String = JSONObject().put("ok", false).put("code", code).put("message", message).toString()

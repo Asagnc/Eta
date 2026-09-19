@@ -289,6 +289,12 @@ internal object AgentModelClient {
         val reasoningEffort: ReasoningEffort? = null,
         val reasoningCapabilities: ModelReasoningCapabilities? = null,
         val extraBodyJson: String = "",
+        /**
+         * 单轮输出上限（含思考 token）。null 表示不写进请求体，沿用上游默认值：
+         * 只有本轮真的被输出上限截断（stop reason = length）时才由 AgentModelRetry 临时提升，
+         * 免得默认值偏小的网关把工具参数截成 TRUNCATED_TOOL_CALL。
+         */
+        val maxOutputTokens: Int? = null,
         val customHeaders: List<CustomHeader> = emptyList(),
         val customBody: List<CustomBody> = emptyList()
     ) {

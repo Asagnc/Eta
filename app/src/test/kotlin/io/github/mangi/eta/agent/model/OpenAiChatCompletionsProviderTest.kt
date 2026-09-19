@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -499,6 +500,26 @@ class OpenAiChatCompletionsProviderTest {
             val thinking = JSONObject(requestBody.get()).getJSONObject("thinking")
             assertEquals("enabled", thinking.getString("type"))
             assertEquals("all", thinking.getString("keep"))
+        }
+    }
+
+    @Test
+    fun writesMaxTokensOnlyWhenOutputBudgetIsRaised() {
+        val requestBody = AtomicReference<String>()
+        val body = buildString {
+            append(sseChunk(JSONObject().put("content", "ok"), finishReason = "stop"))
+            append("data: [DONE]\n\n")
+        }
+
+        withSseServer(body, onRequest = { requestBody.set(it) }) { baseUrl ->
+            OpenAiChatCompletionsProvider.complete(providerRequest(baseUrl), AgentRunController())
+            assertFalse(JSONObject(requestBody.get()).has("max_tokens"))
+
+            OpenAiChatCompletionsProvider.complete(
+                providerRequest(baseUrl) { it.copy(maxOutputTokens = 32_768) },
+                AgentRunController(),
+            )
+            assertEquals(32_768, JSONObject(requestBody.get()).getInt("max_tokens"))
         }
     }
 

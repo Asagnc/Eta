@@ -23,14 +23,23 @@ internal class AgentModelRetry(
         var round = initialRound
         var retries = 0
         var activeRequest = request
+        // 输出上限提升：默认不写进请求体，只有本轮被截断时才逐档提升（见 nextOutputBoost）。
+        var outputBoost: Int? = null
+        var boostDisabled = false
+        var observedOutputTokens: Int? = null
         while (true) {
             controller.throwIfCancelled()
             onEvent(AgentEvent.RoundStarted(round, request.messages.length()))
             var hostedToolStarted = false
             var callbackFailed = false
+            var attemptOutputTokens: Int? = null
             try {
-                val response = provider.complete(activeRequest, controller) { event ->
+                val attemptRequest = outputBoost?.let { boost ->
+                    activeRequest.copy(config = activeRequest.config.copy(maxOutputTokens = boost))
+                } ?: activeRequest
+                val response = provider.complete(attemptRequest, controller) { event ->
                     if (event is ProviderEvent.HostedToolStarted) hostedToolStarted = true
+                    if (event is ProviderEvent.Usage) attemptOutputTokens = event.usage.outputTokens
                     try {
                         onProviderEvent(round, event)
                     } catch (failure: Exception) {
@@ -49,6 +58,27 @@ internal class AgentModelRetry(
                             "），既没有正文也没有工具调用。",
                     )
                 }
+                if (response.stopReason == AssistantStopReason.OUTPUT_LIMIT) {
+                    observedOutputTokens = attemptOutputTokens ?: observedOutputTokens
+                    val next = if (boostDisabled || hostedToolStarted) {
+                        null
+                    } else {
+                        nextOutputBoost(observedOutputTokens, outputBoost)
+                    }
+                    if (next != null) {
+                        // 本轮被输出上限截断（工具参数被截掉是典型表现）：提高预算后重放本轮，
+                        // 既不占用瞬时错误的重试预算，也不让模型白跑一次重提。
+                        outputBoost = next
+                        onEvent(
+                            AgentEvent.ModelRetryScheduled(
+                                round, retries + 1, MAX_RETRIES, 0, "OUTPUT_LIMIT",
+                            ),
+                        )
+                        discardAttemptReasoning()
+                        round += 1
+                        continue
+                    }
+                }
                 return Result(round, response)
             } catch (failure: Exception) {
                 controller.throwIfCancelled()
@@ -57,6 +87,17 @@ internal class AgentModelRetry(
                 if (hostedToolStarted) throw AgentModelFailure(
                     classified.code, false, classified.message.orEmpty(), classified, recoveryAllowed = false,
                 )
+                if (outputBoost != null && !boostDisabled &&
+                    classified.message.orEmpty().mentionsOutputLimitField()
+                ) {
+                    // 上游不认或不允许这个字段：撤回提升，回到默认预算再试一次，不占用瞬时错误预算。
+                    boostDisabled = true
+                    outputBoost = null
+                    onEvent(AgentEvent.ModelRetryScheduled(round, retries + 1, MAX_RETRIES, 0, classified.code))
+                    discardAttemptReasoning()
+                    round += 1
+                    continue
+                }
                 val droppable = classified.droppableField()
                 if (droppable != null && droppable !in activeRequest.dropFields) {
                     // 上游点名拒收某个语义冗余的字段：去掉它再试一次，不占用瞬时错误的重试预算。
@@ -98,8 +139,25 @@ internal class AgentModelRetry(
         return content.isEmpty() || content == "null"
     }
 
+    /**
+     * 输出被上限截断时挑下一个预算档：只挑比「已观察到的输出量」和「当前档」都更大的档位。
+     * 上游没回 usage 时观察值缺失，就从最小档起步；没有更大的档位可用时返回 null（不再提升）。
+     */
+    private fun nextOutputBoost(observedOutputTokens: Int?, current: Int?): Int? =
+        OUTPUT_LIMIT_BOOSTS.firstOrNull { boost ->
+            boost > (current ?: 0) && (observedOutputTokens == null || boost > observedOutputTokens)
+        }
+
+    private fun String.mentionsOutputLimitField(): Boolean =
+        contains("max_output_tokens", ignoreCase = true) ||
+            contains("max_tokens", ignoreCase = true) ||
+            contains("max_completion_tokens", ignoreCase = true)
+
     companion object {
         private const val MAX_RETRIES = 2
         private const val BASE_DELAY_MS = 2_000L
+
+        /** 输出上限的提升档位：覆盖常见的 4K/8K 网关默认值，又不超过主流模型的上限。 */
+        private val OUTPUT_LIMIT_BOOSTS = intArrayOf(32_768, 131_072)
     }
 }

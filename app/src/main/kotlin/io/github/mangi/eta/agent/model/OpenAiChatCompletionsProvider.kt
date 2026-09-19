@@ -113,6 +113,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
             .put("tools", tools)
             .put("tool_choice", "auto")
             .also { request ->
+                config.maxOutputTokens?.takeIf { it > 0 }?.let { request.put("max_tokens", it) }
                 if (sourceType != ProviderSourceTypes.OPENROUTER) {
                     request.put("stream_options", JSONObject().put("include_usage", true))
                 }
