@@ -777,8 +777,10 @@ private fun ModelEditDialog(
     }
     var selectedReasoningEfforts by remember(model.id, isNew) {
         mutableStateOf(
+            // 用 supportedEfforts 而不是 selectableEfforts：后者会过滤掉 Auto，
+            // 用它初始化会让"勾了 Auto 再打开又没勾上"。
             model.effectiveReasoningCapabilities
-                ?.selectableEfforts
+                ?.supportedEfforts
                 ?.toSet()
                 .orEmpty() + ReasoningEffort.DEFAULT
         )
@@ -792,7 +794,7 @@ private fun ModelEditDialog(
         reasoningOverrideActive = false
         reasoningEnabled = model.reasoning == true
         selectedReasoningEfforts = model.reasoningCapabilities
-            ?.selectableEfforts
+            ?.supportedEfforts
             ?.toSet()
             .orEmpty() + ReasoningEffort.DEFAULT
     }

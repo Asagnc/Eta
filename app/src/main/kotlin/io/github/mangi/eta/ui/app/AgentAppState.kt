@@ -298,12 +298,24 @@ internal class AgentAppState(
     }
 
     private fun AgentChatHomeUiState.withCurrentReasoningCapabilities(): AgentChatHomeUiState {
-        val normalized = currentReasoningCapabilities?.normalize(reasoningEffort) ?: ReasoningEffort.OFF
+        val normalized = normalizedReasoningEffort(reasoningEffort)
         return copy(
             thinkingEnabled = normalized.enablesReasoning,
             reasoningEffort = normalized,
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
         )
+    }
+
+    /**
+     * 没有模型能力元数据（多数中转站都是如此）时，只有自动档能原样保留 ——
+     * 它由 Eta 自己按用途与轮次解析，不需要模型声明支持哪些档位；其余一律按 Off 处理。
+     */
+    private fun normalizedReasoningEffort(requested: ReasoningEffort): ReasoningEffort {
+        val capabilities = currentReasoningCapabilities
+        if (capabilities == null) {
+            return if (requested == ReasoningEffort.AUTO) ReasoningEffort.AUTO else ReasoningEffort.OFF
+        }
+        return capabilities.normalize(requested)
     }
 
     fun refreshRuntimeResults() {
@@ -849,7 +861,7 @@ internal class AgentAppState(
     }
 
     fun updateReasoningEffort(effort: ReasoningEffort) {
-        val normalized = currentReasoningCapabilities?.normalize(effort) ?: ReasoningEffort.OFF
+        val normalized = normalizedReasoningEffort(effort)
         updateCurrentConversation(
             homeState.copy(
                 thinkingEnabled = normalized.enablesReasoning,

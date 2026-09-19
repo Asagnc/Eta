@@ -107,13 +107,12 @@ data class ModelReasoningCapabilities(
         }
 
     fun normalize(requested: ReasoningEffort): ReasoningEffort {
+        // 自动档是用户选择，不是"模型能力"，绝不参与归一化：
+        // 具体档位由 ProviderReasoning 按用途／轮次解析，这里保留它。
+        if (requested == ReasoningEffort.AUTO) return ReasoningEffort.AUTO
         val selectable = selectableEfforts
         if (requested in selectable) return requested
-        if (
-            requested == ReasoningEffort.OFF ||
-            requested == ReasoningEffort.DEFAULT ||
-            requested == ReasoningEffort.AUTO
-        ) {
+        if (requested == ReasoningEffort.OFF || requested == ReasoningEffort.DEFAULT) {
             return ReasoningEffort.DEFAULT
         }
         return selectable
