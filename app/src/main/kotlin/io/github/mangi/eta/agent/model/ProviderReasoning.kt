@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
@@ -305,7 +306,7 @@ internal object ProviderReasoning {
         if (requested == ReasoningEffort.AUTO) {
             // 自动档解析出的档位是"这个任务该多深"，未必是当前模型支持的档，
             // 所以走归一化；手选档位仍然严格校验并保持原有的报错提示。
-            val resolved = resolveAutoEffort(purpose, messages)
+            val resolved = resolveAutoEffort(purpose, messages, capabilities)
             return capabilities?.normalize(resolved) ?: resolved
         }
         if (capabilities == null) return requested
@@ -322,13 +323,18 @@ internal object ProviderReasoning {
      * 自动档的档位规则，只依赖可观察的事实，不猜任务难度：
      * 压缩、回复重写这类辅助请求用低档；主循环里还没有助手或工具消息（首轮规划）用高档；
      * 之后的工具回填轮用中档。
+     *
+     * 拿不到模型能力（多数中转站没有模型元数据）时只产出 Low / High：这是各家 effort 字段
+     * 的公共子集，Kimi K3、StepFun 这类只认 low/high 的供应商不会因此报错。
      */
     private fun resolveAutoEffort(
         purpose: ProviderRequestPurpose,
         messages: JSONArray,
+        capabilities: ModelReasoningCapabilities?,
     ): ReasoningEffort = when {
         purpose != ProviderRequestPurpose.CHAT -> ReasoningEffort.LOW
         !hasAssistantTurn(messages) -> ReasoningEffort.HIGH
+        capabilities == null -> ReasoningEffort.HIGH
         else -> ReasoningEffort.MEDIUM
     }
 

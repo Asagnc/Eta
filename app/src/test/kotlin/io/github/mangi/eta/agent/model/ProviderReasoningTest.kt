@@ -315,6 +315,24 @@ class ProviderReasoningTest {
         assertEquals("low", request.getString("reasoning_effort"))
     }
 
+    @Test
+    fun autoEffortStaysInsidePortableTiersWhenCapabilitiesAreUnknown() {
+        val request = JSONObject()
+        ProviderReasoning.applyOpenAiCompatibleRequest(
+            request,
+            config(source = ProviderSourceTypes.DEEPSEEK, effort = ReasoningEffort.AUTO)
+                .copy(model = "deepseek-reasoner", reasoningCapabilities = null),
+            ProviderRequestPurpose.CHAT,
+            JSONArray()
+                .put(JSONObject().put("role", "user").put("content", "继续"))
+                .put(JSONObject().put("role", "assistant").put("content", "好的")),
+        )
+
+        // 模型元数据缺失（多数中转站如此）时只产出 Low / High：low/high 是公共子集，
+        // 不会给 K3、StepFun 这类只认 low/high 的供应商发 Medium
+        assertEquals("high", request.getString("reasoning_effort"))
+    }
+
     private fun autoConfig(capabilities: ModelReasoningCapabilities) = config(
         source = ProviderSourceTypes.OPENAI,
         effort = ReasoningEffort.AUTO,
