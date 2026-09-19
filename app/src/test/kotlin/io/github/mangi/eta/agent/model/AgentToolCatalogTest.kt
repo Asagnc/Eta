@@ -200,6 +200,29 @@ class AgentToolCatalogTest {
         )
     }
 
+    @Test
+    fun everyCatalogToolHasAUserFacingLabel() {
+        // 工具页与运行轨迹都按名字查中文标签，漏一个就显示成兜底文案「准备执行」，
+        // 而且只在那一个工具被调用时才看得出来（edit_file 就这么漏了很久）。
+        // 这里把整个目录一次过一遍。
+        val names = AgentToolCatalog.build(
+            terminalTools = true,
+            browserTools = true,
+            deviceSensitiveReadTools = true,
+            deviceSensitiveActionTools = true,
+            skillGitHubDiscovery = true,
+            skillGitHubInstall = true,
+            subAgentTools = true,
+            memoryTools = true,
+        ).toolNames()
+        val formatter = AgentTraceFormatter()
+        val unlabeled = names
+            .filterNot { it.startsWith("mcp_") }
+            .filter { formatter.summarizeArguments(AgentModelClient.ToolCall("id", it, "{}")) == "准备执行" }
+            .sorted()
+        assertEquals("这些工具没有中文标签：" + unlabeled.joinToString(), emptyList<String>(), unlabeled)
+    }
+
     private fun JSONArray.toolNames(): List<String> =
         (0 until length()).map { index ->
             getJSONObject(index).getJSONObject("function").getString("name")

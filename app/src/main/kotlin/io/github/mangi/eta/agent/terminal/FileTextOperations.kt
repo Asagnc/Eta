@@ -108,7 +108,7 @@ internal object FileTextOperations {
         val end = (bestIndex + radius).coerceAtMost(lines.size - 1)
         val builder = StringBuilder()
         for (index in start..end) {
-            val rendered = "${index + 1}\t${lines[index]}\n"
+            val rendered = "L${index + 1}: ${lines[index]}\n"
             if (builder.length + rendered.length > maxChars) break
             builder.append(rendered)
         }

@@ -964,7 +964,7 @@ internal class RootShellTerminalController(
                     if (snippet.isBlank()) {
                         append("；文件为空，或 old_text 与任何一行都没有公共前缀，请用 read_file 核对")
                     } else {
-                        append("。最接近的原文（行号\\t内容）：\n")
+                        append("。最接近的原文（L 开头是行号）：\n")
                         append(snippet)
                         append("\n请按上面的原文修正 old_text 后重试")
                     }

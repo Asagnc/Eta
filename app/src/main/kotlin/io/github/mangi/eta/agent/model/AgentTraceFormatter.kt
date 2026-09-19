@@ -15,6 +15,17 @@ internal class AgentTraceFormatter {
             "write_file" -> summarizeTextLength("写入文件", toolCall.argumentsJson, "content")
             "read_file" -> "读取文件"
             "list_directory" -> "列出目录"
+            "edit_file" -> "编辑文件"
+            "find_files" -> summarizeFirstArgument("查找文件", toolCall.argumentsJson, listOf("glob", "pattern"))
+            "search_code" -> summarizeFirstArgument("检索内容", toolCall.argumentsJson, listOf("pattern", "glob"))
+            "task_plan" -> "更新任务计划"
+            "run_stats" -> "查看运行统计"
+            "run_sequence" -> "执行操作序列"
+            "save_flow" -> "保存流程"
+            "use_flow" -> "运行流程"
+            "skills_run" -> "运行技能"
+            "delegate" -> "委派子智能体"
+            "multi_perspective" -> "多视角分析"
             "input_text" -> summarizeTextLength("输入文本", toolCall.argumentsJson, "text")
             "replace_text" -> summarizeTextLength("替换文本", toolCall.argumentsJson, "text")
             "paste_text", "set_clipboard" ->
@@ -140,6 +151,23 @@ internal class AgentTraceFormatter {
                 MAX_QUERY_SUMMARY_CHARS,
             )
             if (query.isNotBlank()) "$label · $query" else label
+        }.getOrDefault(label)
+
+    /**
+     * 检索类工具的摘要参数名不统一（query / pattern / glob），按给定顺序取第一个非空值。
+     * 缺了这一步，工具卡片只会显示一个光秃秃的动词。
+     */
+    private fun summarizeFirstArgument(
+        label: String,
+        argumentsJson: String,
+        keys: List<String>,
+    ): String =
+        runCatching {
+            val json = JSONObject(argumentsJson)
+            val value = keys.asSequence()
+                .map { sanitizeSummaryValue(json.optString(it), MAX_QUERY_SUMMARY_CHARS) }
+                .firstOrNull { it.isNotBlank() }
+            if (value.isNullOrBlank()) label else "$label · $value"
         }.getOrDefault(label)
 
     private fun summarizePointArguments(label: String, argumentsJson: String): String =
