@@ -302,8 +302,24 @@ internal class AgentAppState(
         return copy(
             thinkingEnabled = normalized.enablesReasoning,
             reasoningEffort = normalized,
-            availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+            availableReasoningEfforts = reasoningEffortOptions(currentReasoningCapabilities),
         )
+    }
+
+    /**
+     * 对话页档位菜单的候选项：在模型能力（selectableEfforts）之外始终加上自动档 ——
+     * Auto 是 Eta 自己的策略，不需要模型声明支持它；没有能力元数据（多数中转站）时
+     * 只给 Auto / Default，这样档位菜单不会整个消失。
+     */
+    private fun reasoningEffortOptions(capabilities: ModelReasoningCapabilities?): List<ReasoningEffort> {
+        val base = capabilities?.selectableEfforts.orEmpty()
+        return buildList {
+            if (ReasoningEffort.OFF in base) add(ReasoningEffort.OFF)
+            add(ReasoningEffort.AUTO)
+            add(ReasoningEffort.DEFAULT)
+            base.filter { it != ReasoningEffort.OFF && it != ReasoningEffort.DEFAULT }
+                .forEach(::add)
+        }
     }
 
     /**
