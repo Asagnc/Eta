@@ -61,7 +61,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .url(ProviderUrls.anthropicMessagesUrl(config.baseUrl))
             .headers(headers)
             .post(
-                buildRequestJson(config, request.messages, request.effectiveTools)
+                buildRequestJson(config, request.messages, request.effectiveTools, request.purpose)
                     .dropRejectedFields(request.dropFields)
                     .toString()
                     .toRequestBody(JSON_MEDIA_TYPE)
@@ -96,7 +96,8 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
     private fun buildRequestJson(
         config: AgentModelClient.ModelConfig,
         messages: JSONArray,
-        tools: JSONArray
+        tools: JSONArray,
+        purpose: ProviderRequestPurpose,
     ): JSONObject {
         val systemParts = mutableListOf<String>()
         val anthropicMessages = JSONArray()
@@ -174,7 +175,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     )
                 }
                 RequestBodyMerge.mergeCustomBody(request, config.customBody)
-                ProviderReasoning.applyAnthropicRequest(request, config)
+                ProviderReasoning.applyAnthropicRequest(request, config, purpose, messages)
             }
     }
 

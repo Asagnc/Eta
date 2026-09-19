@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.model
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -255,6 +256,69 @@ class ProviderReasoningTest {
             assertEquals(setOf("metadata"), request.keys().asSequence().toSet())
         }
     }
+
+    @Test
+    fun autoEffortFollowsPurposeAndTurn() {
+        val capabilities = ModelReasoningCapabilities(
+            supportedEfforts = listOf(
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+            ),
+        )
+        val firstTurn = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", "约束"))
+            .put(JSONObject().put("role", "user").put("content", "帮我查日志"))
+        val laterTurn = JSONArray()
+            .put(JSONObject().put("role", "user").put("content", "帮我查日志"))
+            .put(JSONObject().put("role", "assistant").put("content", "好的"))
+            .put(JSONObject().put("role", "tool").put("content", "结果"))
+
+        val firstTurnRequest = JSONObject()
+        ProviderReasoning.applyOpenAiCompatibleRequest(
+            firstTurnRequest,
+            autoConfig(capabilities),
+            ProviderRequestPurpose.CHAT,
+            firstTurn,
+        )
+        assertEquals("high", firstTurnRequest.getString("reasoning_effort"))
+
+        val laterTurnRequest = JSONObject()
+        ProviderReasoning.applyOpenAiCompatibleRequest(
+            laterTurnRequest,
+            autoConfig(capabilities),
+            ProviderRequestPurpose.CHAT,
+            laterTurn,
+        )
+        assertEquals("medium", laterTurnRequest.getString("reasoning_effort"))
+
+        val compactionRequest = JSONObject()
+        ProviderReasoning.applyOpenAiCompatibleRequest(
+            compactionRequest,
+            autoConfig(capabilities),
+            ProviderRequestPurpose.COMPACTION,
+            laterTurn,
+        )
+        assertEquals("low", compactionRequest.getString("reasoning_effort"))
+    }
+
+    @Test
+    fun autoEffortIsNormalizedToModelCapabilitiesInsteadOfThrowing() {
+        val request = JSONObject()
+        ProviderReasoning.applyOpenAiCompatibleRequest(
+            request,
+            autoConfig(ModelReasoningCapabilities(supportedEfforts = listOf(ReasoningEffort.LOW))),
+            ProviderRequestPurpose.CHAT,
+            JSONArray().put(JSONObject().put("role", "user").put("content", "你好")),
+        )
+
+        assertEquals("low", request.getString("reasoning_effort"))
+    }
+
+    private fun autoConfig(capabilities: ModelReasoningCapabilities) = config(
+        source = ProviderSourceTypes.OPENAI,
+        effort = ReasoningEffort.AUTO,
+    ).copy(reasoningCapabilities = capabilities)
 
     private fun config(
         source: String,

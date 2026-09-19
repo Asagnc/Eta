@@ -8,6 +8,7 @@ internal object ResponsesRequestBuilder {
         config: AgentModelClient.ModelConfig,
         messages: JSONArray,
         tools: JSONArray,
+        purpose: ProviderRequestPurpose,
     ): JSONObject {
         val input = buildInput(messages)
         val responseTools = buildTools(tools, config.hostedWebSearchEnabled)
@@ -33,7 +34,7 @@ internal object ResponsesRequestBuilder {
         request.remove("previous_response_id")
         request.remove("reasoning")
         config.maxOutputTokens?.takeIf { it > 0 }?.let { request.put("max_output_tokens", it) }
-        ProviderReasoning.applyResponsesRequest(request, config)
+        ProviderReasoning.applyResponsesRequest(request, config, purpose, messages)
         return request
     }
 

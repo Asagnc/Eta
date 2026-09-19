@@ -215,6 +215,7 @@ class OpenAiResponsesProviderTest {
             ),
             messages = messages,
             tools = tools,
+            purpose = ProviderRequestPurpose.CHAT,
         )
 
         assertEquals("test-model", request.getString("model"))
@@ -246,6 +247,7 @@ class OpenAiResponsesProviderTest {
             config = config("https://example.com/v1"),
             messages = messages,
             tools = JSONArray(),
+            purpose = ProviderRequestPurpose.CHAT,
         )
 
         assertEquals("基础约束\n\n压缩上下文", request.getString("instructions"))

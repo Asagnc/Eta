@@ -4,6 +4,7 @@ import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlin.math.max
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal object ProviderReasoning {
@@ -12,8 +13,10 @@ internal object ProviderReasoning {
     fun applyOpenAiCompatibleRequest(
         request: JSONObject,
         config: AgentModelClient.ModelConfig,
+        purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
+        messages: JSONArray = JSONArray(),
     ) {
-        val effort = validatedEffort(config)
+        val effort = validatedEffort(config, purpose, messages)
         val sourceType = sourceType(config)
         if (
             config.reasoningCapabilities == null &&
@@ -42,9 +45,12 @@ internal object ProviderReasoning {
     fun applyResponsesRequest(
         request: JSONObject,
         config: AgentModelClient.ModelConfig,
+        purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
+        messages: JSONArray = JSONArray(),
     ) {
-        if (config.reasoningCapabilities == null) return
-        val effort = validatedEffort(config)
+        val auto = config.effectiveReasoningEffort == ReasoningEffort.AUTO
+        if (config.reasoningCapabilities == null && !auto) return
+        val effort = validatedEffort(config, purpose, messages)
         if (sourceType(config) == ProviderSourceTypes.OPENAI && effort == ReasoningEffort.MAX) {
             unsupportedEffort("OpenAI", effort)
         }
@@ -84,8 +90,10 @@ internal object ProviderReasoning {
     fun applyAnthropicRequest(
         request: JSONObject,
         config: AgentModelClient.ModelConfig,
+        purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
+        messages: JSONArray = JSONArray(),
     ) {
-        val effort = validatedEffort(config)
+        val effort = validatedEffort(config, purpose, messages)
         if (effort == ReasoningEffort.DEFAULT) return
         if (effort == ReasoningEffort.OFF) {
             request.put("thinking", JSONObject().put("type", "disabled"))
@@ -152,7 +160,8 @@ internal object ProviderReasoning {
             ReasoningEffort.XHIGH -> 65_536
             ReasoningEffort.MAX -> config.reasoningCapabilities?.maxBudgetTokens ?: 65_536
             ReasoningEffort.OFF,
-            ReasoningEffort.DEFAULT -> return
+            ReasoningEffort.DEFAULT,
+            ReasoningEffort.AUTO -> return
         }
         request.put("enable_thinking", true)
         request.put("thinking_budget", clampBudgetToCompletionLimit(request, requestedBudget))
@@ -186,7 +195,8 @@ internal object ProviderReasoning {
             ReasoningEffort.XHIGH -> 16_384
             ReasoningEffort.MAX -> 32_768
             ReasoningEffort.OFF,
-            ReasoningEffort.DEFAULT -> return
+            ReasoningEffort.DEFAULT,
+            ReasoningEffort.AUTO -> return
         }.coerceAtMost(config.reasoningCapabilities?.maxBudgetTokens ?: 32_768)
         if (config.reasoningCapabilities?.canDisable == true) {
             request.put("enable_thinking", true)
@@ -205,7 +215,8 @@ internal object ProviderReasoning {
                 ReasoningEffort.XHIGH,
                 ReasoningEffort.MAX -> ReasoningEffort.MAX
                 ReasoningEffort.DEFAULT,
-                ReasoningEffort.OFF -> return
+                ReasoningEffort.OFF,
+                ReasoningEffort.AUTO -> return
             }
             request.put("reasoning_effort", providerEffort.wireValue)
         } else {
@@ -284,16 +295,49 @@ internal object ProviderReasoning {
     private fun unsupportedEffort(providerName: String, effort: ReasoningEffort): Nothing =
         throw IllegalArgumentException("$providerName 不支持 ${effort.displayName} thinking effort")
 
-    private fun validatedEffort(config: AgentModelClient.ModelConfig): ReasoningEffort {
-        val effort = config.effectiveReasoningEffort
-        val capabilities = config.reasoningCapabilities ?: return effort
-        require(effort in capabilities.selectableEfforts) {
-            "当前模型不支持 ${effort.displayName} thinking effort"
+    private fun validatedEffort(
+        config: AgentModelClient.ModelConfig,
+        purpose: ProviderRequestPurpose,
+        messages: JSONArray,
+    ): ReasoningEffort {
+        val requested = config.effectiveReasoningEffort
+        val capabilities = config.reasoningCapabilities
+        if (requested == ReasoningEffort.AUTO) {
+            // 自动档解析出的档位是"这个任务该多深"，未必是当前模型支持的档，
+            // 所以走归一化；手选档位仍然严格校验并保持原有的报错提示。
+            val resolved = resolveAutoEffort(purpose, messages)
+            return capabilities?.normalize(resolved) ?: resolved
         }
-        require(!capabilities.mandatory || effort != ReasoningEffort.OFF) {
+        if (capabilities == null) return requested
+        require(requested in capabilities.selectableEfforts) {
+            "当前模型不支持 ${requested.displayName} thinking effort"
+        }
+        require(!capabilities.mandatory || requested != ReasoningEffort.OFF) {
             "当前模型强制启用思考，不能选择 Off"
         }
-        return effort
+        return requested
+    }
+
+    /**
+     * 自动档的档位规则，只依赖可观察的事实，不猜任务难度：
+     * 压缩、回复重写这类辅助请求用低档；主循环里还没有助手或工具消息（首轮规划）用高档；
+     * 之后的工具回填轮用中档。
+     */
+    private fun resolveAutoEffort(
+        purpose: ProviderRequestPurpose,
+        messages: JSONArray,
+    ): ReasoningEffort = when {
+        purpose != ProviderRequestPurpose.CHAT -> ReasoningEffort.LOW
+        !hasAssistantTurn(messages) -> ReasoningEffort.HIGH
+        else -> ReasoningEffort.MEDIUM
+    }
+
+    private fun hasAssistantTurn(messages: JSONArray): Boolean {
+        for (index in 0 until messages.length()) {
+            val role = messages.optJSONObject(index)?.optString("role").orEmpty()
+            if (role == "assistant" || role == "tool") return true
+        }
+        return false
     }
 
     private fun sourceType(config: AgentModelClient.ModelConfig): String =

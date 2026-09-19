@@ -101,6 +101,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 private val modelSearchSeparators = Regex("""[^\p{L}\p{N}]+""")
 private val editableReasoningEfforts = listOf(
     ReasoningEffort.OFF,
+    ReasoningEffort.AUTO,
     ReasoningEffort.MINIMAL,
     ReasoningEffort.LOW,
     ReasoningEffort.MEDIUM,

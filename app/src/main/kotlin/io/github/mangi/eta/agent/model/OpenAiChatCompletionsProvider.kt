@@ -49,7 +49,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
             .also { ProviderRequestHeaders.mergeInto(it, config.baseUrl, config.customHeaders, request.sessionId) }
             .build()
 
-        val requestBody = buildRequestJson(config, request.messages, request.effectiveTools).apply {
+        val requestBody = buildRequestJson(config, request.messages, request.effectiveTools, request.purpose).apply {
             if (!request.purpose.allowsTools) {
                 remove("tools")
                 remove("tool_choice")
@@ -98,7 +98,8 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
     private fun buildRequestJson(
         config: AgentModelClient.ModelConfig,
         messages: JSONArray,
-        tools: JSONArray
+        tools: JSONArray,
+        purpose: ProviderRequestPurpose,
     ): JSONObject {
         val sourceType = ProviderSourceRegistry.resolve(
             providerId = config.providerId,
@@ -119,7 +120,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
                 }
                 mergeExtraBody(request, config.extraBodyJson)
                 RequestBodyMerge.mergeCustomBody(request, config.customBody)
-                ProviderReasoning.applyOpenAiCompatibleRequest(request, config)
+                ProviderReasoning.applyOpenAiCompatibleRequest(request, config, purpose, messages)
             }
     }
 

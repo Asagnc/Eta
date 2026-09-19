@@ -8,13 +8,15 @@ import org.junit.Test
 class ResponsesRequestBuilderTest {
     @Test
     fun writesMaxOutputTokensOnlyWhenConfigured() {
-        val defaultRequest = ResponsesRequestBuilder.build(config(), JSONArray(), JSONArray())
+        val defaultRequest =
+            ResponsesRequestBuilder.build(config(), JSONArray(), JSONArray(), ProviderRequestPurpose.CHAT)
         assertFalse(defaultRequest.has("max_output_tokens"))
 
         val boosted = ResponsesRequestBuilder.build(
             config().copy(maxOutputTokens = 32_768),
             JSONArray(),
             JSONArray(),
+            ProviderRequestPurpose.CHAT,
         )
         assertEquals(32_768, boosted.getInt("max_output_tokens"))
     }
@@ -25,6 +27,7 @@ class ResponsesRequestBuilderTest {
             config().copy(maxOutputTokens = 0),
             JSONArray(),
             JSONArray(),
+            ProviderRequestPurpose.CHAT,
         )
         assertFalse(request.has("max_output_tokens"))
     }

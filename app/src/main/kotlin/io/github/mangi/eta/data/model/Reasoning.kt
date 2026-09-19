@@ -18,6 +18,14 @@ enum class ReasoningEffort(
     @SerialName("off")
     OFF("off", "Off", 0),
 
+    /**
+     * 自动档：由 Eta 按请求用途与轮次决定实际档位（辅助请求低档、主循环首轮高档、
+     * 后续工具轮中档，见 ProviderReasoning.resolveAutoEffort），再按模型能力归一化。
+     * rank 与 DEFAULT 相同，只为在列表里占位，不参与"降到最近可用档"的比较。
+     */
+    @SerialName("auto")
+    AUTO("auto", "Auto", 1),
+
     @SerialName("default")
     DEFAULT("default", "Default", 1),
 
@@ -88,7 +96,11 @@ data class ModelReasoningCapabilities(
             add(ReasoningEffort.DEFAULT)
             supportedEfforts
                 .asSequence()
-                .filter { it != ReasoningEffort.OFF && it != ReasoningEffort.DEFAULT }
+                .filter {
+                    it != ReasoningEffort.OFF &&
+                        it != ReasoningEffort.DEFAULT &&
+                        it != ReasoningEffort.AUTO
+                }
                 .distinct()
                 .sortedBy(ReasoningEffort::rank)
                 .forEach(::add)
@@ -97,7 +109,11 @@ data class ModelReasoningCapabilities(
     fun normalize(requested: ReasoningEffort): ReasoningEffort {
         val selectable = selectableEfforts
         if (requested in selectable) return requested
-        if (requested == ReasoningEffort.OFF || requested == ReasoningEffort.DEFAULT) {
+        if (
+            requested == ReasoningEffort.OFF ||
+            requested == ReasoningEffort.DEFAULT ||
+            requested == ReasoningEffort.AUTO
+        ) {
             return ReasoningEffort.DEFAULT
         }
         return selectable

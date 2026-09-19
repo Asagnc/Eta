@@ -172,7 +172,8 @@ class AgentRoleplayRuntimeTest {
                 .put(JSONObject().put("role", "assistant").put("content", "第二句"))
             val projected = context.projectMessages(source)
             val chat = OpenAiRequestMessages.forChatCompletions(projected)
-            val responses = ResponsesRequestBuilder.build(config(), projected, JSONArray())
+            val responses =
+                ResponsesRequestBuilder.build(config(), projected, JSONArray(), ProviderRequestPurpose.CHAT)
             assertTrue(chat.toString().contains("深度设定"))
             assertTrue(responses.toString().contains("深度设定"))
             assertFalse(chat.toString().contains("_eta_message_id"))
