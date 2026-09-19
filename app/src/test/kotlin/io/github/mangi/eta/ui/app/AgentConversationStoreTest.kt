@@ -99,6 +99,7 @@ class AgentConversationStoreTest {
                     id = "user-1",
                     content = "看一下当前屏幕",
                     isEdited = true,
+                    timestamp = 1_700_000_000_001L,
                 ),
                 ThinkingMessageUi(
                     id = "thinking-1",
@@ -128,6 +129,7 @@ class AgentConversationStoreTest {
                         reasoningTokens = 20,
                         cachedTokens = 10,
                     ),
+                    timestamp = 1_700_000_000_004L,
                 ),
             ),
             history = listOf(

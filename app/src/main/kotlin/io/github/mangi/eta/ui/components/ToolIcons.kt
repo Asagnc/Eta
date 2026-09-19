@@ -125,6 +125,7 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "read_file" -> Icons.Rounded.Description
     "write_file" -> Icons.Rounded.EditNote
     "list_directory" -> Icons.Rounded.FolderOpen
+    "run_stats" -> Icons.Rounded.Insights
     "edit_file" -> Icons.Rounded.EditNote
     "search_code", "find_files" -> Icons.AutoMirrored.Rounded.ManageSearch
     "run_sequence" -> Icons.Rounded.PlayArrow

@@ -31,12 +31,15 @@ import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
-// 这些用例断言真实编码结果（webp 无损、jpeg 上限、像素与尺寸），
-// Robolectric 默认的 LEGACY 图形模式里 Bitmap 是空壳，必然对不上。
+// 这些用例断言真实编码结果（格式、尺寸、像素），Robolectric 默认的 LEGACY 图形模式里
+// Bitmap 是空壳，必须切 NATIVE 才有意义。
+//
+// 契约：所有模型输入统一转成 JPEG（服务商对 WebP/HEIF 支持不一致），截图与工具图不做
+// 降采样，保证 GUI Agent 的像素与设备坐标一一对应。断言按这个契约写。
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AgentImageCodecTest {
     @Test
-    fun screenCopyUsesFullResolutionLosslessWebp() {
+    fun screenCopyKeepsFullResolutionAsJpeg() {
         val bitmap = patternedBitmap(width = 1_200, height = 2_400)
         try {
             val image = AgentImageCodec.fromScreenBitmap(bitmap, source = "screen")
@@ -48,11 +51,12 @@ class AgentImageCodecTest {
                 image.bytes,
             ) ?: error("无法解码模型截图")
 
-            assertEquals("image/webp", image.mimeType)
-            assertTrue(image.reference.startsWith("data:image/webp;base64,"))
+            assertEquals("image/jpeg", image.mimeType)
+            assertTrue(image.reference.startsWith("data:image/jpeg;base64,"))
             assertEquals(bitmap.width, width)
             assertEquals(bitmap.height, height)
-            assertTrue(bitmap.sameAs(decoded))
+            assertEquals(bitmap.width, decoded.width)
+            assertEquals(bitmap.height, decoded.height)
             decoded.recycle()
         } finally {
             bitmap.recycle()
@@ -60,7 +64,7 @@ class AgentImageCodecTest {
     }
 
     @Test
-    fun assistantScreenContextUsesBoundedJpeg() {
+    fun assistantScreenContextKeepsDevicePixelsAsJpeg() {
         val bitmap = patternedBitmap(width = 1_440, height = 3_200)
         try {
             val image = AgentImageCodec.fromScreenContextBitmap(
@@ -72,16 +76,17 @@ class AgentImageCodecTest {
 
             assertEquals("image/jpeg", image.mimeType)
             assertTrue(image.reference.startsWith("data:image/jpeg;base64,"))
-            assertTrue(maxOf(width, height) <= 1_600)
-            assertTrue(width.toLong() * height <= 1_500_000L)
-            assertTrue(image.bytes < 1_000_000)
+            // 助理入口截图供 GUI Agent 定位控件，禁止缩放。
+            assertEquals(bitmap.width, width)
+            assertEquals(bitmap.height, height)
+            assertTrue(image.bytes in 1 until MAX_AGENT_IMAGE_BYTES)
         } finally {
             bitmap.recycle()
         }
     }
 
     @Test
-    fun encodedScreenBytesNeverLosePixelsOrDimensions() {
+    fun encodedScreenBytesAreNormalizedToJpegKeepingDimensions() {
         val bitmap = patternedBitmap(width = 900, height = 1_800)
         val png = ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
@@ -93,9 +98,11 @@ class AgentImageCodecTest {
             val decoded = BitmapFactory.decodeByteArray(encoded, 0, encoded.size)
                 ?: error("无法解码模型截图")
 
+            assertEquals("image/jpeg", image.mimeType)
             assertEquals(bitmap.width, image.width)
             assertEquals(bitmap.height, image.height)
-            assertTrue(bitmap.sameAs(decoded))
+            assertEquals(bitmap.width, decoded.width)
+            assertEquals(bitmap.height, decoded.height)
             decoded.recycle()
         } finally {
             bitmap.recycle()
@@ -103,7 +110,7 @@ class AgentImageCodecTest {
     }
 
     @Test
-    fun largeAttachmentKeepsOriginalBytesAndDimensions() {
+    fun largeAttachmentKeepsDimensionsAfterJpegNormalization() {
         val bitmap = patternedBitmap(width = 2_400, height = 1_600)
         val original = ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
@@ -122,12 +129,12 @@ class AgentImageCodecTest {
         assertEquals("image/jpeg", image.mimeType)
         assertEquals(2_400, width)
         assertEquals(1_600, height)
-        assertEquals(original.size, image.bytes)
-        assertArrayEquals(original, image.reference.decodeDataUrl())
+        // 统一转码成 JPEG 后字节数不再等于原文件，尺寸必须原样保留。
+        assertTrue(image.bytes in 1 until MAX_AGENT_IMAGE_BYTES)
     }
 
     @Test
-    fun smallAttachmentKeepsItsOriginalEncoding() {
+    fun smallAttachmentIsNormalizedToJpeg() {
         val bitmap = patternedBitmap(width = 96, height = 96)
         val original = ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
@@ -141,14 +148,13 @@ class AgentImageCodecTest {
             mimeHint = "image/png",
         )
 
-        assertEquals("image/png", image.mimeType)
-        assertEquals(original.size, image.bytes)
+        assertEquals("image/jpeg", image.mimeType)
         assertEquals(96, image.width)
         assertEquals(96, image.height)
     }
 
     @Test
-    fun fileToolImageIsDownscaledForMultiImageRequests() {
+    fun fileToolImageIsNormalizedToJpegWithoutDownscaling() {
         val context = RuntimeEnvironment.getApplication()
         val sourceFile = File(context.cacheDir, "tool-image-${System.nanoTime()}.jpg")
         val bitmap = patternedBitmap(width = 3_200, height = 2_400)
@@ -164,9 +170,9 @@ class AgentImageCodecTest {
             val height = image.height ?: error("缺少图片高度")
 
             assertEquals("image/jpeg", image.mimeType)
-            assertTrue(maxOf(width, height) <= 1_600)
-            assertTrue(width * height <= 1_500_000)
-            assertTrue(image.bytes < sourceFile.length())
+            assertEquals(3_200, width)
+            assertEquals(2_400, height)
+            assertTrue(image.bytes in 1 until MAX_AGENT_IMAGE_BYTES)
         } finally {
             sourceFile.delete()
         }

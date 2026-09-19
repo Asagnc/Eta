@@ -149,7 +149,20 @@ class AgentRuntimeWireTest {
 
     @Test
     fun largeImageBodyUsesFileDescriptorAndStaysOutOfBinderBundle() {
-        val imageBytes = ByteArray(600_000) { index -> (index % 251).toByte() }
+        // 必须是真实可解码的图片：运行时摄取时会统一转成 JPEG，喂随机字节会直接判失败。
+        // 这条用例关注的是传输通道（图片落文件、Bundle 只带文件描述符）与尺寸保留。
+        val source = Bitmap.createBitmap(900, 900, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(source)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        val paint = android.graphics.Paint().apply { color = android.graphics.Color.rgb(32, 92, 180) }
+        for (offset in 0 until 900 step 6) {
+            canvas.drawLine(0f, offset.toFloat(), 900f, (offset / 2).toFloat(), paint)
+        }
+        val imageBytes = java.io.ByteArrayOutputStream().use { output ->
+            source.compress(Bitmap.CompressFormat.PNG, 100, output)
+            source.recycle()
+            output.toByteArray()
+        }
         val dataUrl = "data:image/png;base64,${Base64.encodeToString(imageBytes, Base64.NO_WRAP)}"
         val request = AgentRuntimeWire.RunRequest(
             runId = "run-large-image",
@@ -188,10 +201,13 @@ class AgentRuntimeWireTest {
                 AgentRuntimeWire.incomingRunRequestFromBundle(bundle)
             )
             assertEquals(request.copy(images = emptyList()), materialized.copy(images = emptyList()))
-            assertEquals(request.images.single().reference, materialized.images.single().reference)
-            assertEquals(request.images.single().mimeType, materialized.images.single().mimeType)
-            assertEquals(request.images.single().bytes, materialized.images.single().bytes)
-            assertEquals(request.images.single().source, materialized.images.single().source)
+            val ingested = materialized.images.single()
+            // 摄取后统一转成 JPEG：尺寸与来源保留，字节数不再等于原始 PNG。
+            assertEquals("image/jpeg", ingested.mimeType)
+            assertEquals(900, ingested.width)
+            assertEquals(900, ingested.height)
+            assertEquals(request.images.single().source, ingested.source)
+            assertTrue(ingested.bytes > 0)
         }
     }
 
@@ -235,7 +251,10 @@ class AgentRuntimeWireTest {
                 )
                 assertTrue(materialized.images.single().reference.startsWith("data:image/"))
                 assertTrue(materialized.images.single().reference.contains(";base64,"))
-                assertEquals(sourceFile.length().toInt(), materialized.images.single().bytes)
+                // 摄取后统一转成 JPEG：字节数不再等于原文件，尺寸保留。
+                assertEquals("image/jpeg", materialized.images.single().mimeType)
+                assertEquals(8, materialized.images.single().width)
+                assertEquals(8, materialized.images.single().height)
             }
         } finally {
             sourceFile.delete()
