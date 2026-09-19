@@ -163,10 +163,12 @@ dependencies {
 /**
  * 需要 Robolectric 的测试类：直接扫描测试源码里是否出现 RobolectricTestRunner。
  *
- * Robolectric 的 native runtime 官方只提供 x86_64 Linux 与 macOS arm64 构建，
- * 本机（chroot aarch64）跑这批测试会在启动时直接报
- * "The Robolectric native runtime is not supported on Linux (aarch64)"。
- * 这里在 aarch64 上自动跳过它们，完整测试集留给 CI（x86_64）跑。
+ * Robolectric 的 native runtime 官方只提供 x86_64 Linux 与 macOS arm64 构建
+ * （DefaultNativeRuntimeLoader.isSupported 是硬编码白名单，没有开关可绕过），
+ * 本机（chroot aarch64）跑这批测试会在 AndroidTestEnvironment.setUpApplicationState
+ * 里无条件加载 native runtime 时直接报
+ * "The Robolectric native runtime is not supported on Linux (aarch64)"，
+ * 与 graphics/sqlite 模式无关，因此只能整体跳过；完整测试集留给 CI（x86_64）跑。
  *
  * 原先手工维护类名清单，已经因为拼写和误删两次静默失效（名单里的类照旧执行、
  * 或者该跳过的没跳过），改成扫描后不会再漏。
