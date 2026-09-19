@@ -11,6 +11,7 @@ import io.github.mangi.eta.agent.device.DeviceControlUnavailableException
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
+import io.github.mangi.eta.agent.model.AgentMemoryWritePayload
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentRunStatsToolCatalog
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
@@ -53,10 +54,11 @@ import io.github.mangi.eta.core.HookSupport
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.SubAgentRunEntity
 import io.github.mangi.eta.data.repository.AgentMemoryException
-import io.github.mangi.eta.data.repository.AgentMemoryMutation
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.repository.AgentMemoryWriteRequest
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
+import io.github.mangi.eta.data.repository.runMemoryMutation
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -487,61 +489,21 @@ internal class AgentLocalTools(
         errorResult(failure.code, failure.message ?: "记忆读取失败")
     }
 
-    private fun memoryWrite(args: JSONObject): String = try {
-        val revision = args.getString("revision")
-        val mutation = when (args.getString("mode")) {
-            "replace_range" -> AgentMemoryMutation.ReplaceRange(
-                revision = revision,
-                startLine = args.getInt("start_line"),
-                endLine = args.getInt("end_line"),
-                content = args.getString("content"),
-            )
-            "append" -> AgentMemoryMutation.Append(
-                revision = revision,
-                content = args.getString("content"),
-            )
-            "clear" -> AgentMemoryMutation.Clear(revision)
-            else -> error("不支持的记忆写入模式")
+    private fun memoryWrite(args: JSONObject): String {
+        val request = when (val parsed = AgentMemoryWriteRequest.parse(args)) {
+            is AgentMemoryWriteRequest.Parsed.Invalid -> return errorResult("INVALID_MEMORY_ARGUMENTS", parsed.message)
+            is AgentMemoryWriteRequest.Parsed.Mutation -> parsed
         }
-        val firstAttempt = AgentMemoryRepository.mutate(mutation)
-        // append 不依赖行号：并发写入插入的内容与本次追加可以共存，直接按最新 revision 重试一次，
-        // 省掉调用方「再读一遍、再写一遍」的往返。replace_range / clear 依赖行号，
-        // 冲突时必须让调用方重新定位，不能替它猜。
-        val retried = firstAttempt is AgentMemoryWriteResult.Conflict && mutation is AgentMemoryMutation.Append
-        val result = if (retried) {
-            AgentMemoryRepository.mutate(
-                AgentMemoryMutation.Append(
-                    revision = (firstAttempt as AgentMemoryWriteResult.Conflict).snapshot.revision,
-                    content = mutation.content,
-                ),
-            )
-        } else {
-            firstAttempt
+        val outcome = try {
+            runMemoryMutation(request.mutation) { mutation -> AgentMemoryRepository.mutate(mutation) }
+        } catch (failure: AgentMemoryException) {
+            return errorResult(failure.code, failure.message ?: "记忆写入失败")
         }
-        when (result) {
-            is AgentMemoryWriteResult.Success -> JSONObject()
-                .put("ok", true)
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .put("retried", retried)
-                .toString()
-            is AgentMemoryWriteResult.Conflict -> JSONObject()
-                .put("ok", false)
-                .put("code", "MEMORY_CONFLICT")
-                .put(
-                    "message",
-                    "记忆已被其他写入更新（当前 ${result.snapshot.byteSize} 字节 / " +
-                        "${result.snapshot.lineCount} 行）。直接用本次响应里的 revision 重试同一处写入；" +
-                        "只有当要改的内容本身也变了，才需要重新读取全文。",
-                )
-                .put("revision", result.snapshot.revision)
-                .put("bytes", result.snapshot.byteSize)
-                .put("line_count", result.snapshot.lineCount)
-                .toString()
+        return when (outcome.result) {
+            is AgentMemoryWriteResult.Success ->
+                AgentMemoryWritePayload.success(outcome, request.mode, request.revisionIgnored).toString()
+            is AgentMemoryWriteResult.Conflict -> AgentMemoryWritePayload.conflict(outcome).toString()
         }
-    } catch (failure: AgentMemoryException) {
-        errorResult(failure.code, failure.message ?: "记忆写入失败")
     }
 
     private fun browserUse(args: JSONObject, toolCallId: String): AgentModelClient.ToolResult {

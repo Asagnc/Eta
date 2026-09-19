@@ -1,13 +1,17 @@
 package io.github.mangi.eta.agent.memory
 
 import io.github.mangi.eta.data.repository.AgentMemorySnapshot
+import io.github.mangi.eta.data.repository.MemoryMarkdown
 
 internal data class AgentMemoryContext(
     val enabled: Boolean,
     val revision: String,
     val byteSize: Int,
-    val coreContent: String,
-    val coreTruncated: Boolean,
+    /** 自动注入的记忆内容：能装进注入预算时是全文，否则是 # 核心记忆 章节。 */
+    val injectedContent: String,
+    /** injectedContent 是否为记忆全文（为真时不需要再为了解记忆调用 memory_get）。 */
+    val injectedFull: Boolean,
+    val injectedTruncated: Boolean,
     val headingIndex: String,
     val coreBudgetChars: Int,
 ) {
@@ -16,8 +20,9 @@ internal data class AgentMemoryContext(
             enabled = false,
             revision = "",
             byteSize = 0,
-            coreContent = "",
-            coreTruncated = false,
+            injectedContent = "",
+            injectedFull = false,
+            injectedTruncated = false,
             headingIndex = "",
             coreBudgetChars = 0,
         )
@@ -40,18 +45,18 @@ internal object AgentMemoryContextBuilder {
         contextWindow: Int?,
     ): AgentMemoryContext {
         val coreBudget = coreBudgetChars(contextWindow)
-        val core = extractCore(snapshot.content)
-        val headings = snapshot.content.lineSequence()
-            .filter { line -> HEADING.matches(line.trimEnd()) }
-            .joinToString("\n")
-            .take(MAX_HEADING_INDEX_CHARS)
+        val content = snapshot.content
+        // 装得下就注入全文：一轮 system 消息的成本不变，却省掉「读不全 → 再 memory_get」的往返。
+        val full = content.isNotBlank() && content.length <= coreBudget
+        val core = extractCore(content)
         return AgentMemoryContext(
             enabled = true,
             revision = snapshot.revision,
             byteSize = snapshot.byteSize,
-            coreContent = core.take(coreBudget),
-            coreTruncated = core.length > coreBudget,
-            headingIndex = headings,
+            injectedContent = if (full) content else core.take(coreBudget),
+            injectedFull = full,
+            injectedTruncated = !full && core.length > coreBudget,
+            headingIndex = MemoryMarkdown.sectionIndex(content),
             coreBudgetChars = coreBudget,
         )
     }
@@ -73,13 +78,11 @@ internal object AgentMemoryContextBuilder {
         return lines.subList(start, end).joinToString("\n")
     }
 
-    private val HEADING = Regex("^#{1,2}\\s+.+$")
     private const val CORE_HEADING = "# 核心记忆"
     private const val DEFAULT_CONTEXT_WINDOW = 128_000
     private const val CONTEXT_WINDOW_DIVISOR = 16
     private const val MIN_CORE_CHARS = 4_000
     private const val MAX_CORE_CHARS = 32_000
-    private const val MAX_HEADING_INDEX_CHARS = 4_000
     private const val EMPTY_SHA256 =
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }

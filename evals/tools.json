@@ -431,7 +431,7 @@
     },
     {
       "name": "memory_get",
-      "description": "Read persistent cross-conversation memory from MEMORY.md. Core memory and the heading index are already provided at run start, so call this only to inspect details, answer what is remembered, or refresh after a conflict. Use query for just-in-time retrieval instead of reading the whole file.",
+      "description": "Read persistent cross-conversation memory from MEMORY.md. The run-start context already carries the memory file (or, when it exceeds the injection budget, the core section plus a heading index with line ranges), so call this only to inspect a detail, answer what is remembered, or refresh after a conflict. Use query for just-in-time retrieval instead of reading the whole file.",
       "parameters": {
         "type": "object",
         "properties": {

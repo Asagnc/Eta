@@ -25,27 +25,54 @@ internal data class AgentMemoryReadResult(
 )
 
 internal sealed interface AgentMemoryMutation {
-    val revision: String
+    /** null 表示按写入时的最新内容执行，不做并发检查。 */
+    val revision: String?
 
     data class ReplaceRange(
-        override val revision: String,
+        override val revision: String?,
         val startLine: Int,
         val endLine: Int,
         val content: String,
     ) : AgentMemoryMutation
 
+    /** 按标题整章替换：命中同名章节就替换它的标题行与正文，未命中则在文末新增。 */
+    data class UpsertSection(
+        override val revision: String?,
+        val heading: String,
+        val content: String,
+    ) : AgentMemoryMutation
+
     data class Append(
-        override val revision: String,
+        override val revision: String?,
         val content: String,
     ) : AgentMemoryMutation
 
     data class Clear(
-        override val revision: String,
+        override val revision: String?,
     ) : AgentMemoryMutation
 }
 
+internal fun AgentMemoryMutation.withRevision(revision: String?): AgentMemoryMutation = when (this) {
+    is AgentMemoryMutation.ReplaceRange -> copy(revision = revision)
+    is AgentMemoryMutation.UpsertSection -> copy(revision = revision)
+    is AgentMemoryMutation.Append -> copy(revision = revision)
+    is AgentMemoryMutation.Clear -> copy(revision = revision)
+}
+
+/** 一次 upsert_section 的落点：章节是否被替换，以及它在写入后的行范围。 */
+internal data class AgentMemorySectionOutcome(
+    val heading: String,
+    val replaced: Boolean,
+    val startLine: Int,
+    val endLine: Int,
+)
+
 internal sealed interface AgentMemoryWriteResult {
-    data class Success(val snapshot: AgentMemorySnapshot) : AgentMemoryWriteResult
+    data class Success(
+        val snapshot: AgentMemorySnapshot,
+        val section: AgentMemorySectionOutcome? = null,
+    ) : AgentMemoryWriteResult
+
     data class Conflict(val snapshot: AgentMemorySnapshot) : AgentMemoryWriteResult
 }
 
@@ -83,16 +110,21 @@ internal class AgentMemoryStore(
 
     fun mutate(mutation: AgentMemoryMutation): AgentMemoryWriteResult = synchronized(lock) {
         val current = snapshotLocked()
-        if (mutation.revision != current.revision) {
+        val expected = mutation.revision
+        if (expected != null && expected != current.revision) {
             return@synchronized AgentMemoryWriteResult.Conflict(current)
         }
+        var section: AgentMemorySectionOutcome? = null
         val updated = when (mutation) {
             is AgentMemoryMutation.ReplaceRange -> replaceRange(current, mutation)
+            is AgentMemoryMutation.UpsertSection -> upsertSection(current, mutation)
+                .also { edit -> section = edit.outcome }
+                .content
             is AgentMemoryMutation.Append -> append(current, mutation.content)
             is AgentMemoryMutation.Clear -> ""
         }
         writeLocked(updated)
-        AgentMemoryWriteResult.Success(snapshotOf(updated))
+        AgentMemoryWriteResult.Success(snapshotOf(updated), section)
     }
 
     fun replaceAll(content: String): AgentMemorySnapshot = synchronized(lock) {
@@ -194,6 +226,66 @@ internal class AgentMemoryStore(
         return snapshot.content.trimEnd('\n') + "\n" + content
     }
 
+    private fun upsertSection(
+        snapshot: AgentMemorySnapshot,
+        mutation: AgentMemoryMutation.UpsertSection,
+    ): SectionEdit {
+        val title = MemoryMarkdown.title(mutation.heading)
+        if (title.isEmpty()) {
+            throw AgentMemoryException(
+                code = "MEMORY_HEADING_INVALID",
+                message = "upsert_section 需要非空的 heading",
+            )
+        }
+        val headingText = MemoryMarkdown.headingText(mutation.heading)
+        val lines = snapshot.content.memoryLines().toMutableList()
+        val block = buildList {
+            add(headingText)
+            addAll(mutation.content.memoryLines())
+        }
+        val existing = MemoryMarkdown.findSection(lines, title)
+        if (existing != null) {
+            val nested = lines.subList(existing.startIndex + 1, existing.endIndex)
+                .count { line -> (MemoryMarkdown.heading(line)?.level ?: 0) > existing.level }
+            val keepsNested = block.any { line -> (MemoryMarkdown.heading(line)?.level ?: 0) > existing.level }
+            if (nested > 0 && !keepsNested) {
+                throw AgentMemoryException(
+                    code = "MEMORY_SECTION_NESTED",
+                    message = "「${existing.title}」下面还有 $nested 个子章节，整体替换会一并删掉它们；" +
+                        "请改为 upsert 要改的子章节，或把子章节内容一并写进 content。",
+                )
+            }
+        }
+        if (existing == null) {
+            val kept = lines.dropLastWhile(String::isBlank).toMutableList()
+            if (kept.isNotEmpty()) kept.add("")
+            val startLine = kept.size + 1
+            kept.addAll(block)
+            return SectionEdit(
+                content = kept.joinToString("\n"),
+                outcome = AgentMemorySectionOutcome(
+                    heading = headingText,
+                    replaced = false,
+                    startLine = startLine,
+                    endLine = kept.size,
+                ),
+            )
+        }
+        lines.subList(existing.startIndex, existing.endIndex).clear()
+        lines.addAll(existing.startIndex, block)
+        return SectionEdit(
+            content = lines.joinToString("\n"),
+            outcome = AgentMemorySectionOutcome(
+                heading = existing.headingText,
+                replaced = true,
+                startLine = existing.startIndex + 1,
+                endLine = existing.startIndex + block.size,
+            ),
+        )
+    }
+
+    private data class SectionEdit(val content: String, val outcome: AgentMemorySectionOutcome)
+
     private fun page(
         snapshot: AgentMemorySnapshot,
         requestedStartLine: Int,
@@ -294,7 +386,7 @@ internal class AgentMemoryStore(
         const val DEFAULT_READ_CHARS = 12_000
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1
-        const val MAX_WRITE_CONTENT_CHARS = 3_500
+        const val MAX_WRITE_CONTENT_CHARS = 8_000
         private const val DIRECTORY_NAME = "memory"
         private const val FILE_NAME = "MEMORY.md"
         private const val DEFAULT_START_LINE = 1

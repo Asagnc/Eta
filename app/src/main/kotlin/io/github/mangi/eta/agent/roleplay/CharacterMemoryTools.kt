@@ -2,11 +2,13 @@ package io.github.mangi.eta.agent.roleplay
 
 import android.content.Context
 import io.github.mangi.eta.agent.model.AgentMemoryToolCatalog
+import io.github.mangi.eta.agent.model.AgentMemoryWritePayload
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.data.repository.AgentMemoryException
-import io.github.mangi.eta.data.repository.AgentMemoryMutation
+import io.github.mangi.eta.data.repository.AgentMemoryWriteRequest
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.CharacterMemoryRepository
+import io.github.mangi.eta.data.repository.runMemoryMutation
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -37,22 +39,18 @@ internal class CharacterMemoryTools(
                         .put("content", read.content)
                 }
                 WRITE -> {
-                    val revision = args.getString("revision")
-                    val mutation = when (args.getString("mode")) {
-                        "replace_range" -> AgentMemoryMutation.ReplaceRange(
-                            revision, args.getInt("start_line"), args.getInt("end_line"), args.getString("content"),
-                        )
-                        "append" -> AgentMemoryMutation.Append(revision, args.getString("content"))
-                        "clear" -> AgentMemoryMutation.Clear(revision)
-                        else -> return result(error("INVALID_MEMORY_MODE", "角色记忆写入模式无效"))
+                    val request = when (val parsed = AgentMemoryWriteRequest.parse(args)) {
+                        is AgentMemoryWriteRequest.Parsed.Invalid ->
+                            return result(error("INVALID_MEMORY_ARGUMENTS", parsed.message))
+                        is AgentMemoryWriteRequest.Parsed.Mutation -> parsed
                     }
-                    when (val written = CharacterMemoryRepository.mutate(context, characterId, mutation)) {
-                        is AgentMemoryWriteResult.Success -> JSONObject().put("ok", true)
-                            .put("revision", written.snapshot.revision).put("bytes", written.snapshot.byteSize)
-                            .put("line_count", written.snapshot.lineCount)
-                        is AgentMemoryWriteResult.Conflict -> error(
-                            "MEMORY_CONFLICT", "剧情记忆已发生变化，请先调用 character_memory_get 获取最新内容",
-                        ).put("revision", written.snapshot.revision)
+                    val outcome = runMemoryMutation(request.mutation) { mutation ->
+                        CharacterMemoryRepository.mutate(context, characterId, mutation)
+                    }
+                    when (outcome.result) {
+                        is AgentMemoryWriteResult.Success ->
+                            AgentMemoryWritePayload.success(outcome, request.mode, request.revisionIgnored)
+                        is AgentMemoryWriteResult.Conflict -> AgentMemoryWritePayload.conflict(outcome)
                     }
                 }
                 else -> error("UNKNOWN_TOOL", "未知角色记忆工具")
@@ -85,10 +83,10 @@ internal class CharacterMemoryTools(
                 function.put("description", if (read) {
                     "Read this character's persistent story memory. It contains fictional events, relationships, and scene continuity shared by this character's conversations. Use query or bounded pages. This does not read the user's real-world MEMORY.md."
                 } else {
-                    "Atomically update this character's persistent story memory with fictional events, relationships, and scene continuity. Keep '# 核心记忆' concise and update stale facts instead of duplicating them. Never put story facts in real-world MEMORY.md or treat fictional actions as completed device operations. Use the revision from character_memory_get or the run-start character memory."
+                    "Atomically update this character's persistent story memory with fictional events, relationships, and scene continuity. Update the section that already covers a topic with mode=upsert_section and its heading instead of appending duplicates, and keep '# 核心记忆' concise. Never put story facts in real-world MEMORY.md or treat fictional actions as completed device operations. mode and revision may be omitted."
                 })
                 if (!read) function.getJSONObject("parameters").getJSONObject("properties")
-                    .getJSONObject("revision").put("description", "Exact SHA-256 revision from character_memory_get or the run-start character memory.")
+                    .getJSONObject("revision").put("description", "Optional SHA-256 revision from character_memory_get or the run-start character memory. Omit it to write against the latest content.")
                 tools.put(schema)
             }
         }

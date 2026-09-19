@@ -101,10 +101,13 @@ internal data class RoleplayRunContext(
         if (after.isNotBlank()) appendLine("补充世界设定：\n${expand(after)}")
         if (memory.enabled) {
             appendLine("角色剧情记忆已启用，仅保存本角色的虚构经历、关系和场景连续性，不能写入现实 MEMORY.md。")
-            appendLine("需要持久更新剧情时调用 character_memory_write；按需读取详情或刷新 revision 时调用 character_memory_get。")
+            appendLine("需要持久更新剧情时调用 character_memory_write：改已有章节用 mode=upsert_section + heading；按需读取详情或刷新 revision 时调用 character_memory_get。")
             appendLine("character_memory_revision=${memory.revision}")
-            if (memory.coreContent.isNotBlank()) appendLine("<character_memory_core>\n${memory.coreContent}\n</character_memory_core>")
-            if (memory.coreTruncated) appendLine("[剧情核心记忆超出预算，按需读取其余内容]")
+            if (memory.injectedContent.isNotBlank()) {
+                appendLine("<character_memory_content>\n${memory.injectedContent}\n</character_memory_content>")
+                if (memory.injectedFull) appendLine("[以上是剧情记忆全文]")
+            }
+            if (memory.injectedTruncated) appendLine("[剧情核心记忆超出预算，按需读取其余内容]")
             if (memory.headingIndex.isNotBlank()) appendLine("<character_memory_headings>\n${memory.headingIndex}\n</character_memory_headings>")
         }
     }.trim()

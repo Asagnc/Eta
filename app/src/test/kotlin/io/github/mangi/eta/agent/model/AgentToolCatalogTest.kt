@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -192,12 +193,16 @@ class AgentToolCatalogTest {
         )
         assertTrue("memory_get" in enabled.toolNames())
         val write = enabled.function("memory_write")
-        val properties = write.getJSONObject("parameters").getJSONObject("properties")
-        assertEquals(3_500, properties.getJSONObject("content").getInt("maxLength"))
+        val parameters = write.getJSONObject("parameters")
+        val properties = parameters.getJSONObject("properties")
+        assertEquals(AgentMemoryStore.MAX_WRITE_CONTENT_CHARS, properties.getJSONObject("content").getInt("maxLength"))
         assertEquals(
-            listOf("replace_range", "append", "clear"),
+            listOf("upsert_section", "replace_range", "append", "clear"),
             properties.getJSONObject("mode").getJSONArray("enum").stringValues(),
         )
+        // mode / revision 允许省略：漏字段由工具自己按字段推断，不该被参数校验直接拒掉。
+        assertFalse(parameters.has("required"))
+        assertTrue(properties.has("heading"))
     }
 
     @Test
