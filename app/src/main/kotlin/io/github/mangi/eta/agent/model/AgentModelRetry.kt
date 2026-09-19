@@ -11,6 +11,15 @@ internal class AgentModelRetry(
 ) {
     data class Result(val round: Int, val response: ProviderResponse)
 
+    /**
+     * 输出上限提升：默认不写进请求体（沿用上游默认值），某一轮被截断后，后续轮次带上更大的
+     * 上限（档位见 OUTPUT_LIMIT_BOOSTS）。AgentLoop 一次 run 只建一个实例，所以这些状态跨轮
+     * 有效；上游点名拒收这个字段时 boostDisabled 会永久关掉它，避免每轮白试一次。
+     */
+    private var outputBoost: Int? = null
+    private var boostDisabled = false
+    private var observedOutputTokens: Int? = null
+
     fun complete(
         initialRound: Int,
         request: ProviderRequest,
@@ -23,10 +32,6 @@ internal class AgentModelRetry(
         var round = initialRound
         var retries = 0
         var activeRequest = request
-        // 输出上限提升：默认不写进请求体，只有本轮被截断时才逐档提升（见 nextOutputBoost）。
-        var outputBoost: Int? = null
-        var boostDisabled = false
-        var observedOutputTokens: Int? = null
         while (true) {
             controller.throwIfCancelled()
             onEvent(AgentEvent.RoundStarted(round, request.messages.length()))
@@ -59,24 +64,12 @@ internal class AgentModelRetry(
                     )
                 }
                 if (response.stopReason == AssistantStopReason.OUTPUT_LIMIT) {
+                    // 本轮被输出上限截断（工具参数被截掉是典型表现）。这里不静默重放本轮：
+                    // AgentLoop 仍按既有语义把 TRUNCATED_TOOL_CALL 提示给模型，只是把下一次
+                    // 请求的预算提高一档，让模型重提时不会再被同一个默认上限卡住。
                     observedOutputTokens = attemptOutputTokens ?: observedOutputTokens
-                    val next = if (boostDisabled || hostedToolStarted) {
-                        null
-                    } else {
-                        nextOutputBoost(observedOutputTokens, outputBoost)
-                    }
-                    if (next != null) {
-                        // 本轮被输出上限截断（工具参数被截掉是典型表现）：提高预算后重放本轮，
-                        // 既不占用瞬时错误的重试预算，也不让模型白跑一次重提。
-                        outputBoost = next
-                        onEvent(
-                            AgentEvent.ModelRetryScheduled(
-                                round, retries + 1, MAX_RETRIES, 0, "OUTPUT_LIMIT",
-                            ),
-                        )
-                        discardAttemptReasoning()
-                        round += 1
-                        continue
+                    if (!boostDisabled) {
+                        nextOutputBoost(observedOutputTokens, outputBoost)?.let { outputBoost = it }
                     }
                 }
                 return Result(round, response)

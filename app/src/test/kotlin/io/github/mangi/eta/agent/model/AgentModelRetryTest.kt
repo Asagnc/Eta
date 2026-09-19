@@ -103,27 +103,29 @@ class AgentModelRetryTest {
     }
 
     @Test
-    fun raisesOutputBudgetWhenTheRoundIsCutOffByOutputLimit() {
+    fun raisesOutputBudgetForTheRoundAfterATruncatedOne() {
         val requestedLimits = mutableListOf<Int?>()
         val retry = AgentModelRetry { _, _ -> fail("输出上限提升不该走退避等待") }
-        val result = complete(retry, provider { request, _ ->
+        val provider = provider { request, _ ->
             requestedLimits += request.config.maxOutputTokens
             if (requestedLimits.size == 1) emptyResponse("length") else response()
-        })
+        }
+        complete(retry, provider)
+        val second = complete(retry, provider)
         assertEquals(listOf(null, 32_768), requestedLimits)
-        assertEquals(2, result.round)
-        assertEquals("完成", result.response.assistantMessage.getString("content"))
+        assertEquals("完成", second.response.assistantMessage.getString("content"))
     }
 
     @Test
-    fun raisesOutputBudgetForEachTruncatedRoundThenGivesUp() {
+    fun raisesOutputBudgetOncePerTruncatedRoundUntilHigherTiersRunOut() {
         val requestedLimits = mutableListOf<Int?>()
-        val result = complete(AgentModelRetry { _, _ -> fail("输出上限提升不该走退避等待") }, provider { request, _ ->
+        val retry = AgentModelRetry { _, _ -> fail("输出上限提升不该走退避等待") }
+        val provider = provider { request, _ ->
             requestedLimits += request.config.maxOutputTokens
             emptyResponse("length")
-        })
-        assertEquals(listOf(null, 32_768, 131_072), requestedLimits)
-        assertEquals(AssistantStopReason.OUTPUT_LIMIT, result.response.stopReason)
+        }
+        repeat(4) { complete(retry, provider) }
+        assertEquals(listOf(null, 32_768, 131_072, 131_072), requestedLimits)
     }
 
     @Test
