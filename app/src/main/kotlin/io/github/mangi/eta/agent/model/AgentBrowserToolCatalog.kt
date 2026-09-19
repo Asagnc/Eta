@@ -87,7 +87,7 @@ internal object AgentBrowserToolCatalog {
                                 "expression",
                                 JSONObject()
                                     .put("type", "string")
-                                    .put("description", "evaluate_js 要执行的单个 JS 表达式，可用 await；多语句请自行包成 (async () => { ... })()。")
+                                    .put("description", "evaluate_js 要执行的单个 JS 表达式，可用 await；多语句请自行包成 (async () => { ... })()。SPA 或还没渲染完的页面结构与预期可能不同，取 querySelector 结果前先判空；脚本自身抛错会以 code=SCRIPT_ERROR 原样返回，先看是不是表达式假设错了。")
                             )
                             .put(
                                 "selector",
