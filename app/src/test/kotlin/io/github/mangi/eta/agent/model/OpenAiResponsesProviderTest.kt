@@ -393,6 +393,40 @@ class OpenAiResponsesProviderTest {
     }
 
     @Test
+    fun completeFallsBackToStreamedTextWhenTerminalOutputHasNoMessageItem() {
+        val body = buildString {
+            append(responseTextEvent("response.output_text.delta", "msg_1", 1, "delta", "先查一下。"))
+            append(responseTextEvent("response.output_text.delta", "msg_1", 1, "delta", "查完了。"))
+            append(
+                event(
+                    "response.completed",
+                    JSONObject().put(
+                        "response",
+                        JSONObject().put("status", "completed")
+                            .put("output", JSONArray().put(reasoningItem("rs_1", "先判断"))),
+                    ),
+                ),
+            )
+        }
+
+        withSseServer(body) { baseUrl ->
+            val result = OpenAiResponsesProvider.complete(
+                ProviderRequest(
+                    config(baseUrl),
+                    JSONArray().put(JSONObject().put("role", "user").put("content", "查一下")),
+                    JSONArray(),
+                ),
+                AgentRunController(),
+            )
+
+            assertEquals("先查一下。查完了。", result.assistantMessage.getString("content"))
+            assertEquals("先判断", result.assistantMessage.getString("reasoning_content"))
+            assertEquals("stop", result.assistantMessage.getString("finish_reason"))
+            assertNotNull(ResponsesEphemeralState.outputItems(result.assistantMessage))
+        }
+    }
+
+    @Test
     fun completePreservesInterleavedResponseItemOrderAndBlockIdentity() {
         val terminalOutput = JSONArray()
             .put(reasoningItem("rs_1", "先判断"))

@@ -38,6 +38,17 @@ internal class AgentModelRetry(
                         throw failure
                     }
                 }
+                if (response.isUnexplainedEmptyCompletion()) {
+                    // 上游声称正常结束却什么都没给：这多是上游或网关抖动，按瞬时失败重试，
+                    // 而不是让整次运行直接失败。长度截断、内容过滤这类有明确原因的空态不在此列。
+                    throw AgentModelFailure(
+                        code = "EMPTY_COMPLETION",
+                        retryable = true,
+                        message = "模型接口本轮返回空响应（finish_reason=" +
+                            response.assistantMessage.optString("finish_reason") +
+                            "），既没有正文也没有工具调用。",
+                    )
+                }
                 return Result(round, response)
             } catch (failure: Exception) {
                 controller.throwIfCancelled()
@@ -73,6 +84,18 @@ internal class AgentModelRetry(
                 round += 1
             }
         }
+    }
+
+    /**
+     * 只有"上游申报正常结束（END_TURN）、却既无正文也无工具调用"才算是不可解释的空响应。
+     * 其余空态（长度截断、内容过滤、未完成）都带有明确原因，重试不会改变结果。
+     */
+    private fun ProviderResponse.isUnexplainedEmptyCompletion(): Boolean {
+        if (stopReason != AssistantStopReason.END_TURN) return false
+        val calls = assistantMessage.optJSONArray("tool_calls")
+        if (calls != null && calls.length() > 0) return false
+        val content = assistantMessage.optString("content").trim()
+        return content.isEmpty() || content == "null"
     }
 
     companion object {

@@ -72,6 +72,36 @@ class AgentModelRetryTest {
     }
 
     @Test
+    fun retriesUnexplainedEmptyCompletionAndStopsOnExplainedEmptyStates() {
+        val delays = mutableListOf<Long>()
+        val retry = AgentModelRetry { _, delay -> delays += delay }
+        var calls = 0
+        val result = complete(retry, provider { _, _ ->
+            if (calls++ == 0) emptyResponse("stop") else response()
+        })
+        assertEquals(2, result.round)
+        assertEquals(listOf(2_000L), delays)
+
+        var alwaysEmptyCalls = 0
+        val exhausted = assertThrows(AgentModelFailure::class.java) {
+            complete(AgentModelRetry { _, _ -> }, provider { _, _ ->
+                alwaysEmptyCalls++
+                emptyResponse("stop")
+            })
+        }
+        assertEquals(3, alwaysEmptyCalls)
+        assertTrue(exhausted.message.orEmpty().contains("已重试 2 次"))
+        assertTrue(exhausted.message.orEmpty().contains("finish_reason=stop"))
+
+        var truncatedCalls = 0
+        complete(AgentModelRetry { _, _ -> fail("长度截断的空响应不该重试") }, provider { _, _ ->
+            truncatedCalls++
+            emptyResponse("length")
+        })
+        assertEquals(1, truncatedCalls)
+    }
+
+    @Test
     fun classifiesTransientFailuresWithoutRetryingPermanentFailures() {
         for (status in listOf(408, 429, 500, 502, 503, 504, 529)) {
             assertTrue(AgentModelFailure.http(status, "").retryable)
@@ -124,6 +154,10 @@ class AgentModelRetryTest {
         onEvent = {},
         onProviderEvent = onProviderEvent,
         discardAttemptReasoning = {},
+    )
+
+    private fun emptyResponse(reason: String) = ProviderResponse(
+        JSONObject().put("content", "").put("finish_reason", reason),
     )
 
     private fun response() = ProviderResponse(JSONObject().put("content", "完成").put("finish_reason", "stop"))

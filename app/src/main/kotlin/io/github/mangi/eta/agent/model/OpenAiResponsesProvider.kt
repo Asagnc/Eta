@@ -356,7 +356,7 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             // 标准增量；不对非空终态做字段级拼补，也不把本地结果冒充为 opaque items。
             finalOutputFromStream(streamedText, streamedReasoning, toolCalls.values)
         } else {
-            extractFinalOutput(output)
+            extractFinalOutput(output).withStreamedTextFallback(streamedText)
         }
 
         fun reconcileFinalPart(part: FinalContentPart) {
@@ -472,6 +472,15 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
         },
         contentParts = emptyList(),
     )
+
+    /**
+     * 终态里没有可直接交付的正文时（例如只回了思考项或工具项，正文只存在于增量事件），
+     * 用本轮已经收到的流式正文兜底；否则模型明明答过话，也会被终态形态判成空响应。
+     */
+    private fun FinalOutput.withStreamedTextFallback(streamedText: StringBuilder): FinalOutput {
+        if (text.isNotBlank() || streamedText.isBlank()) return this
+        return copy(text = streamedText.toString(), rawText = streamedText.toString())
+    }
 
     private fun extractFinalOutput(output: JSONArray): FinalOutput {
         val text = StringBuilder()
