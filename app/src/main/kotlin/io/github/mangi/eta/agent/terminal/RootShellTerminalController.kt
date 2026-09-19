@@ -27,6 +27,9 @@ internal class RootShellTerminalController(
 
         /** Linux 工具环境的工作目录；它与 DEFAULT_CWD 指向同一份目录（chroot 里 bind 过去）。 */
         const val LINUX_DEFAULT_CWD = "/workspace"
+
+        /** 随包分发的 ripgrep：jniLibs/arm64-v8a/librg.so，安装时解到 nativeLibraryDir。 */
+        const val RIPGREP_LIBRARY_NAME = "librg.so"
         const val USER_STORAGE = "/storage/emulated/0"
         const val DEFAULT_TIMEOUT_SECONDS = 30
         // 编译、下载这类命令经常超过三分钟；更久的后台服务应交给 daemon 任务，那条路径不受这里约束。
@@ -1138,17 +1141,28 @@ internal class RootShellTerminalController(
     }
 
     /**
-     * 设备上放了静态 ripgrep（默认 /data/local/tmp/eta/tools/rg）时优先用它：
-     * BusyBox 的 grep 既不认 --include，也没有 rg 的 glob 与忽略规则处理，速度也差一个量级。
-     * 探测结果缓存一次，缺失时静默退回 grep / find 路径。
+     * 定位 ripgrep：优先用随包分发的静态二进制（jniLibs 里的 librg.so，安装时解到
+     * nativeLibraryDir），它不依赖设备上有没有人手工放过文件——换机、清 /data/local/tmp
+     * 都不会失效。其次才看手工放在工具目录里的那份，最后退回 grep。
+     *
+     * 之所以保留 grep 兜底：个别加固 ROM 会禁止从 nativeLibraryDir 执行二进制，
+     * 那种情况下检索应该是「慢一点」而不是「直接失败」。
      */
     private fun ripgrepPath(): String? {
         ripgrepPathCache?.let { return it.ifBlank { null } }
-        val candidate = "$DEFAULT_CWD/tools/rg"
-        val probe = runSuText("test -x ${shellQuote(candidate)} && echo yes || echo no", timeoutSeconds = 10)
-        val path = candidate.takeIf { probe.output.trim() == "yes" }
+        val candidates = buildList {
+            TerminalRuntime.nativeExecutable(RIPGREP_LIBRARY_NAME)?.let { add(it.absolutePath) }
+            add("$DEFAULT_CWD/tools/rg")
+        }
+        val path = candidates.firstOrNull { candidate ->
+            runSuText("test -x ${shellQuote(candidate)} && echo yes || echo no", timeoutSeconds = 10)
+                .output.trim() == "yes"
+        }
         ripgrepPathCache = path.orEmpty()
-        logger.info("Agent terminal action=search_code capability=ripgrep available=${path != null}")
+        logger.info(
+            "Agent terminal action=search_code capability=ripgrep available=${path != null} " +
+                "path=${path ?: "-"}",
+        )
         return path
     }
 

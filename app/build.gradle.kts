@@ -86,7 +86,13 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            keepDebugSymbols += setOf("**/libproot_exec.so", "**/libproot_loader.so", "**/libeta_pty.so")
+            keepDebugSymbols += setOf(
+                "**/libproot_exec.so",
+                "**/libproot_loader.so",
+                "**/libeta_pty.so",
+                // ripgrep 是已 stripped 的静态二进制，别让 AGP 再动它。
+                "**/librg.so",
+            )
         }
         resources {
             // 合并 Xposed 模块声明，避免 release 裁剪后模块入口失效

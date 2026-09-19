@@ -31,7 +31,9 @@ internal object AgentContextCeilingStore {
         val raw = store.getString(key, null) ?: return null
         val declared = raw.substringBefore('|').toIntOrNull() ?: return null
         val ceiling = raw.substringAfter('|', "").toIntOrNull() ?: return null
-        if (declaredWindow == null || declaredWindow != declared) return null
+        // 声明窗口为空的模型（provider 没给窗口）同样要能读回实测上限：否则它每次都退回
+        // 「没有窗口」状态，不显示占用、也不按比例压缩，只能等服务端拒收才发现超限。
+        if ((declaredWindow ?: 0) != declared) return null
         return ceiling.takeIf { it > 0 }
     }
 
