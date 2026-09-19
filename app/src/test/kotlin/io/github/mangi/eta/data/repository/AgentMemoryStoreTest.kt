@@ -95,54 +95,19 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    fun upsertReplacesTheMatchingSectionInPlace() {
-        val store = store()
-        val initial = store.replaceAll("# 核心记忆\n旧偏好\n## 项目\n旧项目\n## 其他\n保留")
-
-        val replaced = store.mutate(
-            AgentMemoryMutation.UpsertSection(
-                revision = initial.revision,
-                heading = "项目",
-                content = "新项目\n第二行",
-            ),
-        ) as AgentMemoryWriteResult.Success
-
-        assertEquals("# 核心记忆\n旧偏好\n## 项目\n新项目\n第二行\n## 其他\n保留", replaced.snapshot.content)
-        assertEquals("## 项目", replaced.section?.heading)
-        assertTrue(replaced.section?.replaced == true)
-        assertEquals(3, replaced.section?.startLine)
-        assertEquals(5, replaced.section?.endLine)
-    }
-
-    @Test
-    fun upsertMatchesTitleIgnoringLevelAndCreatesMissingSectionAtTheEnd() {
-        val store = store()
-        val initial = store.replaceAll("# 核心记忆\n旧偏好")
-
-        val replaced = store.mutate(
-            AgentMemoryMutation.UpsertSection(initial.revision, "## 核心记忆", "新偏好"),
-        ) as AgentMemoryWriteResult.Success
-        assertEquals("# 核心记忆\n新偏好", replaced.snapshot.content)
-
-        val inserted = store.mutate(
-            AgentMemoryMutation.UpsertSection(replaced.snapshot.revision, "新主题", "内容"),
-        ) as AgentMemoryWriteResult.Success
-        assertEquals("# 核心记忆\n新偏好\n\n## 新主题\n内容", inserted.snapshot.content)
-        assertTrue(inserted.section?.replaced == false)
-        assertEquals("## 新主题", inserted.section?.heading)
-    }
-
-    @Test
-    fun upsertRefusesToSilentlyDropNestedSections() {
+    fun upsertSectionPersistsThroughTheStore() {
         val store = store()
         val initial = store.replaceAll("# 核心记忆\n旧偏好\n## 项目\n旧项目")
 
-        val failure = assertThrows(AgentMemoryException::class.java) {
-            store.mutate(AgentMemoryMutation.UpsertSection(initial.revision, "核心记忆", "只剩一句话"))
-        }
-        assertEquals("MEMORY_SECTION_NESTED", failure.code)
-        assertEquals(initial.revision, store.snapshot().revision)
-        assertTrue(store.snapshot().content.contains("## 项目"))
+        val written = store.mutate(
+            AgentMemoryMutation.UpsertSection(initial.revision, "项目", "新项目"),
+        ) as AgentMemoryWriteResult.Success
+
+        assertEquals("# 核心记忆\n旧偏好\n## 项目\n新项目", written.snapshot.content)
+        assertEquals("## 项目", written.section?.heading)
+        assertTrue(written.section?.replaced == true)
+        assertEquals(written.snapshot.content, store.snapshot().content)
+        assertEquals(written.snapshot.revision, store.snapshot().revision)
     }
 
     @Test

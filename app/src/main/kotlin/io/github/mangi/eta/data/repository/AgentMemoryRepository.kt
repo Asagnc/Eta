@@ -114,17 +114,23 @@ internal class AgentMemoryStore(
         if (expected != null && expected != current.revision) {
             return@synchronized AgentMemoryWriteResult.Conflict(current)
         }
-        var section: AgentMemorySectionOutcome? = null
         val updated = when (mutation) {
-            is AgentMemoryMutation.ReplaceRange -> replaceRange(current, mutation)
-            is AgentMemoryMutation.UpsertSection -> upsertSection(current, mutation)
-                .also { edit -> section = edit.outcome }
-                .content
-            is AgentMemoryMutation.Append -> append(current, mutation.content)
-            is AgentMemoryMutation.Clear -> ""
+            is AgentMemoryMutation.ReplaceRange -> MemoryContentEditor.replaceRange(
+                current.content,
+                mutation.startLine,
+                mutation.endLine,
+                mutation.content,
+            )
+            is AgentMemoryMutation.UpsertSection -> MemoryContentEditor.upsertSection(
+                current.content,
+                mutation.heading,
+                mutation.content,
+            )
+            is AgentMemoryMutation.Append -> MemoryContentEditor.append(current.content, mutation.content)
+            is AgentMemoryMutation.Clear -> MemoryContentEditor.Edit("")
         }
-        writeLocked(updated)
-        AgentMemoryWriteResult.Success(snapshotOf(updated), section)
+        writeLocked(updated.content)
+        AgentMemoryWriteResult.Success(snapshotOf(updated.content), updated.section)
     }
 
     fun replaceAll(content: String): AgentMemorySnapshot = synchronized(lock) {
@@ -196,95 +202,6 @@ internal class AgentMemoryStore(
             )
         }
     }
-
-    private fun replaceRange(
-        snapshot: AgentMemorySnapshot,
-        mutation: AgentMemoryMutation.ReplaceRange,
-    ): String {
-        val lines = snapshot.content.memoryLines().toMutableList()
-        if (
-            mutation.startLine < 1 ||
-            mutation.endLine < mutation.startLine ||
-            mutation.endLine > lines.size
-        ) {
-            throw AgentMemoryException(
-                code = "MEMORY_RANGE_INVALID",
-                message = "替换行范围无效；请重新读取记忆后再试",
-            )
-        }
-        val replacement = mutation.content.memoryLines()
-        lines.subList(mutation.startLine - 1, mutation.endLine).clear()
-        if (replacement.isNotEmpty()) {
-            lines.addAll(mutation.startLine - 1, replacement)
-        }
-        return lines.joinToString("\n")
-    }
-
-    private fun append(snapshot: AgentMemorySnapshot, content: String): String {
-        if (content.isEmpty()) return snapshot.content
-        if (snapshot.content.isEmpty()) return content
-        return snapshot.content.trimEnd('\n') + "\n" + content
-    }
-
-    private fun upsertSection(
-        snapshot: AgentMemorySnapshot,
-        mutation: AgentMemoryMutation.UpsertSection,
-    ): SectionEdit {
-        val title = MemoryMarkdown.title(mutation.heading)
-        if (title.isEmpty()) {
-            throw AgentMemoryException(
-                code = "MEMORY_HEADING_INVALID",
-                message = "upsert_section 需要非空的 heading",
-            )
-        }
-        val headingText = MemoryMarkdown.headingText(mutation.heading)
-        val lines = snapshot.content.memoryLines().toMutableList()
-        val block = buildList {
-            add(headingText)
-            addAll(mutation.content.memoryLines())
-        }
-        val existing = MemoryMarkdown.findSection(lines, title)
-        if (existing != null) {
-            val nested = lines.subList(existing.startIndex + 1, existing.endIndex)
-                .count { line -> (MemoryMarkdown.heading(line)?.level ?: 0) > existing.level }
-            val keepsNested = block.any { line -> (MemoryMarkdown.heading(line)?.level ?: 0) > existing.level }
-            if (nested > 0 && !keepsNested) {
-                throw AgentMemoryException(
-                    code = "MEMORY_SECTION_NESTED",
-                    message = "「${existing.title}」下面还有 $nested 个子章节，整体替换会一并删掉它们；" +
-                        "请改为 upsert 要改的子章节，或把子章节内容一并写进 content。",
-                )
-            }
-        }
-        if (existing == null) {
-            val kept = lines.dropLastWhile(String::isBlank).toMutableList()
-            if (kept.isNotEmpty()) kept.add("")
-            val startLine = kept.size + 1
-            kept.addAll(block)
-            return SectionEdit(
-                content = kept.joinToString("\n"),
-                outcome = AgentMemorySectionOutcome(
-                    heading = headingText,
-                    replaced = false,
-                    startLine = startLine,
-                    endLine = kept.size,
-                ),
-            )
-        }
-        lines.subList(existing.startIndex, existing.endIndex).clear()
-        lines.addAll(existing.startIndex, block)
-        return SectionEdit(
-            content = lines.joinToString("\n"),
-            outcome = AgentMemorySectionOutcome(
-                heading = existing.headingText,
-                replaced = true,
-                startLine = existing.startIndex + 1,
-                endLine = existing.startIndex + block.size,
-            ),
-        )
-    }
-
-    private data class SectionEdit(val content: String, val outcome: AgentMemorySectionOutcome)
 
     private fun page(
         snapshot: AgentMemorySnapshot,
@@ -370,9 +287,6 @@ internal class AgentMemoryStore(
         byteSize = bytes.size,
         lineCount = content.memoryLines().size,
     )
-
-    private fun String.memoryLines(): List<String> =
-        if (isEmpty()) emptyList() else split('\n')
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
