@@ -314,7 +314,9 @@ internal class AgentAppState(
     private fun reasoningEffortOptions(capabilities: ModelReasoningCapabilities?): List<ReasoningEffort> {
         val base = capabilities?.selectableEfforts.orEmpty()
         return buildList {
-            if (ReasoningEffort.OFF in base) add(ReasoningEffort.OFF)
+            // 没有能力元数据（多数中转站）时也给出 Off：关掉思考是通用行为，
+            // 用户应该能直接在对话页关，而不是被迫去设置页改全局开关。
+            if (capabilities == null || ReasoningEffort.OFF in base) add(ReasoningEffort.OFF)
             add(ReasoningEffort.AUTO)
             add(ReasoningEffort.DEFAULT)
             base.filter { it != ReasoningEffort.OFF && it != ReasoningEffort.DEFAULT }
