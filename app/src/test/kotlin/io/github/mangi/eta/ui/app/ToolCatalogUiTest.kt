@@ -40,9 +40,11 @@ class ToolCatalogUiTest {
         }
         val cardIds = buildToolsState(RuntimeEnvironment.getApplication()).groups
             .flatMap { it.tools }.map { it.id }
-        (runtimeNames + cardIds).distinct().forEach { name ->
-            assertNotEquals(name, Icons.Rounded.Build, iconForTool(name))
-        }
+        // 一次列出全部缺图标的工具，而不是断言在第一个上失败：
+        // 否则每补一个只能推进一个名字，CI 要来回好几轮。
+        val unmapped = (runtimeNames + cardIds).distinct()
+            .filter { iconForTool(it) == Icons.Rounded.Build }
+        assertEquals("这些工具/卡片没有专属图标：" + unmapped.joinToString(), emptyList<String>(), unmapped)
     }
 
     @Test
