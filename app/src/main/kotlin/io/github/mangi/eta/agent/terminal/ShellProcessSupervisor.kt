@@ -14,7 +14,7 @@ internal class ShellProcessSupervisor(
 ) {
     private companion object {
         const val PROCESS_REAP_TIMEOUT_MS = 1_000L
-        const val PROCESS_OWNERSHIP_WAIT_MS = 500L
+        const val PROCESS_OWNERSHIP_WAIT_MS = 3_000L
         const val PROCESS_SIGNAL_TIMEOUT_MS = 1_000L
         const val DEFAULT_PTY_COLS = 120
         const val DEFAULT_PTY_ROWS = 40
@@ -412,10 +412,15 @@ internal class ShellProcessSupervisor(
             metadata.ownership?.let { ownership -> return ownership }
             val content = runCatching { metadata.ownershipFile.readText().trim() }.getOrNull().orEmpty()
             if (content.isNotEmpty()) {
-                val ownership = parseProcessOwnership(content) ?: return null
-                metadata.ownership = ownership
-                metadata.ownershipFile.delete()
-                return ownership
+                // 启动脚本写完之前可能只读到一半（例如只有 pid、没有 group/tree），
+                // 这时立刻判失败就会偶发"无法启动进程" —— 高负载（构建、批量命令）时
+                // 这个窗口很容易命中。解析不出来就继续等到期限，最后再放弃。
+                val ownership = parseProcessOwnership(content)
+                if (ownership != null) {
+                    metadata.ownership = ownership
+                    metadata.ownershipFile.delete()
+                    return ownership
+                }
             }
             if (System.nanoTime() >= deadline) return null
             Thread.sleep(10)
@@ -560,7 +565,11 @@ internal fun runOneShotShell(
     ) ?: return OneShotShellResult(
         if (processSupervisor.isClosing) -3 else -1,
         ByteArray(0),
-        if (processSupervisor.isClosing) "操作已取消".toByteArray() else "无法启动进程".toByteArray(),
+        if (processSupervisor.isClosing) {
+            "操作已取消".toByteArray()
+        } else {
+            "无法启动进程（su 启动超时或初始化失败，可重试）".toByteArray()
+        },
     )
 
     try {
